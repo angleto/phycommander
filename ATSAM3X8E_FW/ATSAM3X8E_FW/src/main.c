@@ -31,4 +31,12 @@ int main (void)
 	board_init();
 
 	// Insert application code here, after the board has been initialized.
+
+	while (true)
+	{
+	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_0) ;
+	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
+	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_0) ;
+	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
+	}
 }

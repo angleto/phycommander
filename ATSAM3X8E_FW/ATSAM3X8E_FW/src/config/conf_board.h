@@ -51,34 +51,16 @@
 #define CONF_BOARD_USB_PORT
 
 /* Configure ADC example pins */
-//#define CONF_BOARD_ADC
+#define CONF_BOARD_ADC
 
 /* Configure PWM LED0 pin */
-//#define CONF_BOARD_PWM_LED0
+#define CONF_BOARD_PWM_LED0
 
 /* Configure PWM LED1 pin */
-//#define CONF_BOARD_PWM_LED1
+#define CONF_BOARD_PWM_LED1
 
 /* Configure PWM LED2 pin */
-//#define CONF_BOARD_PWM_LED2
-
-/* Configure SPI0 pins */
-//#define CONF_BOARD_SPI0
-//#define CONF_BOARD_SPI0_NPCS0
-//#define CONF_BOARD_SPI0_NPCS1
-//#define CONF_BOARD_SPI0_NPCS2
-//#define CONF_BOARD_SPI0_NPCS3
-
-/* Configure SPI1 pins */
-//#define CONF_BOARD_SPI1
-//#define CONF_BOARD_SPI1_NPCS0
-//#define CONF_BOARD_SPI1_NPCS1
-//#define CONF_BOARD_SPI1_NPCS2
-//#define CONF_BOARD_SPI1_NPCS3
-
-//#define CONF_BOARD_TWI0
-
-//#define CONF_BOARD_TWI1
+#define CONF_BOARD_PWM_LED2
 
 /* Configure USART RXD pin */
 //#define CONF_BOARD_USART_RXD

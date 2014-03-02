@@ -364,119 +364,7 @@
 #define PIN_PWM_LED2_FLAGS   (PIO_PERIPH_B | PIO_DEFAULT)
 #define PIN_PWM_LED2_CHANNEL PWM_CHANNEL_6
 
-/**
- * \file
- * SPI
- *
- */
 
-/* ------------------------------------------------------------------------ */
-/* SPI                                                                      */
-/* ------------------------------------------------------------------------ */
-/*! SPI0 MISO pin definition. */
-#define SPI0_MISO_GPIO        (PIO_PA25_IDX)
-#define SPI0_MISO_FLAGS       (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI0 MOSI pin definition. */
-#define SPI0_MOSI_GPIO        (PIO_PA26_IDX)
-#define SPI0_MOSI_FLAGS       (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI0 SPCK pin definition. */
-#define SPI0_SPCK_GPIO        (PIO_PA27_IDX)
-#define SPI0_SPCK_FLAGS       (PIO_PERIPH_A | PIO_DEFAULT)
-
-/*! SPI0 chip select 0 pin definition. (Only one configuration is possible) */
-#define SPI0_NPCS0_GPIO            (PIO_PA28_IDX)
-#define SPI0_NPCS0_FLAGS           (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI0 chip select 1 pin definition. (multiple configurations are possible) */
-#define SPI0_NPCS1_PA29_GPIO       (PIO_PA29_IDX)
-#define SPI0_NPCS1_PA29_FLAGS      (PIO_PERIPH_A | PIO_DEFAULT)
-#define SPI0_NPCS1_PB20_GPIO       (PIO_PB20_IDX)
-#define SPI0_NPCS1_PB20_FLAGS      (PIO_PERIPH_B | PIO_DEFAULT)
-/*! SPI0 chip select 2 pin definition. (multiple configurations are possible) */
-#define SPI0_NPCS2_PA30_GPIO       (PIO_PA30_IDX)
-#define SPI0_NPCS2_PA30_FLAGS      (PIO_PERIPH_A | PIO_DEFAULT)
-#define SPI0_NPCS2_PB21_GPIO       (PIO_PB21_IDX)
-#define SPI0_NPCS2_PB21_FLAGS      (PIO_PERIPH_B | PIO_DEFAULT)
-/*! SPI0 chip select 3 pin definition. (multiple configurations are possible) */
-#define SPI0_NPCS3_PA31_GPIO       (PIO_PA31_IDX)
-#define SPI0_NPCS3_PA31_FLAGS      (PIO_PERIPH_A | PIO_DEFAULT)
-#define SPI0_NPCS3_PB23_GPIO       (PIO_PB23_IDX)
-#define SPI0_NPCS3_PB23_FLAGS      (PIO_PERIPH_B | PIO_DEFAULT)
-
-/*! SPI1 MISO pin definition. */
-#define SPI1_MISO_GPIO             (PIO_PE28_IDX)
-#define SPI1_MISO_FLAGS            (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 MOSI pin definition. */
-#define SPI1_MOSI_GPIO             (PIO_PE29_IDX)
-#define SPI1_MOSI_FLAGS            (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 SPCK pin definition. */
-#define SPI1_SPCK_GPIO             (PIO_PE30_IDX)
-#define SPI1_SPCK_FLAGS            (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 chip select 0 pin definition. (Only one configuration is possible) */
-#define SPI1_NPCS0_GPIO            (PIO_PE31_IDX)
-#define SPI1_NPCS0_FLAGS           (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 chip select 1 pin definition. (Only one configuration is possible) */
-#define SPI1_NPCS1_GPIO            (PIO_PF0_IDX)
-#define SPI1_NPCS1_FLAGS           (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 chip select 2 pin definition. (Only one configuration is possible) */
-#define SPI1_NPCS2_GPIO            (PIO_PF1_IDX)
-#define SPI1_NPCS2_FLAGS           (PIO_PERIPH_A | PIO_DEFAULT)
-/*! SPI1 chip select 3 pin definition. (Only one configuration is possible) */
-#define SPI1_NPCS3_GPIO            (PIO_PF2_IDX)
-#define SPI1_NPCS3_FLAGS           (PIO_PERIPH_A | PIO_DEFAULT)
-
-/**
- * \file
- * SSC
- * - \ref PIN_SSC_TD
- * - \ref PIN_SSC_TK
- * - \ref PIN_SSC_TF
- * - \ref PIN_SSC_RD
- * - \ref PIN_SSC_RK
- * - \ref PIN_SSC_RF
- *
- */
-/* ------------------------------------------------------------------------ */
-/* SSC                                                                      */
-/* ------------------------------------------------------------------------ */
-/** SSC pin Transmitter Data (TD) */
-#define PIN_SSC_TD        (PIO_PA16_IDX)
-#define PIN_SSC_TD_FLAGS  (PIO_PERIPH_B | PIO_DEFAULT)
-/** SSC pin Transmitter Clock (TK) */
-#define PIN_SSC_TK        (PIO_PA14_IDX)
-#define PIN_SSC_TK_FLAGS  (PIO_PERIPH_B | PIO_DEFAULT)
-/** SSC pin Transmitter FrameSync (TF) */
-#define PIN_SSC_TF        (PIO_PA15_IDX)
-#define PIN_SSC_TF_FLAGS  (PIO_PERIPH_B | PIO_DEFAULT)
-/** SSC pin Receiver Data (RD) */
-#define PIN_SSC_RD        (PIO_PB18_IDX)
-#define PIN_SSC_RD_FLAGS  (PIO_PERIPH_A | PIO_DEFAULT)
-/** SSC pin Receiver Clock (RK) */
-#define PIN_SSC_RK        (PIO_PB19_IDX)
-#define PIN_SSC_RK_FLAGS  (PIO_PERIPH_A | PIO_DEFAULT)
-/** SSC pin Receiver FrameSync (RF) */
-#define PIN_SSC_RF        (PIO_PB17_IDX)
-#define PIN_SSC_RF_FLAGS  (PIO_PERIPH_A | PIO_DEFAULT)
-
-/**
- * \file
- * PCK0
- * - \ref PIN_PCK0
- *
- */
-
-/* ------------------------------------------------------------------------ */
-/* PCK                                                                      */
-/* ------------------------------------------------------------------------ */
-/*! PCK0 */
-#define PIN_PCK0        (PIO_PA1_IDX)
-#define PIN_PCK0_MUX    (IOPORT_MODE_MUX_B)
-#define PIN_PCK0_FLAGS  (PIO_PERIPH_B | PIO_DEFAULT)
-
-#define PIN_PCK_0_MASK  PIO_PA1
-#define PIN_PCK_0_PIO   PIOA
-#define PIN_PCK_0_ID    ID_PIOA
-#define PIN_PCK_0_TYPE  PIO_PERIPH_B
-#define PIN_PCK_0_ATTR  PIO_DEFAULT
 /**
  * \file
  * UART
@@ -583,215 +471,78 @@
 #define USB_VBOF_FLAGS              (PIO_PERIPH_A | PIO_DEFAULT)
 /*! Active level of the USB_VBOF output pin. */
 #define USB_VBOF_ACTIVE_LEVEL       LOW
-/* ------------------------------------------------------------------------ */
-/**
- * \file
- * TWI
- */
-/* ------------------------------------------------------------------------ */
-/* TWI                                                                      */
-/* ------------------------------------------------------------------------ */
-/*! TWI0 pins definition */
-#define TWI0_DATA_GPIO   PIO_PA17_IDX
-#define TWI0_DATA_FLAGS  (PIO_PERIPH_A | PIO_DEFAULT)
-#define TWI0_CLK_GPIO    PIO_PA18_IDX
-#define TWI0_CLK_FLAGS   (PIO_PERIPH_A | PIO_DEFAULT)
-
-/*! TWI1 pins definition */
-#define TWI1_DATA_GPIO   PIO_PB12_IDX
-#define TWI1_DATA_FLAGS  (PIO_PERIPH_A | PIO_DEFAULT)
-#define TWI1_CLK_GPIO    PIO_PB13_IDX
-#define TWI1_CLK_FLAGS   (PIO_PERIPH_A | PIO_DEFAULT)
-
-/* ------------------------------------------------------------------------ */
-/**
- * \file
- * NMA7341
- * - \NMA7341L_CHANNEL
- * - \PIN_NMA7341L
- */
 
 
 /* ------------------------------------------------------------------------ */
-/**
- * \file
- * TouchScreen
- *
- * - \ref PIN_TSC_IRQ
- * - \ref PIN_TSC_BUSY
- * - \ref BOARD_TSC_SPI_BASE
- * - \ref BOARD_TSC_SPI_ID
- * - \ref BOARD_TSC_SPI_PINS
- * - \ref BOARD_TSC_NPCS
- * - \ref BOARD_TSC_NPCS_PIN
- *
- */
-
+/* GPIO MAPPING                                                             */
 /* ------------------------------------------------------------------------ */
-/* Touchscreen                                                              */
-/* ------------------------------------------------------------------------ */
-/*! Touchscreen controller IRQ pin definition. */
-#define PIN_TSC_IRQ  {PIO_PA31, PIOA, ID_PIOA, PIO_INPUT, PIO_PULLUP}
-/*! Touchscreen controller Busy pin definition. */
-#define PIN_TSC_BUSY {PIO_PA30, PIOA, ID_PIOA, PIO_INPUT, PIO_PULLUP}
 
-/*! Chip select pin connected to the touchscreen controller. */
-/* We use PIO mode for chip select to meet ADS7843's timing specification */
-#define BOARD_TSC_NPCS_PIN\
-	{PIO_PA28A_SPI0_NPCS0, PIOA, ID_PIOA, PIO_OUTPUT_1, PIO_PULLUP}
+#define PHYCMD_DIGITAL_OUTPUT_0				(PIO_PA14_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_0_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_1				(PIO_PD0_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_1_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_2				(PIO_PD2_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_2_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_3				(PIO_PD6_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_3_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_4				(PIO_PA7_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_4_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_5				(PIO_PC1_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_5_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_6				(PIO_PC3_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_6_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_7				(PIO_PC5_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_7_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
 
-/**
- * \file
- * EMAC
- * - BOARD_EMAC_PHY_ADDR: Phy MAC address
- * - BOARD_EMAC_MODE_RMII: Enable RMII connection with the PHY
- */
-/*! EMAC pins */
-#define PIN_EEMAC_EREFCK      PIO_PB0_IDX
-#define PIN_EMAC_ETXEN        PIO_PB1_IDX
-#define PIN_EMAC_ETX0         PIO_PB2_IDX
-#define PIN_EMAC_ETX1         PIO_PB3_IDX
-#define PIN_EMAC_ECRSDV       PIO_PB4_IDX
-#define PIN_EMAC_ERX0         PIO_PB5_IDX
-#define PIN_EMAC_ERX1         PIO_PB6_IDX
-#define PIN_EMAC_ERXER        PIO_PB7_IDX
-#define PIN_EMAC_EMDC         PIO_PB8_IDX
-#define PIN_EMAC_EMDIO        PIO_PB9_IDX
-#define PIN_EMAC_FLAGS        PIO_PERIPH_A | PIO_DEFAULT
+#define PHYCMD_DIGITAL_OUTPUT_8				(PIO_PC7_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_8_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_9				(PIO_PC9_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_9_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_10			(PIO_PA20_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_10_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_11			(PIO_PC18_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_11_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_12			(PIO_PC16_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_12_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_13			(PIO_PC14_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_13_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_14			(PIO_PC12_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_14_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
+#define PHYCMD_DIGITAL_OUTPUT_15			(PIO_PB14_IDX)
+#define PHYCMD_DIGITAL_OUTPUT_15_FLAGS		(PIO_TYPE_PIO_OUTPUT_1 | PIO_DEFAULT)
 
-/*! EMAC PHY address */
-#define BOARD_EMAC_PHY_ADDR  0
-/*! EMAC RMII mode */
-#define BOARD_EMAC_MODE_RMII 1
 
-/* ------------------------------------------------------------------------ */
-/* NAND FLASH                                                               */
-/* ------------------------------------------------------------------------ */
-/* Chip select number for nand */
-#define BOARD_NAND_CS      0
-
-/*! Address for transferring command bytes to the nandflash. */
-#define BOARD_NF_COMMAND_ADDR   0x60400000
-/*! Address for transferring address bytes to the nandflash. */
-#define BOARD_NF_ADDRESS_ADDR   0x60200000
-/*! Address for transferring data bytes to the nandflash. */
-#define BOARD_NF_DATA_ADDR      0x60000000
-/* Bus width for NAND */
-#define CONF_NF_BUSWIDTH    8
-/* SMC NFC using five address cycle */
-#define CONF_NF_NEED_FIVE_ADDRESS_CYCLES  1
-/* Access timing for NAND */
-#define CONF_NF_SETUP_TIMING (SMC_SETUP_NWE_SETUP(0) \
-		| SMC_SETUP_NCS_WR_SETUP(0) \
-		| SMC_SETUP_NRD_SETUP(0) \
-		| SMC_SETUP_NCS_RD_SETUP(0))
-#define CONF_NF_PULSE_TIMING (SMC_PULSE_NWE_PULSE(2) \
-		| SMC_PULSE_NCS_WR_PULSE(3) \
-		| SMC_PULSE_NRD_PULSE(2) \
-		| SMC_PULSE_NCS_RD_PULSE(3))
-#define CONF_NF_CYCLE_TIMING (SMC_CYCLE_NWE_CYCLE(3) \
-		| SMC_CYCLE_NRD_CYCLE(3))
-#define CONF_NF_TIMING (SMC_TIMINGS_TCLR(1) \
-		| SMC_TIMINGS_TADL(6) \
-		| SMC_TIMINGS_TAR(4) \
-		| SMC_TIMINGS_TRR(2) \
-		| SMC_TIMINGS_TWB(9) \
-		| SMC_TIMINGS_RBNSEL(7) \
-		| (SMC_TIMINGS_NFSEL))
-/* Support DMA */
-#define CONF_NF_USE_DMA
-#ifdef CONF_NF_USE_DMA
-/* DMA channel used for NF */
-#define CONF_NF_DMA_CHANNEL    0
-#endif
-
-/* ------------------------------------------------------------------------ */
-/* SDRAM                                                                    */
-/* ------------------------------------------------------------------------ */
-/*!  Board SDRAM size for MT48LC16M16A2 */
-#define BOARD_SDRAM_SIZE        (32 * 1024 * 1024)  /* 32 MB */
-
-/*!  List of all SDRAM pins definitions */
-#define PIO_SDRAM_SDCKE   PIO_PD13
-#define PIO_SDRAM_SDCS    PIO_PD12
-#define PIO_SDRAM_RAS     PIO_PD15
-#define PIO_SDRAM_CAS     PIO_PD16
-#define PIO_SDRAM_BA0     PIO_PD6
-#define PIO_SDRAM_BA1     PIO_PD7
-#define PIO_SDRAM_SDWE    PIO_PD14
-//#define PIO_SDRAM_NBS0    PIO_PC21
-#define PIO_SDRAM_NBS1    PIO_PD10
-#define PIO_SDRAM_DATA    (0xffff << 2)    /*PIO_PC2--PIO_PC17 */
-//#define PIO_SDRAM_SDA0_A7 (0xff << 23)    /*PIO_PC23--PIO_PC30 */
-#define PIO_SDRAM_SDA8    PIO_PD22
-#define PIO_SDRAM_SDA9    PIO_PD23
-#define PIO_SDRAM_SDA11   PIO_PD25
-#define PIO_SDRAM_SDA12   PIO_PD4
-#define PIO_SDRAM_SDA10   PIO_PD11
-
-/*!  List of all SDRAM pins definitions */
-#define PINS_SDRAM_PIOC\
-	{ PIO_SDRAM_DATA | PIO_SDRAM_NBS0 | PIO_SDRAM_SDA0_A7,\
-	PIOC, ID_PIOC, PIO_PERIPH_A, PIO_PULLUP }
-
-#define PINS_SDRAM_PIOD\
-	{ PIO_SDRAM_SDCKE | PIO_SDRAM_SDCS |\
-	PIO_SDRAM_RAS | PIO_SDRAM_CAS |\
-	PIO_SDRAM_BA0 | PIO_SDRAM_BA1 |\
-	PIO_SDRAM_SDWE | PIO_SDRAM_NBS1 |\
-	PIO_SDRAM_SDA10 |\
-	PIO_SDRAM_SDA8 | PIO_SDRAM_SDA9 |\
-	PIO_SDRAM_SDA11 | PIO_SDRAM_SDA12,\
-	PIOD, ID_PIOD, PIO_PERIPH_A, PIO_PULLUP }
-
-/* PIO18 is used as SDRAM Enable on EK-REVB board */
-#define PINS_SDRAM_EN\
-	{ (1 << 18), PIOD, ID_PIOD, PIO_OUTPUT_1, PIO_DEFAULT }
-
-#define PINS_SDRAM        PINS_SDRAM_PIOC, PINS_SDRAM_PIOD, PINS_SDRAM_EN
-
-/*!  SDRAM bus width */
-#define BOARD_SDRAM_BUSWIDTH    16
-
-/* SDRAMC clock speed */
-#define SDRAMC_CLK (BOARD_MCK)
-
-/**
- * \file
- * \section NorFlash
- * - \ref BOARD_NORFLASH_ADDR
- *
- */
-
-/* ------------------------------------------------------------------------ */
-/* NOR FLASH                                                                */
-/* ------------------------------------------------------------------------ */
-/*! Address for transferring command bytes to the norflash. */
-#define BOARD_NORFLASH_ADDR     0x60000000
-
-/*! TWI ID for EEPROM application to use */
-#define BOARD_ID_TWI_EEPROM         ID_TWI0
-/*! TWI Base for TWI EEPROM application to use */
-#define BOARD_BASE_TWI_EEPROM       TWI0
-
-/*! USART RX pin for application */
-#define BOARD_PIN_USART_RXD        PIN_USART0_RXD
-/*! USART TX pin for application */
-#define BOARD_PIN_USART_TXD        PIN_USART0_TXD
-/*! USART Base for application */
-#define BOARD_USART_BASE           USART0
-/*! USART ID for application */
-#define BOARD_ID_USART             ID_USART0
-/*! USART1 Base for application */
-#define BOARD_USART1_BASE          USART1
-/*! USART1 ID for application */
-#define BOARD_ID_USART1            ID_USART1
-/*! USART3 Base for application */
-#define BOARD_USART3_BASE          USART3
-/*! USART3 ID for application */
-#define BOARD_ID_USART3            ID_USART3
-
-#define CONSOLE_UART               UART
-#define CONSOLE_UART_ID            ID_UART
-
+#define PHYCMD_DIGITAL_INPUT_0				(PIO_PB26_IDX)
+#define PHYCMD_DIGITAL_INPUT_0_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_1				(PIO_PA15_IDX)
+#define PHYCMD_DIGITAL_INPUT_1_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_2				(PIO_PD1_IDX)
+#define PHYCMD_DIGITAL_INPUT_2_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_3				(PIO_PD3_IDX)
+#define PHYCMD_DIGITAL_INPUT_3_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_4				(PIO_PD9_IDX)
+#define PHYCMD_DIGITAL_INPUT_4_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_5				(PIO_PD10_IDX)
+#define PHYCMD_DIGITAL_INPUT_5_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_6				(PIO_PC2_IDX)
+#define PHYCMD_DIGITAL_INPUT_6_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_7				(PIO_PC4_IDX)
+#define PHYCMD_DIGITAL_INPUT_7_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_8				(PIO_PC6_IDX)
+#define PHYCMD_DIGITAL_INPUT_8_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_9				(PIO_PC8_IDX)
+#define PHYCMD_DIGITAL_INPUT_9_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_10				(PIO_PA19_IDX)
+#define PHYCMD_DIGITAL_INPUT_10_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_11				(PIO_PC19_IDX)
+#define PHYCMD_DIGITAL_INPUT_11_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_12				(PIO_PC17_IDX)
+#define PHYCMD_DIGITAL_INPUT_12_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_13				(PIO_PC15_IDX)
+#define PHYCMD_DIGITAL_INPUT_13_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_14				(PIO_PC13_IDX)
+#define PHYCMD_DIGITAL_INPUT_14_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+#define PHYCMD_DIGITAL_INPUT_15				(PIO_PC21_IDX)
+#define PHYCMD_DIGITAL_INPUT_15_FLAGS		(PIO_INPUT | PIO_PULLUP | PIO_DEBOUNCE | PIO_IT_RISE_EDGE)
+	
 #endif /* ARDUINO_DUE_X_H_INCLUDED */

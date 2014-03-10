@@ -46,6 +46,7 @@
 
 #include "compiler.h"
 
+#include <usb_protocol_cdc.h>
 #warning You must refill the following definitions with a correct values
 
 /**
@@ -68,19 +69,8 @@
 //! USB Device string definitions (Optional)
 #define  USB_DEVICE_MANUFACTURE_NAME      "Ephemeralbit"
 #define  USB_DEVICE_PRODUCT_NAME          "PhysicalCommander"
-#define  USB_DEVICE_SERIAL_NAME           "000000"
-
-
-/**
- * Device speeds support
- * Low speed not supported by CDC
- * @{
- */
-//! To authorize the High speed
-#if (UC3A3||UC3A4)
+#define  USB_DEVICE_SERIAL_NAME           "EB000001"
 #define  USB_DEVICE_HS_SUPPORT
-#endif
-//@}
 
 
 /**
@@ -121,36 +111,39 @@
 #define  UDI_CDC_PORT_NB 1
 
 //! Interface callback definition
-#define  UDI_CDC_ENABLE_EXT(port)          true
-#define  UDI_CDC_DISABLE_EXT(port)
-#define  UDI_CDC_RX_NOTIFY(port)
-#define  UDI_CDC_TX_EMPTY_NOTIFY(port)
-#define  UDI_CDC_SET_CODING_EXT(port,cfg)
-#define  UDI_CDC_SET_DTR_EXT(port,set)
-#define  UDI_CDC_SET_RTS_EXT(port,set)
-/*
- * #define UDI_CDC_ENABLE_EXT(port) my_callback_cdc_enable()
- * extern bool my_callback_cdc_enable(void);
- * #define UDI_CDC_DISABLE_EXT(port) my_callback_cdc_disable()
- * extern void my_callback_cdc_disable(void);
- * #define  UDI_CDC_RX_NOTIFY(port) my_callback_rx_notify(port)
- * extern void my_callback_rx_notify(uint8_t port);
- * #define  UDI_CDC_TX_EMPTY_NOTIFY(port) my_callback_tx_empty_notify(port)
- * extern void my_callback_tx_empty_notify(uint8_t port);
- * #define  UDI_CDC_SET_CODING_EXT(port,cfg) my_callback_config(port,cfg)
- * extern void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg); 
- * #define  UDI_CDC_SET_DTR_EXT(port,set) my_callback_cdc_set_dtr(port,set)
- * extern void my_callback_cdc_set_dtr(uint8_t port, bool b_enable);
- * #define  UDI_CDC_SET_RTS_EXT(port,set) my_callback_cdc_set_rts(port,set)
- * extern void my_callback_cdc_set_rts(uint8_t port, bool b_enable); 
- */
+//#define  UDI_CDC_ENABLE_EXT(port)          true
+//#define  UDI_CDC_DISABLE_EXT(port)
+//#define  UDI_CDC_RX_NOTIFY(port)
+//#define  UDI_CDC_SET_CODING_EXT(port,cfg)
+//#define  UDI_CDC_TX_EMPTY_NOTIFY(port)
+//#define  UDI_CDC_SET_DTR_EXT(port,set)
+//#define  UDI_CDC_SET_RTS_EXT(port,set)
+
+#define UDI_CDC_ENABLE_EXT(port) main_callback_cdc_enable()
+extern bool main_callback_cdc_enable(void);
+#define UDI_CDC_DISABLE_EXT(port) main_callback_cdc_disable()
+extern void main_callback_cdc_disable(void);
+
+#define  UDI_CDC_RX_NOTIFY(port) my_callback_rx_notify(port)
+extern void my_callback_rx_notify(uint8_t port);
+#define  UDI_CDC_TX_EMPTY_NOTIFY(port) my_callback_tx_empty_notify(port)
+extern void my_callback_tx_empty_notify(uint8_t port);
+
+#define  UDI_CDC_SET_CODING_EXT(port,cfg) my_callback_config(port,cfg)
+extern void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg); 
+
+#define  UDI_CDC_SET_DTR_EXT(port,set) my_callback_cdc_set_dtr(port,set)
+extern void my_callback_cdc_set_dtr(uint8_t port, bool b_enable);
+#define  UDI_CDC_SET_RTS_EXT(port,set) my_callback_cdc_set_rts(port,set)
+extern void my_callback_cdc_set_rts(uint8_t port, bool b_enable);
+
 
 //! Define it when the transfer CDC Device to Host is a low rate (<512000 bauds)
 //! to reduce CDC buffers size
-#define  UDI_CDC_LOW_RATE
+//#define  UDI_CDC_LOW_RATE
 
 //! Default configuration of communication port
-#define  UDI_CDC_DEFAULT_RATE             115200
+#define  UDI_CDC_DEFAULT_RATE             512000
 #define  UDI_CDC_DEFAULT_STOPBITS         CDC_STOP_BITS_1
 #define  UDI_CDC_DEFAULT_PARITY           CDC_PAR_NONE
 #define  UDI_CDC_DEFAULT_DATABITS         8

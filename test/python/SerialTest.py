@@ -5,7 +5,8 @@ import sys
 import random
 
 ser = serial.Serial(
-	port='/dev/ttyACM0', #/dev/tty.usbmodemEB000001',
+	port='/dev/tty.usbmodemEB000001',
+#	port='/dev/ttyACM0',
 #	baudrate=5990400,
 	parity=serial.PARITY_NONE,
 	stopbits=serial.STOPBITS_ONE,
@@ -36,7 +37,15 @@ tot = 0
 import time
 num_of_pkts = 1024 * 32 
 for i in range(0, num_of_pkts):
-	string = "".join([ chr(random.randint(48,57)) for j in range(0,pkt_size)])
+	vector = [ chr(random.randint(48,57)) for j in range(0,pkt_size)]
+	if i % 2 == 0:
+		vector[2] = chr(0x0F)
+		vector[3] = chr(0xF0)
+	else:
+		vector[2] = chr(0xF0)
+		vector[3] = chr(0x0F)
+
+	string = "".join(vector)
 	before = time.time() #time.clock()
 	ser.write(string)
 	read_string = ser.read(pkt_size)

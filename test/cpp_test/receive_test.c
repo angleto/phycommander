@@ -12,20 +12,25 @@
 #include <unistd.h>
 
 // One of these must be defined, usually via the Makefile
-//#define MACOSX
-//#define LINUX
-#if defined(MACOSX) || defined(LINUX)
+#if defined(__APPLE__) && defined(__MACH__)
+#define MACOSX
+#else
+#define LINUX
+#endif
+
+#if defined(MACOSX)
+#include <termios.h>
+#include <sys/select.h>
+#define BAUD 460800
+#endif
+
+#if defined(LINUX)
+#include <sys/ioctl.h>
+#include <linux/serial.h>
 #include <termios.h>
 #include <sys/select.h>
 #define BAUD B460800
 #endif
-#if defined(LINUX)
-#include <sys/ioctl.h>
-#include <linux/serial.h>
-#else
-#error "You must define the operating system\n"
-#endif
-
 
 // function prototypes
 int open_port_and_set_baud_or_die(const char *name, long baud);
@@ -42,11 +47,11 @@ std::string getHexString(unsigned char const * const pBuffer, const size_t pLeng
 {
 	static const char* const lHexLut = "0123456789ABCDEF";
 	std::string lString ;
-        for ( size_t i = 0 ; i < pLength ; i ++ ) {
+	for ( size_t i = 0 ; i < pLength ; i ++ ) {
 		const unsigned char lChar = pBuffer[i] ;
 		lString.push_back(lHexLut[lChar >> 4]);
 		lString.push_back(lHexLut[lChar & 15]);
-        }
+	}
 	return lString ;
 }
 
@@ -64,17 +69,25 @@ int main(int argc, char **argv)
 		printf("port %s opened\n", argv[1]);
 	} else {
 		if (sscanf(argv[1], "%d", &size) != 1 ||
-		  size < 1 || size > sizeof(out_buffer)) {
+				size < 1 || size > sizeof(out_buffer)) {
 			die("Usage: receive_test <blocksize> <comport>\n");
 		}
 		port = open_port_and_set_baud_or_die(argv[2], BAUD);
 		std::cout << "port opened: " << argv[2] << std::endl ;
 	}
 
-	size_t packet_n = 1024 ;
+	size_t packet_n = 1024 * 1024 ;
 	for (size_t count = 0; count < packet_n ; count++) {
 		for (i=0; i < size; i++) {
 			out_buffer[i] = rand();
+		}
+		if(count % 2 == 0)
+		{
+		out_buffer[2] = 0x0F ;
+		out_buffer[3] = 0xF0 ;
+		} else {
+		out_buffer[2] = 0xF0 ;
+		out_buffer[3] = 0x0F ;
 		}
 		gettimeofday(&begin, NULL);
 		n_in = write_bytes(port, out_buffer, size);
@@ -98,7 +111,7 @@ int main(int argc, char **argv)
 		}
 	}
 	close_port(port);
-	printf("Packets per second = %u - %.12g\n", packet_n, packet_n/elapsed);
+	printf("Packets per second = Packets(%u) Elapsed(%.12g) Packet/Elapsed(%.12g)\n", packet_n, sum, packet_n/sum);
 	return 0;
 }
 
@@ -137,46 +150,6 @@ int open_port_and_set_baud_or_die(const char *name, long baud)
 		r = ioctl(fd, TIOCSSERIAL, &kernel_serial_settings);
 		if (r >= 0) printf("set linux low latency mode\n");
 	}
-#elif defined(WINDOWS)
-	COMMCONFIG cfg;
-	COMMTIMEOUTS timeout;
-	DWORD n;
-	char portname[256];
-	int num;
-	if (sscanf(name, "COM%d", &num) == 1) {
-		sprintf(portname, "\\\\.\\COM%d", num); // Microsoft KB115831
-	} else {
-		strncpy(portname, name, sizeof(portname)-1);
-		portname[n-1] = 0;
-	}
-	fd = CreateFile(portname, GENERIC_READ | GENERIC_WRITE,
-		0, 0, OPEN_EXISTING, 0, NULL);
-	if (fd == INVALID_HANDLE_VALUE) die("unable to open port %s\n", name);
-	GetCommConfig(fd, &cfg, &n);
-	//cfg.dcb.BaudRate = baud;
-	cfg.dcb.BaudRate = 115200;
-	cfg.dcb.fBinary = TRUE;
-	cfg.dcb.fParity = FALSE;
-	cfg.dcb.fOutxCtsFlow = FALSE;
-	cfg.dcb.fOutxDsrFlow = FALSE;
-	cfg.dcb.fOutX = FALSE;
-	cfg.dcb.fInX = FALSE;
-	cfg.dcb.fErrorChar = FALSE;
-	cfg.dcb.fNull = FALSE;
-	cfg.dcb.fRtsControl = RTS_CONTROL_ENABLE;
-	cfg.dcb.fAbortOnError = FALSE;
-	cfg.dcb.ByteSize = 8;
-	cfg.dcb.Parity = NOPARITY;
-	cfg.dcb.StopBits = ONESTOPBIT;
-	cfg.dcb.fDtrControl = DTR_CONTROL_ENABLE;
-	SetCommConfig(fd, &cfg, n);
-	GetCommTimeouts(fd, &timeout);
-	timeout.ReadIntervalTimeout = 0;
-	timeout.ReadTotalTimeoutMultiplier = 0;
-	timeout.ReadTotalTimeoutConstant = 1000;
-	timeout.WriteTotalTimeoutConstant = 0;
-	timeout.WriteTotalTimeoutMultiplier = 0;
-	SetCommTimeouts(fd, &timeout);
 #endif
 	return fd;
 

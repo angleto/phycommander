@@ -27,20 +27,16 @@
 #include <asf.h>
 #include <string.h>
 
-
-#define MSG_SIZE 256
+#define MSG_SIZE 64
 static const iram_size_t sSize = MSG_SIZE ;
-static unsigned char sIn[MSG_SIZE] ;
-static unsigned char sOut[MSG_SIZE] ;
-
-
-static bool my_flag_autorize_cdc_transfert = false;
+static uint8_t sIn[MSG_SIZE] ;
+static uint8_t sOut[MSG_SIZE] ;
 
 bool main_callback_cdc_enable(void)
 {
 //	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_14) ;
 
-	my_flag_autorize_cdc_transfert = true;
+	//my_flag_autorize_cdc_transfert = true;
 	return true;
 }
 
@@ -48,7 +44,7 @@ void main_callback_cdc_disable(void)
 {
 //	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_14) ;
 
-	my_flag_autorize_cdc_transfert = false;
+	//my_flag_autorize_cdc_transfert = false;
 }
 
 void my_callback_rx_notify(uint8_t port)
@@ -276,16 +272,122 @@ void getDigOutValue(uint16_t * const pValue)
 	*pValue = lValue ;
 }
 
+uint16_t adc_values[8] ;
+
+/*
+void ADC_IrqHandler(void)
+{
+    // Check the ADC conversion status
+    if ((adc_get_status(ADC) & ADC_ISR_DRDY) == ADC_ISR_DRDY)
+    {
+    // Get latest digital data value from ADC and can be used by application
+        adc_values[0] = adc_get_latest_value(ADC_CHANNEL_7);
+        adc_values[1] = adc_get_latest_value(ADC_CHANNEL_6);
+        adc_values[2] = adc_get_latest_value(ADC_CHANNEL_5);		
+        adc_values[3] = adc_get_latest_value(ADC_CHANNEL_4);
+        adc_values[4] = adc_get_latest_value(ADC_CHANNEL_3);
+        adc_values[5] = adc_get_latest_value(ADC_CHANNEL_2);
+        adc_values[6] = adc_get_latest_value(ADC_CHANNEL_1);								
+        adc_values[7] = adc_get_latest_value(ADC_CHANNEL_0);		
+    }
+}
+*/
+
+volatile int bufn,obufn;
+uint16_t buf[32][8];   // 4 buffers of 8 readings
+
+void ADC_Handler(){     // move DMA pointers to next buffer
+	int f=ADC->ADC_ISR;
+	if (f&(1<<27)){
+		bufn=(bufn+1)&3;
+		ADC->ADC_RNPR=(uint32_t)buf[bufn];
+		ADC->ADC_RNCR=8;
+	}
+}
+
+void adc_setup(void)
+{
+	pmc_enable_periph_clk(ID_ADC);
+	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_FAST);
+
+    adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
+
+    adc_enable_channel(ADC, ADC_CHANNEL_0);
+    adc_enable_channel(ADC, ADC_CHANNEL_1);
+    adc_enable_channel(ADC, ADC_CHANNEL_2);
+    adc_enable_channel(ADC, ADC_CHANNEL_3);
+    adc_enable_channel(ADC, ADC_CHANNEL_4);
+    adc_enable_channel(ADC, ADC_CHANNEL_5);
+    adc_enable_channel(ADC, ADC_CHANNEL_6);
+    adc_enable_channel(ADC, ADC_CHANNEL_7);
+	
+	ADC->ADC_MR |=0x80; // free running  
+	ADC->ADC_CHER=0x80;
+  
+	ADC->ADC_IDR=~(1<<27);
+	ADC->ADC_IER=1<<27;
+	ADC->ADC_RPR=(uint32_t)buf[0];   // DMA buffer
+	ADC->ADC_RCR=8;
+	ADC->ADC_RNPR=(uint32_t)buf[1]; // next DMA buffer
+	ADC->ADC_RNCR=8;
+	bufn=obufn=1;
+	ADC->ADC_PTCR=1;
+	ADC->ADC_CR=2;	
+
+	NVIC_EnableIRQ(ADC_IRQn);	
+}
+
+uint16_t dacBuffer[2];
+/*
+void DACC_Handler() {
+	unsigned long status =  DACC->DACC_ISR;
+	if(status & DACC_ISR_ENDTX) {
+		  DACC->DACC_TNCR = 2;  // set the next buffer counter.
+	}
+}
+*/
+
+void dac_setup()
+{
+	pmc_enable_periph_clk(ID_DACC);	
+	dacc_reset(DACC);                 // Reset DACC registers
+	dacc_set_writeprotect(DACC, 0);
+//	dacc_set_transfer_mode(DACC, 1);  // Full word transfer mode.
+//	dacc_set_channel_selection(DACC, 0);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
+//	dacc_set_channel_selection(DACC, 1);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
+	dacc_enable_flexible_selection(DACC);
+	DACC->DACC_CHER = 3;  // enable channel 1. for channel 0 use 1
+
+
+	dacc_set_timing(DACC, 0x08, 1, DACC_MR_STARTUP_0); // refresh - 0x08 (1024*8 dacc clocks), max speed mode - 0 (disabled), startup time   - 0x10 (1024 dacc clocks)
+	dacc_set_analog_control(DACC, DACC_ACR_IBCTLCH0(0x02)|DACC_ACR_IBCTLCH1(0x02)|DACC_ACR_IBCTLDACCORE(0x01));  // Setting currents, I don't know much about it! any comment or helps is appereciated.
+/*
+	DACC->DACC_MR |= ~(DACC_MR_TRGEN);       // We want to use trigger.
+	DACC->DACC_IDR = ~(DACC_IDR_ENDTX);   // Disabling Interrupts.
+	DACC->DACC_IER = DACC_IER_ENDTX;      // Enabling Interrupts.
+	DACC->DACC_PTCR = DACC_PTCR_TXTEN | DACC_PTCR_RXTDIS;
+
+
+	DACC->DACC_TPR  = (unsigned long) dacBuffer ;  // DMA buffer
+	DACC->DACC_TCR  = (unsigned int)  2 ; // DMA buffer counter
+	DACC->DACC_TNPR = (unsigned long) 0 ; 
+	DACC->DACC_TNCR = (unsigned int)  0 ; // next DMA buffer counter
+	
+	NVIC_EnableIRQ(DACC_IRQn);
+*/
+}
+
 int main (void)
 {
-	irq_initialize_vectors();
-	cpu_irq_enable();     
-	
 	sysclk_init();
-
+	irq_initialize_vectors();
+	cpu_irq_enable();
 	board_init();
 
 	udc_start();
+	
+	adc_setup();
+	dac_setup();
 
 	initDigInPorts(&sDigInPorts) ;
 	initDigOutPorts(&sDigOutPorts);
@@ -295,44 +397,70 @@ int main (void)
 	while (true)
 	{
 //		gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_0) ;
-		//delay_us(1);
+//		delay_us(1);
 //		if (my_flag_autorize_cdc_transfert)
 //		{
 //			delay_us(10);
-
-//			if(udi_cdc_get_nb_received_data() >= sSize)
-//			{
+			if(udi_cdc_get_nb_received_data() == sSize)
+			{
+			//if(udi_cdc_read_buf(&sIn, sSize))
+			//{				
 //				gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_1) ;
-
+///				sDigOutPorts[1]->PIO_SODR = 1 << (PHYCMD_DIGITAL_OUTPUT_1 & 0x1F);
 				udi_cdc_read_buf(&sIn, sSize) ;
+///				sDigOutPorts[1]->PIO_CODR = 1 << (PHYCMD_DIGITAL_OUTPUT_1 & 0x1F);
 //				{
-
+///				sDigOutPorts[2]->PIO_SODR = 1 << (PHYCMD_DIGITAL_OUTPUT_2 & 0x1F);
+//				for(size_t i = 0 ; i < sSize ; i++)
+//				{
+//					sOut[i] = sIn[i] ;
+//				}
 				memcpy(sOut,sIn,sSize);
 
 				//execute commands				
 				uint16_t lDigitalOut ;
-				((uint8_t*)(&lDigitalOut))[0] = ((uint8_t*)(&sIn))[2] ;
-				((uint8_t*)(&lDigitalOut))[1] = ((uint8_t*)(&sIn))[3] ;
+				((uint8_t*)(&lDigitalOut))[0] = ((uint8_t*)(&sIn))[2];				
+				((uint8_t*)(&lDigitalOut))[1] = ((uint8_t*)(&sIn))[3];
 				setDigOutValue(lDigitalOut) ;
 
-				//set output values								
+				//0000 0000 0000 0000
+				if(sIn[20] % 2 == 0)
+				{
+					dacc_write_conversion_data(DACC, 4095 | 0x0000) ;
+					dacc_write_conversion_data(DACC, 0 | 0x1000 ) ;
+					dacBuffer[0] = 4095 ; //((uint16_t*)(&sIn))[4] ;
+					dacBuffer[1] = 0 ; //((uint16_t*)(&sIn))[6] ;					
+				} else {
+					dacc_write_conversion_data(DACC, 0 | 0x0000 ) ;
+					dacc_write_conversion_data(DACC, 4095 | 0x1000 ) ;
+					dacBuffer[0] = 0 ; //((uint16_t*)(&sIn))[4] ;
+					dacBuffer[1] = 4095 ; //((uint16_t*)(&sIn))[6] ;
+				}
+				
+				//prepare output packet								
 				uint16_t lIn ;
 				getDigInValue(&lIn) ;
-				sOut[0] = ((uint8_t*)(&lIn))[0] ;
+				sOut[0] = ((uint8_t*)(&lIn))[0] ;				
 				sOut[1] = ((uint8_t*)(&lIn))[1] ;
 
 				getDigOutValue(lDigitalOut) ;
 				sOut[2] = ((uint8_t*)(&lDigitalOut))[0] ;
 				sOut[3] = ((uint8_t*)(&lDigitalOut))[1] ;
 				
+				memcpy(&(sOut[4]), buf[bufn], sizeof(adc_values)) ;
 
 //				if(udi_cdc_get_free_tx_buffer() >= sSize)
 //				{
+///				sDigOutPorts[2]->PIO_CODR = 1 << (PHYCMD_DIGITAL_OUTPUT_2 & 0x1F);
+///				sDigOutPorts[0]->PIO_SODR = 1 << (PHYCMD_DIGITAL_OUTPUT_0 & 0x1F);	
 				udi_cdc_write_buf(&sOut, sSize);
+				
+				
+///				sDigOutPorts[0]->PIO_CODR = 1 << (PHYCMD_DIGITAL_OUTPUT_0 & 0x1F);
 //				}
 //				}
 //				gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_1) ;
-//			}
+			}
 //		}
 //		gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_0) ;
 	}

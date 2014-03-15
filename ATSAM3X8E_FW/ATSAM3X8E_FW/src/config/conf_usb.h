@@ -111,14 +111,15 @@
 #define  UDI_CDC_PORT_NB 1
 
 //! Interface callback definition
-//#define  UDI_CDC_ENABLE_EXT(port)          true
-//#define  UDI_CDC_DISABLE_EXT(port)
-//#define  UDI_CDC_RX_NOTIFY(port)
-//#define  UDI_CDC_SET_CODING_EXT(port,cfg)
-//#define  UDI_CDC_TX_EMPTY_NOTIFY(port)
-//#define  UDI_CDC_SET_DTR_EXT(port,set)
-//#define  UDI_CDC_SET_RTS_EXT(port,set)
+#define  UDI_CDC_ENABLE_EXT(port)          true
+#define  UDI_CDC_DISABLE_EXT(port)
+#define  UDI_CDC_RX_NOTIFY(port)
+#define  UDI_CDC_SET_CODING_EXT(port,cfg)
+#define  UDI_CDC_TX_EMPTY_NOTIFY(port)
+#define  UDI_CDC_SET_DTR_EXT(port,set)
+#define  UDI_CDC_SET_RTS_EXT(port,set)
 
+/*
 #define UDI_CDC_ENABLE_EXT(port) main_callback_cdc_enable()
 extern bool main_callback_cdc_enable(void);
 #define UDI_CDC_DISABLE_EXT(port) main_callback_cdc_disable()
@@ -136,14 +137,14 @@ extern void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg);
 extern void my_callback_cdc_set_dtr(uint8_t port, bool b_enable);
 #define  UDI_CDC_SET_RTS_EXT(port,set) my_callback_cdc_set_rts(port,set)
 extern void my_callback_cdc_set_rts(uint8_t port, bool b_enable);
-
+*/
 
 //! Define it when the transfer CDC Device to Host is a low rate (<512000 bauds)
 //! to reduce CDC buffers size
 //#define  UDI_CDC_LOW_RATE
 
 //! Default configuration of communication port
-#define  UDI_CDC_DEFAULT_RATE             512000
+#define  UDI_CDC_DEFAULT_RATE             115200
 #define  UDI_CDC_DEFAULT_STOPBITS         CDC_STOP_BITS_1
 #define  UDI_CDC_DEFAULT_PARITY           CDC_PAR_NONE
 #define  UDI_CDC_DEFAULT_DATABITS         8

@@ -337,7 +337,6 @@ void adc_setup(void)
 	NVIC_EnableIRQ(ADC_IRQn);	
 }
 
-uint16_t dacBuffer[2];
 /*
 void DACC_Handler() {
 	unsigned long status =  DACC->DACC_ISR;
@@ -352,15 +351,16 @@ void dac_setup()
 	pmc_enable_periph_clk(ID_DACC);	
 	dacc_reset(DACC);                 // Reset DACC registers
 	dacc_set_writeprotect(DACC, 0);
-//	dacc_set_transfer_mode(DACC, 1);  // Full word transfer mode.
+	dacc_set_transfer_mode(DACC, 1);  // Full word transfer mode.
 //	dacc_set_channel_selection(DACC, 0);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
 //	dacc_set_channel_selection(DACC, 1);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
 	dacc_enable_flexible_selection(DACC);
 	DACC->DACC_CHER = 3;  // enable channel 1. for channel 0 use 1
+	DACC->DACC_MR |= 1<<21 ; //enable high speed mode
 
+	dacc_set_timing(DACC, 0x01, 1, DACC_MR_STARTUP_0); // refresh - 0x01 (1024*8 dacc clocks), max speed mode - 0 (disabled), startup time   - 0x10 (1024 dacc clocks)
+	dacc_set_analog_control(DACC, DACC_ACR_IBCTLCH0(0x02)|DACC_ACR_IBCTLCH1(0x02)|DACC_ACR_IBCTLDACCORE(0x01)); 
 
-	dacc_set_timing(DACC, 0x08, 1, DACC_MR_STARTUP_0); // refresh - 0x08 (1024*8 dacc clocks), max speed mode - 0 (disabled), startup time   - 0x10 (1024 dacc clocks)
-	dacc_set_analog_control(DACC, DACC_ACR_IBCTLCH0(0x02)|DACC_ACR_IBCTLCH1(0x02)|DACC_ACR_IBCTLDACCORE(0x01));  // Setting currents, I don't know much about it! any comment or helps is appereciated.
 /*
 	DACC->DACC_MR |= ~(DACC_MR_TRGEN);       // We want to use trigger.
 	DACC->DACC_IDR = ~(DACC_IDR_ENDTX);   // Disabling Interrupts.
@@ -424,18 +424,11 @@ int main (void)
 				setDigOutValue(lDigitalOut) ;
 
 				//0000 0000 0000 0000
-				if(sIn[20] % 2 == 0)
-				{
-					dacc_write_conversion_data(DACC, 4095 | 0x0000) ;
-					dacc_write_conversion_data(DACC, 0 | 0x1000 ) ;
-					dacBuffer[0] = 4095 ; //((uint16_t*)(&sIn))[4] ;
-					dacBuffer[1] = 0 ; //((uint16_t*)(&sIn))[6] ;					
-				} else {
-					dacc_write_conversion_data(DACC, 0 | 0x0000 ) ;
-					dacc_write_conversion_data(DACC, 4095 | 0x1000 ) ;
-					dacBuffer[0] = 0 ; //((uint16_t*)(&sIn))[4] ;
-					dacBuffer[1] = 4095 ; //((uint16_t*)(&sIn))[6] ;
-				}
+				// using full word writing
+				uint16_t lDac0Out = ((uint16_t *)(&(sIn[4])))[0];
+				uint16_t lDac1Out = ((uint16_t *)(&(sIn[6])))[0] | 0x1000 ;
+				uint32_t lDacOut = lDac1Out <<16 | lDac0Out ;
+				dacc_write_conversion_data(DACC, lDacOut) ;
 				
 				//prepare output packet								
 				uint16_t lIn ;

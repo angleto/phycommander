@@ -272,36 +272,17 @@ void getDigOutValue(uint16_t * const pValue)
 	*pValue = lValue ;
 }
 
-uint16_t adc_values[8] ;
+#define ADC_CHANNEL_NUM 8
 
-/*
-void ADC_IrqHandler(void)
-{
-    // Check the ADC conversion status
-    if ((adc_get_status(ADC) & ADC_ISR_DRDY) == ADC_ISR_DRDY)
-    {
-    // Get latest digital data value from ADC and can be used by application
-        adc_values[0] = adc_get_latest_value(ADC_CHANNEL_7);
-        adc_values[1] = adc_get_latest_value(ADC_CHANNEL_6);
-        adc_values[2] = adc_get_latest_value(ADC_CHANNEL_5);		
-        adc_values[3] = adc_get_latest_value(ADC_CHANNEL_4);
-        adc_values[4] = adc_get_latest_value(ADC_CHANNEL_3);
-        adc_values[5] = adc_get_latest_value(ADC_CHANNEL_2);
-        adc_values[6] = adc_get_latest_value(ADC_CHANNEL_1);								
-        adc_values[7] = adc_get_latest_value(ADC_CHANNEL_0);		
-    }
-}
-*/
-
-volatile int bufn,obufn;
-uint16_t buf[32][8];   // 4 buffers of 8 readings
+volatile int bufn;
+uint16_t buf[16][ADC_CHANNEL_NUM];   // 16 buffers of 8 readings
 
 void ADC_Handler(){     // move DMA pointers to next buffer
 	int f=ADC->ADC_ISR;
 	if (f&(1<<27)){
-		bufn=(bufn+1)&3;
+		bufn=(bufn+1)&15;
 		ADC->ADC_RNPR=(uint32_t)buf[bufn];
-		ADC->ADC_RNCR=8;
+		ADC->ADC_RNCR=ADC_CHANNEL_NUM;
 	}
 }
 
@@ -327,54 +308,27 @@ void adc_setup(void)
 	ADC->ADC_IDR=~(1<<27);
 	ADC->ADC_IER=1<<27;
 	ADC->ADC_RPR=(uint32_t)buf[0];   // DMA buffer
-	ADC->ADC_RCR=8;
+	ADC->ADC_RCR=ADC_CHANNEL_NUM ; // number of readings
 	ADC->ADC_RNPR=(uint32_t)buf[1]; // next DMA buffer
-	ADC->ADC_RNCR=8;
-	bufn=obufn=1;
+	ADC->ADC_RNCR=ADC_CHANNEL_NUM ; // number of readings
+	bufn=1;
 	ADC->ADC_PTCR=1;
 	ADC->ADC_CR=2;	
 
 	NVIC_EnableIRQ(ADC_IRQn);	
 }
 
-/*
-void DACC_Handler() {
-	unsigned long status =  DACC->DACC_ISR;
-	if(status & DACC_ISR_ENDTX) {
-		  DACC->DACC_TNCR = 2;  // set the next buffer counter.
-	}
-}
-*/
-
 void dac_setup()
 {
 	pmc_enable_periph_clk(ID_DACC);	
-	dacc_reset(DACC);                 // Reset DACC registers
+	dacc_reset(DACC);           
 	dacc_set_writeprotect(DACC, 0);
-	dacc_set_transfer_mode(DACC, 1);  // Full word transfer mode.
-//	dacc_set_channel_selection(DACC, 0);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
-//	dacc_set_channel_selection(DACC, 1);  // Select Channel 1 of DACC, (I just destroyed my channel 0 so this is my only choice.)
+	dacc_set_transfer_mode(DACC, 1); 
 	dacc_enable_flexible_selection(DACC);
-	DACC->DACC_CHER = 3;  // enable channel 1. for channel 0 use 1
-	DACC->DACC_MR |= 1<<21 ; //enable high speed mode
+	DACC->DACC_CHER = 3;  // enable channel 0 and 1
 
-	dacc_set_timing(DACC, 0x01, 1, DACC_MR_STARTUP_0); // refresh - 0x01 (1024*8 dacc clocks), max speed mode - 0 (disabled), startup time   - 0x10 (1024 dacc clocks)
-	dacc_set_analog_control(DACC, DACC_ACR_IBCTLCH0(0x02)|DACC_ACR_IBCTLCH1(0x02)|DACC_ACR_IBCTLDACCORE(0x01)); 
-
-/*
-	DACC->DACC_MR |= ~(DACC_MR_TRGEN);       // We want to use trigger.
-	DACC->DACC_IDR = ~(DACC_IDR_ENDTX);   // Disabling Interrupts.
-	DACC->DACC_IER = DACC_IER_ENDTX;      // Enabling Interrupts.
-	DACC->DACC_PTCR = DACC_PTCR_TXTEN | DACC_PTCR_RXTDIS;
-
-
-	DACC->DACC_TPR  = (unsigned long) dacBuffer ;  // DMA buffer
-	DACC->DACC_TCR  = (unsigned int)  2 ; // DMA buffer counter
-	DACC->DACC_TNPR = (unsigned long) 0 ; 
-	DACC->DACC_TNCR = (unsigned int)  0 ; // next DMA buffer counter
-	
-	NVIC_EnableIRQ(DACC_IRQn);
-*/
+	dacc_set_timing(DACC, 0x01, 1, DACC_MR_STARTUP_0); // refresh - 0x01 (1024*1 dacc clocks), max speed mode - 1 (disabled), startup time   - 0x10 (1024 dacc clocks)
+	dacc_set_analog_control(DACC, DACC_ACR_IBCTLCH0(0x02)|DACC_ACR_IBCTLCH1(0x02)|DACC_ACR_IBCTLDACCORE(0x01)); // power management
 }
 
 int main (void)
@@ -440,7 +394,7 @@ int main (void)
 				sOut[2] = ((uint8_t*)(&lDigitalOut))[0] ;
 				sOut[3] = ((uint8_t*)(&lDigitalOut))[1] ;
 				
-				memcpy(&(sOut[4]), buf[bufn], sizeof(adc_values)) ;
+				memcpy(&(sOut[4]), buf[bufn], sizeof(uint16_t) * ADC_CHANNEL_NUM) ;
 
 //				if(udi_cdc_get_free_tx_buffer() >= sSize)
 //				{

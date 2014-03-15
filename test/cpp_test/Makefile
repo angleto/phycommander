@@ -1,16 +1,6 @@
-OS = LINUX
-#OS = MACOSX
-
-ifeq ($(OS), LINUX)
 CC = g++
-CFLAGS = -Wall -O3 -DLINUX
+CFLAGS = -Wall -O3
 TARGET = receive_test
-
-else ifeq ($(OS), MACOSX)
-CC = g++
-CFLAGS = -Wall -O3 -DMACOSX
-TARGET = receive_test
-endif
 
 all: $(TARGET)
 

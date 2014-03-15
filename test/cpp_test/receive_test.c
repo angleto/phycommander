@@ -89,6 +89,10 @@ int main(int argc, char **argv)
 		out_buffer[2] = 0xF0 ;
 		out_buffer[3] = 0x0F ;
 		}
+
+		*((uint16_t *)(&(out_buffer[4]))) = (uint16_t) (count % 4096) ;
+		*((uint16_t *)(&(out_buffer[6]))) = (uint16_t) (4095 - (count % 4096)) ;
+
 		gettimeofday(&begin, NULL);
 		n_in = write_bytes(port, out_buffer, size);
 		n_out = read_bytes(port, in_buffer, size);
@@ -102,7 +106,7 @@ int main(int argc, char **argv)
 		begin.tv_sec = end.tv_sec;
 		begin.tv_usec = end.tv_usec;
 		int cmp = memcmp(in_buffer + 20, out_buffer + 20, size - 20) ; 
-		std::cout << getHexString((unsigned char*)&(in_buffer[4]),16) << std::endl ;
+//		std::cout << getHexString((unsigned char*)&(in_buffer[4]),16) << std::endl ;
 		if ( cmp != 0 )
 		{
 			printf("compare error %d\n", cmp) ;

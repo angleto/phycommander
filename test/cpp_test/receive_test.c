@@ -76,7 +76,7 @@ int main(int argc, char **argv)
 		std::cout << "port opened: " << argv[2] << std::endl ;
 	}
 
-	size_t packet_n = 1024 * 1024 ;
+	size_t packet_n = 1024 * 32 ; //* 1024 ;
 	for (size_t count = 0; count < packet_n ; count++) {
 		for (i=0; i < size; i++) {
 			out_buffer[i] = rand();
@@ -101,9 +101,9 @@ int main(int argc, char **argv)
 		sum += elapsed ;
 		begin.tv_sec = end.tv_sec;
 		begin.tv_usec = end.tv_usec;
-
-		int cmp = memcmp(in_buffer + 2, out_buffer + 2, size - 2) ; 
-		if ( cmp > 0 )
+		int cmp = memcmp(in_buffer + 20, out_buffer + 20, size - 20) ; 
+		std::cout << getHexString((unsigned char*)&(in_buffer[4]),16) << std::endl ;
+		if ( cmp != 0 )
 		{
 			printf("compare error %d\n", cmp) ;
 			std::cout << getHexString((unsigned char *)out_buffer,size) << std::endl ;

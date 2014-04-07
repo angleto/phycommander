@@ -47,6 +47,7 @@ void main_callback_cdc_disable(void)
 	//my_flag_autorize_cdc_transfert = false;
 }
 
+
 void my_callback_rx_notify(uint8_t port)
 {
 //	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
@@ -55,28 +56,28 @@ void my_callback_rx_notify(uint8_t port)
 
 void my_callback_tx_empty_notify(uint8_t port)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_2) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_2) ;	
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_14) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_14) ;	
 }
 
 
 void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_3) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_3) ;		
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
 }
 
 
 void my_callback_cdc_set_dtr(uint8_t port, bool b_enable)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_4) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_4) ;
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
 }
 
 void my_callback_cdc_set_rts(uint8_t port, bool b_enable)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_5) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_5) ;
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
 }
 
 Pio * sDigInPorts[PHYCMD_DIGITAL_INPUT_NUM] ;
@@ -369,7 +370,7 @@ int main (void)
 //				{
 //					sOut[i] = sIn[i] ;
 //				}
-				memcpy(sOut,sIn,sSize);
+//				memcpy(sOut,sIn,sSize);
 
 				//execute commands				
 				uint16_t lDigitalOut ;

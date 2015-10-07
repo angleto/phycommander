@@ -5,11 +5,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <string>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <string.h>
+#include <pthread.h>
+#include <errno.h>
+
+//#include <rtdm/ipc.h>
+
+//rt
+#include <sys/mman.h>
 
 // One of these must be defined, usually via the Makefile
 #if defined(__APPLE__) && defined(__MACH__)
@@ -31,6 +44,31 @@
 #include <sys/select.h>
 #define BAUD B460800
 #endif
+
+static int pm_qos_fd = -1;
+
+void start_low_latency(void)  
+{  
+ uint32_t target = 0;
+
+
+
+ if (pm_qos_fd >= 0)  
+ return;  
+ pm_qos_fd = open("/dev/cpu_dma_latency", O_RDWR);  
+ if (pm_qos_fd < 0) {  
+ fprintf(stderr, "Failed to open PM QOS file: %s",  
+ strerror(errno));  
+ exit(errno);  
+ }  
+ write(pm_qos_fd, &target, sizeof(target));  
+}
+
+void stop_low_latency(void)  
+{  
+ if (pm_qos_fd >= 0)  
+ close(pm_qos_fd);  
+}
 
 // function prototypes
 int open_port_and_set_baud_or_die(const char *name, long baud);
@@ -55,30 +93,19 @@ std::string getHexString(unsigned char const * const pBuffer, const size_t pLeng
 	return lString ;
 }
 
-int main(int argc, char **argv)
-{
-	int port;
+size_t packet_n = 1024 * 1024 * 100  ; //* 4 ; //* 1024 ;
+size_t size = 30000 ;
+int port;
+double sum=0.0;
+
+static void *transfer(void *arg) {
 	struct timeval begin, end;
-	int size = 30000;
-	int i, n_in, n_out=0;
-	double elapsed, sum=0.0;
+	double elapsed = 0.0 ; 
+	double elapsed_iter = 0.0 ; 
+	int n_in, n_out=0;
 
-	if (argc < 2) die("Usage: receive_test <comport>\n       receive_test <blocksize> <comport>\n");
-	if (argc == 2) {
-		port = open_port_and_set_baud_or_die(argv[1], BAUD);
-		printf("port %s opened\n", argv[1]);
-	} else {
-		if (sscanf(argv[1], "%d", &size) != 1 ||
-				size < 1 || size > sizeof(out_buffer)) {
-			die("Usage: receive_test <blocksize> <comport>\n");
-		}
-		port = open_port_and_set_baud_or_die(argv[2], BAUD);
-		std::cout << "port opened: " << argv[2] << std::endl ;
-	}
-
-	size_t packet_n = 1024 * 32 ; //* 1024 ;
-	for (size_t count = 0; count < packet_n ; count++) {
-		for (i=0; i < size; i++) {
+	for (size_t count = 1; count < packet_n ; count++) {
+		for (size_t i=0; i < size; i++) {
 			out_buffer[i] = rand();
 		}
 		if(count % 2 == 0)
@@ -95,6 +122,7 @@ int main(int argc, char **argv)
 
 		gettimeofday(&begin, NULL);
 		n_in = write_bytes(port, out_buffer, size);
+		//usleep(400);
 		n_out = read_bytes(port, in_buffer, size);
 		if (n_out != size && n_in != size )
 			die("errors transmitting data\n");
@@ -103,17 +131,87 @@ int main(int argc, char **argv)
 		elapsed = (double)(end.tv_sec - begin.tv_sec);
 		elapsed += (double)(end.tv_usec - begin.tv_usec) / 1000000.0;
 		sum += elapsed ;
+		elapsed_iter += elapsed ;
 		begin.tv_sec = end.tv_sec;
 		begin.tv_usec = end.tv_usec;
-		int cmp = memcmp(in_buffer + 20, out_buffer + 20, size - 20) ; 
-		std::cout << getHexString((unsigned char*)&(in_buffer[4]),16) << std::endl ;
+		int cmp = memcmp(in_buffer, out_buffer, size) ; 
+		//int cmp = memcmp(in_buffer + 20, out_buffer + 20, size - 20) ; 
+//		std::cout << getHexString((unsigned char*)&(in_buffer[4]),16) << std::endl ;
+/*
 		if ( cmp != 0 )
 		{
 			printf("compare error %d\n", cmp) ;
 			std::cout << getHexString((unsigned char *)out_buffer,size) << std::endl ;
 			std::cout << getHexString((unsigned char*)in_buffer,size) << std::endl ;
 		}
+*/
+
+		if((count % 4096) == 0) {
+			printf("Packets per second = Packets(%u) Elapsed(%.12g:%.12g) PacketI/Elapsed(%.12g) Packet/Elapsed(%.12g)\n", packet_n, elapsed, sum, 4096/elapsed_iter, packet_n/sum);
+			elapsed_iter = 0.0;
+		}
 	}
+}
+
+int main(int argc, char **argv)
+{
+
+	pthread_t svtid ;
+	start_low_latency();
+
+	sigset_t set;
+	int sig;
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGINT);
+	sigaddset(&set, SIGTERM);
+	sigaddset(&set, SIGHUP);
+	pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+	mlockall(MCL_CURRENT|MCL_FUTURE);
+
+	if (argc < 2) die("Usage: receive_test <comport>\n       receive_test <blocksize> <comport>\n");
+	if (argc == 2) {
+		port = open_port_and_set_baud_or_die(argv[1], BAUD);
+		printf("port %s opened\n", argv[1]);
+	} else {
+		if (sscanf(argv[1], "%d", &size) != 1 ||
+				size < 1 || size > sizeof(out_buffer)) {
+			die("Usage: receive_test <blocksize> <comport>\n");
+		}
+		port = open_port_and_set_baud_or_die(argv[2], BAUD);
+		std::cout << "port opened: " << argv[2] << std::endl ;
+	}
+
+	/*
+	int iRet;
+	pthread_mutexattr_t csAttr;
+	iRet = pthread_mutexattr_init(&csAttr);
+	if (iRet == 0)
+		iRet = pthread_mutexattr_settype(&csAttr, PTHREAD_MUTEX_ERRORCHECK);
+	if (iRet == 0)
+		iRet = pthread_mutexattr_setprotocol(&csAttr,
+				PTHREAD_PRIO_INHERIT); // error: PTHREAD_PRIO_INHERIT undeclared
+	*/
+
+	pthread_attr_t svattr;
+	pthread_attr_init(&svattr);
+	pthread_attr_setschedpolicy(&svattr, SCHED_FIFO);
+	pthread_attr_setdetachstate(&svattr, PTHREAD_CREATE_JOINABLE);
+	pthread_attr_setinheritsched(&svattr, PTHREAD_EXPLICIT_SCHED);
+
+	struct sched_param svparam = {.sched_priority = 99 };
+	pthread_attr_setschedparam(&svattr, &svparam);
+
+	errno = pthread_create(&svtid, &svattr, &transfer, NULL);
+	if (errno)
+		printf("pthread_create\n");
+
+//	sigwait(&set, &sig);
+//	pthread_cancel(svtid);
+	pthread_join(svtid, NULL);
+
+	//pthread_mutexattr_destroy(&csAttr);
 	close_port(port);
 	printf("Packets per second = Packets(%u) Elapsed(%.12g) Packet/Elapsed(%.12g)\n", packet_n, sum, packet_n/sum);
 	return 0;
@@ -132,18 +230,21 @@ int open_port_and_set_baud_or_die(const char *name, long baud)
 	struct termios tinfo;
 	fd = open(name, O_RDWR | O_NONBLOCK);
 	if (fd < 0) die("unable to open port %s\n", name);
+/*
 	if (tcgetattr(fd, &tinfo) < 0) die("unable to get serial parms\n");
 	cfmakeraw(&tinfo);
 	if (cfsetspeed(&tinfo, baud) < 0) die("error in cfsetspeed\n");
 	tinfo.c_cflag |= CLOCAL;
 	if (tcsetattr(fd, TCSANOW, &tinfo) < 0) die("unable to set baud rate\n");
 	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) & ~O_NONBLOCK);
+*/
 #elif defined(LINUX)
 	struct termios tinfo;
 	struct serial_struct kernel_serial_settings;
 	int r;
 	fd = open(name, O_RDWR);
 	if (fd < 0) die("unable to open port %s\n", name);
+
 	if (tcgetattr(fd, &tinfo) < 0) die("unable to get serial parms\n");
 	cfmakeraw(&tinfo);
 	if (cfsetspeed(&tinfo, baud) < 0) die("error in cfsetspeed\n");
@@ -159,15 +260,16 @@ int open_port_and_set_baud_or_die(const char *name, long baud)
 
 }
 
-int read_bytes(int port, char *data, int len)
+inline int read_bytes(int port, char *data, int len)
 {
 	return read(port, data, len);
 }
 
-int write_bytes(int port, const char *data, int len)
+inline int write_bytes(int port, const char *data, int len)
 {
 #if defined(MACOSX) || defined(LINUX)
-	return write(port, data, len);
+	int r = write(port, data, len);
+	return r ;
 #elif defined(WINDOWS)
 	DWORD n;
 	BOOL r;

@@ -47,7 +47,6 @@ void main_callback_cdc_disable(void)
 	//my_flag_autorize_cdc_transfert = false;
 }
 
-
 void my_callback_rx_notify(uint8_t port)
 {
 //	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
@@ -56,28 +55,28 @@ void my_callback_rx_notify(uint8_t port)
 
 void my_callback_tx_empty_notify(uint8_t port)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_14) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_14) ;	
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_2) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_2) ;	
 }
 
 
 void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_3) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_3) ;		
 }
 
 
 void my_callback_cdc_set_dtr(uint8_t port, bool b_enable)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_4) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_4) ;
 }
 
 void my_callback_cdc_set_rts(uint8_t port, bool b_enable)
 {
-//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_15) ;
-//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_15) ;
+//	gpio_set_pin_high(PHYCMD_DIGITAL_OUTPUT_5) ;
+//	gpio_set_pin_low(PHYCMD_DIGITAL_OUTPUT_5) ;
 }
 
 Pio * sDigInPorts[PHYCMD_DIGITAL_INPUT_NUM] ;
@@ -278,6 +277,8 @@ void getDigOutValue(uint16_t * const pValue)
 volatile int bufn;
 uint16_t buf[16][ADC_CHANNEL_NUM];   // 16 buffers of 8 readings
 
+__attribute__((always_inline))
+inline
 void ADC_Handler(){     // move DMA pointers to next buffer
 	int f=ADC->ADC_ISR;
 	if (f&(1<<27)){
@@ -370,10 +371,10 @@ int main (void)
 //				{
 //					sOut[i] = sIn[i] ;
 //				}
-//				memcpy(sOut,sIn,sSize);
+				//memcpy(sOut,sIn,sSize);
 
 				//execute commands				
-				uint16_t lDigitalOut ;
+				uint16_t lDigitalOut = 0;
 				((uint8_t*)(&lDigitalOut))[0] = ((uint8_t*)(&sIn))[2];				
 				((uint8_t*)(&lDigitalOut))[1] = ((uint8_t*)(&sIn))[3];
 				setDigOutValue(lDigitalOut) ;
@@ -386,7 +387,7 @@ int main (void)
 				dacc_write_conversion_data(DACC, lDacOut) ;
 				
 				//prepare output packet								
-				uint16_t lIn ;
+				uint16_t lIn = 0 ;
 				getDigInValue(&lIn) ;
 				sOut[0] = ((uint8_t*)(&lIn))[0] ;				
 				sOut[1] = ((uint8_t*)(&lIn))[1] ;
@@ -395,7 +396,7 @@ int main (void)
 				sOut[2] = ((uint8_t*)(&lDigitalOut))[0] ;
 				sOut[3] = ((uint8_t*)(&lDigitalOut))[1] ;
 				
-				memcpy(&(sOut[4]), buf[bufn], sizeof(uint16_t) * ADC_CHANNEL_NUM) ;
+				memcpy(&(sOut[4]), buf[bufn], sizeof(uint16_t) * ADC_CHANNEL_NUM) ; // writing adc values into message
 
 //				if(udi_cdc_get_free_tx_buffer() >= sSize)
 //				{

@@ -59,7 +59,7 @@
 #define  USB_DEVICE_PRODUCT_ID            USB_PID_ATMEL_ASF_CDC
 #define  USB_DEVICE_MAJOR_VERSION         1
 #define  USB_DEVICE_MINOR_VERSION         0
-#define  USB_DEVICE_POWER                 100 // Consumption on Vbus line (mA)
+#define  USB_DEVICE_POWER                 500 // Consumption on Vbus line (mA)
 #define  USB_DEVICE_ATTR                  \
 	(USB_CONFIG_ATTR_SELF_POWERED)
 // (USB_CONFIG_ATTR_BUS_POWERED)
@@ -72,7 +72,6 @@
 #define  USB_DEVICE_SERIAL_NAME           "EB000001"
 #define  USB_DEVICE_HS_SUPPORT
 
-//#define USB_DEVICE_EP_CTRL_SIZE 64
 
 
 /**
@@ -109,11 +108,11 @@
  * @{
  */
 
-//! Number of communication port used (1 to 3)
+//! Number of communication port used (1 to 3) // if > 1 => composite devices
 #define  UDI_CDC_PORT_NB 1
 
+
 //! Interface callback definition
-/*
 #define  UDI_CDC_ENABLE_EXT(port)          true
 #define  UDI_CDC_DISABLE_EXT(port)
 #define  UDI_CDC_RX_NOTIFY(port)
@@ -121,8 +120,9 @@
 #define  UDI_CDC_TX_EMPTY_NOTIFY(port)
 #define  UDI_CDC_SET_DTR_EXT(port,set)
 #define  UDI_CDC_SET_RTS_EXT(port,set)
-*/
 
+
+/*
 #define UDI_CDC_ENABLE_EXT(port) main_callback_cdc_enable()
 extern bool main_callback_cdc_enable(void);
 #define UDI_CDC_DISABLE_EXT(port) main_callback_cdc_disable()
@@ -140,13 +140,14 @@ extern void my_callback_config(uint8_t port, usb_cdc_line_coding_t * cfg);
 extern void my_callback_cdc_set_dtr(uint8_t port, bool b_enable);
 #define  UDI_CDC_SET_RTS_EXT(port,set) my_callback_cdc_set_rts(port,set)
 extern void my_callback_cdc_set_rts(uint8_t port, bool b_enable);
+*/
 
 //! Define it when the transfer CDC Device to Host is a low rate (<512000 bauds)
 //! to reduce CDC buffers size
 //#define  UDI_CDC_LOW_RATE
 
 //! Default configuration of communication port
-#define  UDI_CDC_DEFAULT_RATE             115200
+#define  UDI_CDC_DEFAULT_RATE             512000
 #define  UDI_CDC_DEFAULT_STOPBITS         CDC_STOP_BITS_1
 #define  UDI_CDC_DEFAULT_PARITY           CDC_PAR_NONE
 #define  UDI_CDC_DEFAULT_DATABITS         8

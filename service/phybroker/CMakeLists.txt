@@ -31,6 +31,8 @@ TARGET_LINK_LIBRARIES(physervice
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
     phybroker_srv
+    pthread
+    rt
 )
 
 ADD_EXECUTABLE(phyclient
@@ -42,4 +44,5 @@ TARGET_LINK_LIBRARIES(phyclient
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
     phybroker_cli
+    rt
 )

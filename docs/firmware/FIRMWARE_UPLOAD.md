@@ -314,7 +314,7 @@ When using direct USB transport (not serial), the firmware must:
    // udi_cdc_write_buf() → USB_Write_EP()
    ```
 
-See `FIRMWARE_UPDATES.md` for detailed firmware modifications.
+See [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md) for detailed firmware modifications.
 
 ## Firmware Backup
 
@@ -455,7 +455,7 @@ chmod +x build_and_upload.sh
 After firmware upload:
 1. **Test with serial transport**: `./physerver --transport serial`
 2. **Test with USB transport**: `./physerver --transport usb`
-3. **Run benchmarks**: See `docs/PERFORMANCE.md`
+3. **Run benchmarks**: See [PERFORMANCE.md](../technical/PERFORMANCE.md)
 4. **Configure for production**: Edit `config.toml`
 
 ## Support

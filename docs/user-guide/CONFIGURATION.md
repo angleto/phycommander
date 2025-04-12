@@ -296,7 +296,7 @@ let client = IpcClient::connect_named("/physerver1")?;
 
 Controls real-time scheduling and performance optimizations.
 
-> **Note**: For comprehensive OS-level real-time configuration (RT kernel installation, CPU isolation, system tuning), see [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md). This section covers PhyServer-specific RT settings.
+> **Note**: For comprehensive OS-level real-time configuration (RT kernel installation, CPU isolation, system tuning), see [REALTIME_OS_CONFIG.md](../deployment/REALTIME_OS_CONFIG.md). This section covers PhyServer-specific RT settings.
 
 ### Complete Real-Time Section
 
@@ -370,7 +370,7 @@ cpu_core = 2
 
 **Requirements**:
 
-> **See Also**: For complete CPU isolation setup including RT kernel installation and system tuning, refer to [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md).
+> **See Also**: For complete CPU isolation setup including RT kernel installation and system tuning, refer to [REALTIME_OS_CONFIG.md](../deployment/REALTIME_OS_CONFIG.md).
 
 1. **Isolate CPU core** in kernel parameters (`/etc/default/grub`):
    ```
@@ -722,9 +722,9 @@ Common validation errors:
 ## See Also
 
 - [USER_MANUAL.md](USER_MANUAL.md) - Complete user guide
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
-- [PERFORMANCE.md](PERFORMANCE.md) - Performance tuning
-- [BUILDING.md](BUILDING.md) - Build instructions
+- [DEPLOYMENT.md](../deployment/DEPLOYMENT.md) - Production deployment
+- [PERFORMANCE.md](../technical/PERFORMANCE.md) - Performance tuning
+- [BUILDING.md](../getting-started/BUILDING.md) - Build instructions
 
 ---
 

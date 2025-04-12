@@ -75,7 +75,6 @@ void stop_low_latency(void)
 }
 #endif
 
-
 // function prototypes
 int open_port_and_set_baud_or_die(const char *name, long baud);
 int write_bytes(int port, const char *data, int len);
@@ -241,7 +240,6 @@ static void *transfer(void *arg) {
 
 int main(int argc, char **argv)
 {
-    
     pthread_t svtid ;
 #if defined(LINUX)
     start_low_latency();
@@ -257,11 +255,12 @@ int main(int argc, char **argv)
     
     mlockall(MCL_CURRENT|MCL_FUTURE);
     
-    if (argc < 2) die("Usage: receive_test <comport>\n       receive_test <blocksize> <comport>\n");
+    if (argc < 2) die("Usage: receive_test <comport>\n");
     if (argc == 2) {
         port = open_port_and_set_baud_or_die(argv[1], BAUD);
         printf("port %s opened\n", argv[1]);
     } else {
+        printf("Exiting: wrong argument number %d\n", argc);
         exit(10) ;
     }
 

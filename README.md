@@ -1,10 +1,26 @@
 # PhyCMD - Physical Commander
 
-**Real-time hardware control system for test machines and precision mechanical devices**
+**A programmable laboratory bench — signal generator, oscilloscope, DAQ card, and test rig collapsed into one scriptable system.**
 
-## Overview
+## What phycommander is
 
-PhyCMD is a complete hardware control framework providing hard real-time communication between high-level software and microcontroller hardware. It's designed for applications requiring precise timing, reliable data transfer, and flexible control interfaces.
+An open, programmable laboratory bench. It takes a Linux PC and an Arduino Due and turns them into a deterministic I/O platform that collapses a rack of benchtop instruments — signal generator, oscilloscope, DAQ card, I/O board — into a single scriptable system. The hardware streams sample-coherent DAC↔ADC data to the host at up to 10 kHz over USB with ~120 µs latency and ±5–10 µs jitter; the host, running PREEMPT_RT Linux, is where *all* the intelligence lives: waveform synthesis, triggering logic, DSP, control loops, test sequences.
+
+Where a scope + signal generator is *manually operated*, phycommander is *programmable*. Where an Arduino is *non-deterministic*, phycommander is *real-time*. Where a National Instruments DAQ is *proprietary*, phycommander is *end-to-end open*, from the firmware on the Due to the Rust client on the PC.
+
+## What you use it for
+
+- **Hardware test rigs.** Build a programmable "companion machine" that stimulates a device under test with arbitrary signals, reads its response, and drives the whole test sequence from a Python or Rust script. Replace a week of custom electronics with a hundred lines of code. Characterize drivers, sensors, analog filters, small mechanical systems — without committing to a custom board for each DUT.
+- **Control algorithm prototyping.** Close a 1–10 kHz loop around a physical plant with PID, state observers, Kalman filters, MPC, or adaptive controllers — all written in Python or Rust, running on the PC where you have real CPUs, real RAM, and real debuggers. The plant lives in the real world; the controller lives on the PC.
+- **Custom instruments.** When "oscilloscope + signal generator" isn't enough because you need programmable logic *between* the stimulus and the response — frequency sweeps with coherent demodulation, lock-in, frequency response analysis, TDR, conditional triggers, computed waveforms — phycommander is the foundation. See [LOCKIN_OPTICAL_DEMO.md](docs/applications/LOCKIN_OPTICAL_DEMO.md) for a fully worked example.
+- **Rapid prototyping.** Instrument a physical system, characterize it, iterate, before committing to dedicated electronics.
+
+## What phycommander is not
+
+- **Not a > 100 kHz digitizer.** Use a Red Pitaya or an ADALM-Pluto.
+- **Not a field-deployable embedded controller.** Requires a PREEMPT_RT Linux host.
+- **Not a replacement for NI / Keysight** in certified industrial test or safety-critical applications.
+- **Not a benchtop scope with its own screen.** If that's what you want, buy one.
 
 ## Architecture
 
@@ -73,7 +89,7 @@ Microcontroller firmware for ATSAM3X8E (Arduino Due compatible).
 - 🔁 USB CDC virtual serial port
 
 **Location**: `ATSAM3X8E_FW/`
-**Updates needed**: [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md)
+**Updates needed**: [FIRMWARE_UPDATES.md](docs/firmware/FIRMWARE_UPDATES.md)
 
 ### 3. phywebapp (Web Interface)
 Modern web dashboard for monitoring and control.
@@ -144,29 +160,31 @@ cargo run --example simple_client
 
 ## Documentation
 
+All documentation is organized in the [`docs/`](docs/) folder. See the full [Documentation Index](docs/INDEX.md).
+
 ### 📖 Core Documentation
 | Document | Description |
 |----------|-------------|
-| [USER_MANUAL.md](USER_MANUAL.md) | Comprehensive user guide |
-| [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | Quick command reference |
-| [API_REFERENCE.md](API_REFERENCE.md) | Complete API documentation |
+| [USER_MANUAL.md](docs/user-guide/USER_MANUAL.md) | Comprehensive user guide |
+| [QUICK_REFERENCE.md](docs/getting-started/QUICK_REFERENCE.md) | Quick command reference |
+| [API_REFERENCE.md](docs/technical/API_REFERENCE.md) | Complete API documentation |
 
 ### 🔧 Setup & Configuration
 | Document | Description |
 |----------|-------------|
-| [BUILDING.md](BUILDING.md) | Build instructions and dependencies |
-| [CONFIGURATION.md](CONFIGURATION.md) | Configuration guide (TOML) |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment guide |
-| [SETUP.md](SETUP.md) | Initial setup and installation |
+| [BUILDING.md](docs/getting-started/BUILDING.md) | Build instructions and dependencies |
+| [CONFIGURATION.md](docs/user-guide/CONFIGURATION.md) | Configuration guide (TOML) |
+| [DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) | Production deployment guide |
+| [SETUP.md](docs/getting-started/SETUP.md) | Initial setup and installation |
 
 ### ⚙️ Technical Reference
 | Document | Description |
 |----------|-------------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and components |
-| [PROTOCOL.md](PROTOCOL.md) | PhyCMD-64 protocol specification |
-| [PERFORMANCE.md](PERFORMANCE.md) | Performance comparison USB vs Serial |
-| [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) |
-| [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md) | Required firmware updates |
+| [ARCHITECTURE.md](docs/technical/ARCHITECTURE.md) | System design and components |
+| [PROTOCOL.md](docs/technical/PROTOCOL.md) | PhyCMD-64 protocol specification |
+| [PERFORMANCE.md](docs/technical/PERFORMANCE.md) | Performance comparison USB vs Serial |
+| [FIRMWARE_UPLOAD.md](docs/firmware/FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) |
+| [FIRMWARE_UPDATES.md](docs/firmware/FIRMWARE_UPDATES.md) | Required firmware updates |
 
 ## Features
 
@@ -221,16 +239,18 @@ cargo run --example simple_client
 | Jitter (stddev) | ±35 µs | ✅ Tested |
 | Throughput | 900 kbps | ✅ Capable |
 
-See [PERFORMANCE.md](PERFORMANCE.md) for detailed benchmarks.
+See [PERFORMANCE.md](docs/technical/PERFORMANCE.md) for detailed benchmarks.
 
-## Use Cases
+## Application domains
 
-- **Test Machines**: Automated testing of mechanical/electrical devices
-- **Data Acquisition**: High-speed sensor monitoring
-- **Motion Control**: Precise control of actuators and motors
-- **Laboratory Automation**: Remote control of experimental setups
-- **Industrial IoT**: Edge device monitoring and control
-- **Education**: Teaching real-time systems and embedded programming
+phycommander targets contexts where openness, reproducibility, and programmability matter as much as the measurement itself:
+
+- **Teaching labs** — physics and engineering students build their own instruments (spectrometer, Bode plotter, lock-in, PLL, PID controllers) on an auditable signal chain instead of a closed-box commercial DAQ.
+- **Benchtop research** — PhD students and small groups characterize sensors, amplifiers, transducers, analog circuits, and small mechanical or optical setups without buying a dedicated instrument per DUT.
+- **Control prototyping** — PID, state observers, Kalman filters, MPC, or adaptive controllers running in Python / Rust against a physical plant at 1–10 kHz.
+- **Custom test benches** — automated electrical and mechanical test rigs: one phycommander plus a few drivers replaces a purpose-built tester.
+- **Open-hardware publication** — measurement methods that must be reproducible by any reader of a paper, end-to-end, with no proprietary black boxes in the signal chain.
+- **Makerspace / hobbyist instrumentation** — when you need the precision of a lab DAQ but cannot justify €500+ of NI gear.
 
 ## API Examples
 
@@ -373,7 +393,7 @@ See firmware configuration files for detailed pin assignments:
 
 ## Troubleshooting
 
-See [SETUP.md](SETUP.md) for detailed troubleshooting.
+See [SETUP.md](docs/getting-started/SETUP.md) for detailed troubleshooting.
 
 ## License
 

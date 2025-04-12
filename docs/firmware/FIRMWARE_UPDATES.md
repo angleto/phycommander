@@ -14,7 +14,7 @@ The existing ATSAM3X8E firmware (`ATSAM3X8E_FW/ATSAM3X8E_FW/src/main.c`) impleme
 
 ## Required Updates for New Protocol
 
-To match the PhyCMD-64 protocol specification in `PROTOCOL.md`, the firmware needs:
+To match the PhyCMD-64 protocol specification in [PROTOCOL.md](../technical/PROTOCOL.md), the firmware needs:
 
 ### 1. Protocol Headers
 - **Command messages**: Add 0xAA55 header check (bytes 0-1)

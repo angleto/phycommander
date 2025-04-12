@@ -3,3 +3,14 @@
 # Users should install libudev-dev on their system: sudo apt-get install libudev-dev
 PKG_CONFIG_ALLOW_SYSTEM_LIBS = "1"
 PKG_CONFIG_ALLOW_SYSTEM_CFLAGS = "1"
+
+# Allow pyo3-generated cdylibs (phycmd_ext) to link on macOS without
+# a Python dev library: undefined Python symbols are resolved at
+# runtime by the interpreter that dlopen()s the extension. This is
+# the same trick maturin uses internally; it has no effect on rlib
+# crates or on Linux targets.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-args=-undefined dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-args=-undefined dynamic_lookup"]

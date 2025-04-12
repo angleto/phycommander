@@ -1,0 +1,24 @@
+[package]
+name = "phycmd-py"
+version = "0.1.0"
+edition = "2021"
+authors = ["PhyCMD Contributors"]
+description = "pyo3 bindings for the PhyCommander Rust RT stack"
+license = "MIT"
+
+[lib]
+# The pyo3 cdylib is named `phycmd_ext` to avoid colliding with the
+# sibling `phycmd-rust` crate's lib name (also `phycmd`). The Python
+# package re-exports the symbols so consumers still write
+# `import phycmd` — see `python/phycmd/__init__.py`.
+name = "phycmd_ext"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+phycmd-rust = { path = "../phycmd-rust", features = ["test-mock"] }
+phycmd-core = { path = "../phycmd-core", features = ["test-mock"] }
+pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+parking_lot = "0.12"
+anyhow = "1.0"
+tokio = { version = "1.35", features = ["sync", "rt"], default-features = false }

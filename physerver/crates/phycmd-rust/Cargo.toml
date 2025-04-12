@@ -1,0 +1,32 @@
+[package]
+name = "phycmd-rust"
+version = "0.1.0"
+edition = "2021"
+authors = ["PhyCMD Contributors"]
+description = "High-level Rust API on top of phycmd-core (RT scheduler + staging buffer + status observer)"
+license = "MIT"
+
+[lib]
+name = "phycmd"
+path = "src/lib.rs"
+
+[dependencies]
+phycmd-core = { path = "../phycmd-core", default-features = false }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+# Re-exported only so that `StatusReceiver = broadcast::Receiver<StatusFrame>`
+# can be aliased publicly. Same feature subset as phycmd-core.
+tokio = { version = "1.35", features = ["sync", "rt"], default-features = false }
+
+[features]
+default = ["usb"]
+usb = ["phycmd-core/usb"]
+# Re-exports the MockTransport from phycmd-core so that callers can
+# build their own PhyCommander handles against a loopback mock in
+# their integration tests. Also enabled automatically in dev-deps.
+test-mock = ["phycmd-core/test-mock"]
+
+[dev-dependencies]
+phycmd-core = { path = "../phycmd-core", features = ["test-mock"] }
+parking_lot = "0.12"

@@ -1,20 +1,23 @@
-mod protocol;
-mod serial;
-mod transport;
-mod config;
-mod ipc;
-mod sysinfo;
-mod web;
-mod rt;
-mod telemetry;
+// All modules live in the physerver lib crate (src/lib.rs), which also
+// re-exports the protocol / transport / rt primitives from phycmd-core.
+// This binary imports them from the lib instead of redeclaring `mod`s,
+// which used to compile duplicated copies of every module into the bin.
+use physerver::{
+    config,
+    ipc,
+    protocol,
+    rt,
+    serial,
+    telemetry,
+    transport,
+    web,
+};
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use protocol::{Command, Status};
-use transport::{Transport, TransportType};
+use transport::Transport;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]

@@ -645,7 +645,7 @@ stress-ng --cpu 2 --io 2 --vm 1 --vm-bytes 512M --timeout 600s
 
 ### Test PhyServer Performance
 
-Configure PhyServer with RT settings (see [CONFIGURATION.md](CONFIGURATION.md)):
+Configure PhyServer with RT settings (see [CONFIGURATION.md](../user-guide/CONFIGURATION.md)):
 
 ```toml
 [realtime]
@@ -1083,10 +1083,10 @@ sudo systemctl status physerver
 
 ### Related Documentation
 
-- **[CONFIGURATION.md](CONFIGURATION.md)**: PhyServer RT configuration options
+- **[CONFIGURATION.md](../user-guide/CONFIGURATION.md)**: PhyServer RT configuration options
 - **[DEPLOYMENT.md](DEPLOYMENT.md)**: Production deployment and systemd services
-- **[PERFORMANCE.md](PERFORMANCE.md)**: Performance benchmarks and tuning
-- **[USER_MANUAL.md](USER_MANUAL.md)**: Complete user guide
+- **[PERFORMANCE.md](../technical/PERFORMANCE.md)**: Performance benchmarks and tuning
+- **[USER_MANUAL.md](../user-guide/USER_MANUAL.md)**: Complete user guide
 
 ### External Resources
 
@@ -1100,7 +1100,7 @@ sudo systemctl status physerver
 
 For issues or questions:
 - **GitHub Issues**: https://github.com/angleto/phycmd/issues
-- **Documentation**: See `DOCUMENTATION_INDEX.md` for all guides
+- **Documentation**: See [INDEX.md](../INDEX.md) for all guides
 
 ---
 

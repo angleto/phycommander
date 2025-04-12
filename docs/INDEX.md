@@ -5,33 +5,33 @@ Complete guide to PhyCMD documentation.
 ## Quick Navigation
 
 ### 🚀 Getting Started
-1. Start here: [README.md](README.md)
-2. Quick setup: [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-3. Full user guide: [USER_MANUAL.md](USER_MANUAL.md)
+1. Start here: [README.md](../README.md)
+2. Quick setup: [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md)
+3. Full user guide: [USER_MANUAL.md](user-guide/USER_MANUAL.md)
 
 ### 📖 By Role
 
 #### End Users
-- **Start**: [USER_MANUAL.md](USER_MANUAL.md)
-- **Quick Reference**: [QUICK_REFERENCE.md](QUICK_REFERENCE.md)
-- **Setup**: [SETUP.md](SETUP.md)
+- **Start**: [USER_MANUAL.md](user-guide/USER_MANUAL.md)
+- **Quick Reference**: [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md)
+- **Setup**: [SETUP.md](getting-started/SETUP.md)
 
 #### Developers
-- **API Reference**: [API_REFERENCE.md](API_REFERENCE.md)
-- **Architecture**: [ARCHITECTURE.md](ARCHITECTURE.md)
-- **Protocol**: [PROTOCOL.md](PROTOCOL.md)
-- **Building**: [BUILDING.md](BUILDING.md)
+- **API Reference**: [API_REFERENCE.md](technical/API_REFERENCE.md)
+- **Architecture**: [ARCHITECTURE.md](technical/ARCHITECTURE.md)
+- **Protocol**: [PROTOCOL.md](technical/PROTOCOL.md)
+- **Building**: [BUILDING.md](getting-started/BUILDING.md)
 
 #### DevOps/System Administrators
-- **Deployment**: [DEPLOYMENT.md](DEPLOYMENT.md)
-- **Configuration**: [CONFIGURATION.md](CONFIGURATION.md)
-- **Performance**: [PERFORMANCE.md](PERFORMANCE.md)
-- **Real-Time OS Setup**: [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md)
+- **Deployment**: [DEPLOYMENT.md](deployment/DEPLOYMENT.md)
+- **Configuration**: [CONFIGURATION.md](user-guide/CONFIGURATION.md)
+- **Performance**: [PERFORMANCE.md](technical/PERFORMANCE.md)
+- **Real-Time OS Setup**: [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md)
 
 #### Hardware/Firmware Engineers
-- **Firmware Upload**: [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md)
-- **Firmware Updates**: [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md)
-- **Protocol**: [PROTOCOL.md](PROTOCOL.md)
+- **Firmware Upload**: [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md)
+- **Firmware Updates**: [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md)
+- **Protocol**: [PROTOCOL.md](technical/PROTOCOL.md)
 
 ---
 
@@ -41,30 +41,30 @@ Complete guide to PhyCMD documentation.
 
 | Document | Description | Length |
 |----------|-------------|--------|
-| [README.md](README.md) | Main entry point and overview | 10 pages |
-| [USER_MANUAL.md](USER_MANUAL.md) | Complete user guide | 60 pages |
-| [QUICK_REFERENCE.md](QUICK_REFERENCE.md) | One-page cheat sheet | 3 pages |
-| [API_REFERENCE.md](API_REFERENCE.md) | Complete API documentation | 40 pages |
+| [README.md](../README.md) | Main entry point and overview | 10 pages |
+| [USER_MANUAL.md](user-guide/USER_MANUAL.md) | Complete user guide | 60 pages |
+| [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md) | One-page cheat sheet | 3 pages |
+| [API_REFERENCE.md](technical/API_REFERENCE.md) | Complete API documentation | 40 pages |
 
 ### Setup & Configuration
 
 | Document | Description | Length |
 |----------|-------------|--------|
-| [SETUP.md](SETUP.md) | Initial setup and installation | 15 pages |
-| [BUILDING.md](BUILDING.md) | Build instructions | 20 pages |
-| [CONFIGURATION.md](CONFIGURATION.md) | Configuration guide | 30 pages |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment | 35 pages |
-| [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) | Real-time Linux OS configuration | 45 pages |
+| [SETUP.md](getting-started/SETUP.md) | Initial setup and installation | 15 pages |
+| [BUILDING.md](getting-started/BUILDING.md) | Build instructions | 20 pages |
+| [CONFIGURATION.md](user-guide/CONFIGURATION.md) | Configuration guide | 30 pages |
+| [DEPLOYMENT.md](deployment/DEPLOYMENT.md) | Production deployment | 35 pages |
+| [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md) | Real-time Linux OS configuration | 45 pages |
 
 ### Technical Reference
 
 | Document | Description | Length |
 |----------|-------------|--------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and architecture | 25 pages |
-| [PROTOCOL.md](PROTOCOL.md) | PhyCMD-64 protocol specification | 20 pages |
-| [PERFORMANCE.md](PERFORMANCE.md) | Performance benchmarks and tuning | 15 pages |
-| [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) | 15 pages |
-| [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md) | Required firmware changes | 10 pages |
+| [ARCHITECTURE.md](technical/ARCHITECTURE.md) | System design and architecture | 25 pages |
+| [PROTOCOL.md](technical/PROTOCOL.md) | PhyCMD-64 protocol specification | 20 pages |
+| [PERFORMANCE.md](technical/PERFORMANCE.md) | Performance benchmarks and tuning | 15 pages |
+| [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) | 15 pages |
+| [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md) | Required firmware changes | 10 pages |
 
 **Total**: ~200+ pages of documentation
 
@@ -74,45 +74,45 @@ Complete guide to PhyCMD documentation.
 
 ### Installation & Setup
 
-1. [SETUP.md](SETUP.md) - Initial setup
-2. [BUILDING.md](BUILDING.md) - Build from source
-3. [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md) - Upload firmware
-4. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Configure RT OS (optional)
-5. [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
+1. [SETUP.md](getting-started/SETUP.md) - Initial setup
+2. [BUILDING.md](getting-started/BUILDING.md) - Build from source
+3. [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md) - Upload firmware
+4. [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md) - Configure RT OS (optional)
+5. [DEPLOYMENT.md](deployment/DEPLOYMENT.md) - Production deployment
 
 ### Configuration
 
-1. [CONFIGURATION.md](CONFIGURATION.md) - Complete configuration reference
-2. [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Quick config examples
-3. [DEPLOYMENT.md](DEPLOYMENT.md) - Production config
+1. [CONFIGURATION.md](user-guide/CONFIGURATION.md) - Complete configuration reference
+2. [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md) - Quick config examples
+3. [DEPLOYMENT.md](deployment/DEPLOYMENT.md) - Production config
 
 ### Using PhyServer
 
-1. [USER_MANUAL.md](USER_MANUAL.md) - Complete usage guide
-2. [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Common operations
-3. [API_REFERENCE.md](API_REFERENCE.md) - API details
+1. [USER_MANUAL.md](user-guide/USER_MANUAL.md) - Complete usage guide
+2. [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md) - Common operations
+3. [API_REFERENCE.md](technical/API_REFERENCE.md) - API details
 
 ### Development
 
-1. [API_REFERENCE.md](API_REFERENCE.md) - API reference
-2. [ARCHITECTURE.md](ARCHITECTURE.md) - System design
-3. [PROTOCOL.md](PROTOCOL.md) - Protocol specification
-4. [BUILDING.md](BUILDING.md) - Build instructions
+1. [API_REFERENCE.md](technical/API_REFERENCE.md) - API reference
+2. [ARCHITECTURE.md](technical/ARCHITECTURE.md) - System design
+3. [PROTOCOL.md](technical/PROTOCOL.md) - Protocol specification
+4. [BUILDING.md](getting-started/BUILDING.md) - Build instructions
 
 ### Performance Tuning
 
-1. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Real-time OS setup
-2. [PERFORMANCE.md](PERFORMANCE.md) - Benchmarks and tuning
-3. [CONFIGURATION.md](CONFIGURATION.md) - RT configuration
-4. [DEPLOYMENT.md](DEPLOYMENT.md) - Production optimization
-5. [USER_MANUAL.md](USER_MANUAL.md) - Real-time operation section
+1. [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md) - Real-time OS setup
+2. [PERFORMANCE.md](technical/PERFORMANCE.md) - Benchmarks and tuning
+3. [CONFIGURATION.md](user-guide/CONFIGURATION.md) - RT configuration
+4. [DEPLOYMENT.md](deployment/DEPLOYMENT.md) - Production optimization
+5. [USER_MANUAL.md](user-guide/USER_MANUAL.md) - Real-time operation section
 
 ### Troubleshooting
 
-1. [USER_MANUAL.md](USER_MANUAL.md) - Troubleshooting section
-2. [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Quick fixes
-3. [DEPLOYMENT.md](DEPLOYMENT.md) - Production troubleshooting
-4. [SETUP.md](SETUP.md) - Setup issues
+1. [USER_MANUAL.md](user-guide/USER_MANUAL.md) - Troubleshooting section
+2. [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md) - Quick fixes
+3. [DEPLOYMENT.md](deployment/DEPLOYMENT.md) - Production troubleshooting
+4. [SETUP.md](getting-started/SETUP.md) - Setup issues
 
 ---
 
@@ -156,30 +156,30 @@ All documentation includes working code examples in:
 ### By Keyword
 
 **Transport/Communication**:
-- USB Bulk transport → [PERFORMANCE.md](PERFORMANCE.md), [USER_MANUAL.md](USER_MANUAL.md)
-- Serial transport → [CONFIGURATION.md](CONFIGURATION.md), [USER_MANUAL.md](USER_MANUAL.md)
-- Protocol → [PROTOCOL.md](PROTOCOL.md), [ARCHITECTURE.md](ARCHITECTURE.md)
+- USB Bulk transport → [PERFORMANCE.md](technical/PERFORMANCE.md), [USER_MANUAL.md](user-guide/USER_MANUAL.md)
+- Serial transport → [CONFIGURATION.md](user-guide/CONFIGURATION.md), [USER_MANUAL.md](user-guide/USER_MANUAL.md)
+- Protocol → [PROTOCOL.md](technical/PROTOCOL.md), [ARCHITECTURE.md](technical/ARCHITECTURE.md)
 
 **APIs**:
-- REST API → [API_REFERENCE.md](API_REFERENCE.md), [USER_MANUAL.md](USER_MANUAL.md)
-- WebSocket → [API_REFERENCE.md](API_REFERENCE.md)
-- IPC → [API_REFERENCE.md](API_REFERENCE.md), [USER_MANUAL.md](USER_MANUAL.md)
+- REST API → [API_REFERENCE.md](technical/API_REFERENCE.md), [USER_MANUAL.md](user-guide/USER_MANUAL.md)
+- WebSocket → [API_REFERENCE.md](technical/API_REFERENCE.md)
+- IPC → [API_REFERENCE.md](technical/API_REFERENCE.md), [USER_MANUAL.md](user-guide/USER_MANUAL.md)
 
 **Configuration**:
-- TOML config → [CONFIGURATION.md](CONFIGURATION.md)
-- Command-line → [QUICK_REFERENCE.md](QUICK_REFERENCE.md), [CONFIGURATION.md](CONFIGURATION.md)
-- Real-time → [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md), [CONFIGURATION.md](CONFIGURATION.md), [USER_MANUAL.md](USER_MANUAL.md)
-- RT kernel → [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md)
+- TOML config → [CONFIGURATION.md](user-guide/CONFIGURATION.md)
+- Command-line → [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md), [CONFIGURATION.md](user-guide/CONFIGURATION.md)
+- Real-time → [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md), [CONFIGURATION.md](user-guide/CONFIGURATION.md), [USER_MANUAL.md](user-guide/USER_MANUAL.md)
+- RT kernel → [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md)
 
 **Deployment**:
-- Systemd → [DEPLOYMENT.md](DEPLOYMENT.md)
-- Security → [DEPLOYMENT.md](DEPLOYMENT.md)
-- Monitoring → [DEPLOYMENT.md](DEPLOYMENT.md)
+- Systemd → [DEPLOYMENT.md](deployment/DEPLOYMENT.md)
+- Security → [DEPLOYMENT.md](deployment/DEPLOYMENT.md)
+- Monitoring → [DEPLOYMENT.md](deployment/DEPLOYMENT.md)
 
 **Hardware**:
-- Arduino Due → [README.md](README.md), [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md)
-- Pin mapping → [USER_MANUAL.md](USER_MANUAL.md), [PROTOCOL.md](PROTOCOL.md)
-- Firmware → [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md), [FIRMWARE_UPDATES.md](FIRMWARE_UPDATES.md)
+- Arduino Due → [README.md](../README.md), [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md)
+- Pin mapping → [USER_MANUAL.md](user-guide/USER_MANUAL.md), [PROTOCOL.md](technical/PROTOCOL.md)
+- Firmware → [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md), [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md)
 
 ---
 
@@ -188,32 +188,42 @@ All documentation includes working code examples in:
 ```
 PhyCMD/
 │
-├── README.md                  # Start here
+├── README.md                          # Start here
+├── CONTRIBUTING.md                    # Contribution guidelines
+├── CHANGELOG.md                       # Version history
+├── LICENSE                            # MIT License
 │
-├── Core Documentation
-│   ├── USER_MANUAL.md        # Complete user guide
-│   ├── QUICK_REFERENCE.md    # Quick reference
-│   └── API_REFERENCE.md      # API documentation
-│
-├── Setup & Configuration
-│   ├── SETUP.md              # Initial setup
-│   ├── BUILDING.md           # Build instructions
-│   ├── CONFIGURATION.md      # Configuration reference
-│   ├── DEPLOYMENT.md         # Production deployment
-│   └── REALTIME_OS_CONFIG.md # Real-time OS configuration
-│
-├── Technical Reference
-│   ├── ARCHITECTURE.md       # System architecture
-│   ├── PROTOCOL.md           # Protocol specification
-│   ├── PERFORMANCE.md        # Performance guide
-│   ├── FIRMWARE_UPLOAD.md    # Firmware upload
-│   └── FIRMWARE_UPDATES.md   # Firmware updates
-│
-└── Code
-    └── physerver/            # Server implementation
-        ├── src/              # Source code
-        ├── examples/         # Code examples
-        └── static/           # Web interface
+└── docs/
+    ├── INDEX.md                       # This file
+    │
+    ├── getting-started/
+    │   ├── SETUP.md                   # Initial setup
+    │   ├── BUILDING.md                # Build instructions
+    │   └── QUICK_REFERENCE.md         # Quick reference
+    │
+    ├── user-guide/
+    │   ├── USER_MANUAL.md             # Complete user guide
+    │   └── CONFIGURATION.md           # Configuration reference
+    │
+    ├── technical/
+    │   ├── ARCHITECTURE.md            # System architecture
+    │   ├── PROTOCOL.md                # Protocol specification
+    │   ├── API_REFERENCE.md           # API documentation
+    │   └── PERFORMANCE.md             # Performance guide
+    │
+    ├── deployment/
+    │   ├── DEPLOYMENT.md              # Production deployment
+    │   ├── REALTIME_OS_CONFIG.md      # Real-time OS configuration
+    │   └── REMOTE_ACCESS.md           # Remote access guide
+    │
+    ├── firmware/
+    │   ├── FIRMWARE_UPLOAD.md         # Firmware upload (BOSSA)
+    │   └── FIRMWARE_UPDATES.md        # Firmware updates
+    │
+    └── reports/
+        ├── PRODUCTION_READINESS_REPORT.md
+        ├── PRODUCTION_READINESS_REPORT_FINAL.md
+        └── PRODUCTION_READINESS_VERIFICATION.md
 ```
 
 ---
@@ -222,33 +232,33 @@ PhyCMD/
 
 ### For New Users
 
-1. [README.md](README.md) - Overview
-2. [SETUP.md](SETUP.md) - Get it running
-3. [USER_MANUAL.md](USER_MANUAL.md) - Learn to use it
-4. [QUICK_REFERENCE.md](QUICK_REFERENCE.md) - Keep handy
+1. [README.md](../README.md) - Overview
+2. [SETUP.md](getting-started/SETUP.md) - Get it running
+3. [USER_MANUAL.md](user-guide/USER_MANUAL.md) - Learn to use it
+4. [QUICK_REFERENCE.md](getting-started/QUICK_REFERENCE.md) - Keep handy
 
 ### For Developers
 
-1. [README.md](README.md) - Overview
-2. [ARCHITECTURE.md](ARCHITECTURE.md) - Understand design
-3. [PROTOCOL.md](PROTOCOL.md) - Understand protocol
-4. [API_REFERENCE.md](API_REFERENCE.md) - Use APIs
-5. [BUILDING.md](BUILDING.md) - Build from source
+1. [README.md](../README.md) - Overview
+2. [ARCHITECTURE.md](technical/ARCHITECTURE.md) - Understand design
+3. [PROTOCOL.md](technical/PROTOCOL.md) - Understand protocol
+4. [API_REFERENCE.md](technical/API_REFERENCE.md) - Use APIs
+5. [BUILDING.md](getting-started/BUILDING.md) - Build from source
 
 ### For System Administrators
 
-1. [README.md](README.md) - Overview
-2. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Configure RT OS
-3. [DEPLOYMENT.md](DEPLOYMENT.md) - Deploy to production
-4. [CONFIGURATION.md](CONFIGURATION.md) - Configure properly
-5. [PERFORMANCE.md](PERFORMANCE.md) - Optimize performance
+1. [README.md](../README.md) - Overview
+2. [REALTIME_OS_CONFIG.md](deployment/REALTIME_OS_CONFIG.md) - Configure RT OS
+3. [DEPLOYMENT.md](deployment/DEPLOYMENT.md) - Deploy to production
+4. [CONFIGURATION.md](user-guide/CONFIGURATION.md) - Configure properly
+5. [PERFORMANCE.md](technical/PERFORMANCE.md) - Optimize performance
 
 ### For Integration Engineers
 
-1. [README.md](README.md) - Overview
-2. [API_REFERENCE.md](API_REFERENCE.md) - APIs
-3. [PROTOCOL.md](PROTOCOL.md) - Protocol
-4. [ARCHITECTURE.md](ARCHITECTURE.md) - Architecture
+1. [README.md](../README.md) - Overview
+2. [API_REFERENCE.md](technical/API_REFERENCE.md) - APIs
+3. [PROTOCOL.md](technical/PROTOCOL.md) - Protocol
+4. [ARCHITECTURE.md](technical/ARCHITECTURE.md) - Architecture
 
 ---
 

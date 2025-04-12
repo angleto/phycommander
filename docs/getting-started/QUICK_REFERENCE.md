@@ -277,11 +277,11 @@ RUST_LOG=physerver::transport=trace ./physerver --auto-detect
 
 ## Documentation
 
-- [USER_MANUAL.md](USER_MANUAL.md) - Complete user guide
-- [API_REFERENCE.md](API_REFERENCE.md) - Detailed API docs
-- [CONFIGURATION.md](CONFIGURATION.md) - Configuration guide
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
-- [PERFORMANCE.md](PERFORMANCE.md) - Performance benchmarks
+- [USER_MANUAL.md](../user-guide/USER_MANUAL.md) - Complete user guide
+- [API_REFERENCE.md](../technical/API_REFERENCE.md) - Detailed API docs
+- [CONFIGURATION.md](../user-guide/CONFIGURATION.md) - Configuration guide
+- [DEPLOYMENT.md](../deployment/DEPLOYMENT.md) - Production deployment
+- [PERFORMANCE.md](../technical/PERFORMANCE.md) - Performance benchmarks
 - [BUILDING.md](BUILDING.md) - Build instructions
 
 ---

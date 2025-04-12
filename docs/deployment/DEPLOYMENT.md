@@ -742,10 +742,10 @@ sudo -u physerver RUST_LOG=debug /usr/local/bin/physerver --config /etc/physerve
 
 ## See Also
 
-- [USER_MANUAL.md](USER_MANUAL.md) - Usage guide
-- [CONFIGURATION.md](CONFIGURATION.md) - Configuration reference
-- [PERFORMANCE.md](PERFORMANCE.md) - Performance tuning
-- [BUILDING.md](BUILDING.md) - Build instructions
+- [USER_MANUAL.md](../user-guide/USER_MANUAL.md) - Usage guide
+- [CONFIGURATION.md](../user-guide/CONFIGURATION.md) - Configuration reference
+- [PERFORMANCE.md](../technical/PERFORMANCE.md) - Performance tuning
+- [BUILDING.md](../getting-started/BUILDING.md) - Build instructions
 
 ---
 

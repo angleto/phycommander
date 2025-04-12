@@ -257,8 +257,8 @@ curl http://localhost:8080/api/status | jq '.loop_time_us, .uptime_ms'
 
 ## Next Steps
 
-1. Read `ARCHITECTURE.md` for system design details
-2. Read `PROTOCOL.md` for communication protocol specification
+1. Read `ARCHITECTURE.md` for system design details - see [ARCHITECTURE.md](../technical/ARCHITECTURE.md)
+2. Read `PROTOCOL.md` for communication protocol specification - see [PROTOCOL.md](../technical/PROTOCOL.md)
 3. Review `physerver/README.md` for server API documentation
 4. Write custom test logic using the IPC or REST API
 5. Customize the web interface in `physerver/static/index.html`

@@ -749,9 +749,9 @@ sudo ufw allow 8080/tcp
 ### For More Help
 
 - Check logs with `RUST_LOG=debug`
-- See [SETUP.md](SETUP.md) for detailed setup
-- See [PERFORMANCE.md](PERFORMANCE.md) for performance tuning
-- Review [API_REFERENCE.md](API_REFERENCE.md) for API details
+- See [SETUP.md](../getting-started/SETUP.md) for detailed setup
+- See [PERFORMANCE.md](../technical/PERFORMANCE.md) for performance tuning
+- Review [API_REFERENCE.md](../technical/API_REFERENCE.md) for API details
 
 ---
 

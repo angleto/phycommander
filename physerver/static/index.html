@@ -5,119 +5,79 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PhyCMD - Physical Commander</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh; padding: 20px;
-        }
-        .container {
-            max-width: 1400px; margin: 0 auto; background: white;
-            border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); padding: 24px;
-        }
-        h1 { color: #333; margin-bottom: 6px; font-size: 22px; }
-        h1 small { font-size: 13px; color: #999; font-weight: normal; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); min-height:100vh; padding:16px; }
+        .container { max-width:1500px; margin:0 auto; background:white; border-radius:10px; box-shadow:0 10px 40px rgba(0,0,0,.2); padding:20px; }
+        h1 { color:#333; margin-bottom:4px; font-size:20px; } h1 small { font-size:12px; color:#999; font-weight:normal; }
 
-        /* ---- Status bar ---- */
-        .status-bar {
-            background: #f5f5f5; padding: 10px 16px; border-radius: 6px;
-            margin-bottom: 16px; display: flex; justify-content: space-between;
-            align-items: center; flex-wrap: wrap; gap: 10px;
-        }
-        .status-left { display: flex; align-items: center; gap: 14px; }
-        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
-        .status-dot.connected { background: #4CAF50; box-shadow: 0 0 8px #4CAF50; }
-        .status-text { font-size: 13px; color: #555; }
-        .status-badges { display: flex; gap: 8px; flex-wrap: wrap; }
-        .badge {
-            display: inline-flex; align-items: center; gap: 4px;
-            padding: 3px 10px; border-radius: 12px; font-size: 12px;
-            font-weight: 600; font-family: monospace; white-space: nowrap;
-        }
-        .badge.temp { background: #e8f5e9; color: #2e7d32; }
-        .badge.temp.warn { background: #fff3e0; color: #e65100; }
-        .badge.temp.crit { background: #ffebee; color: #c62828; }
-        .badge.info { background: #e3f2fd; color: #1565c0; }
-        .badge.err  { background: #ffebee; color: #c62828; }
+        /* Status bar */
+        .status-bar { background:#f5f5f5; padding:8px 14px; border-radius:6px; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+        .status-left { display:flex; align-items:center; gap:10px; }
+        .status-dot { width:10px; height:10px; border-radius:50%; background:#ccc; }
+        .status-dot.connected { background:#4CAF50; box-shadow:0 0 8px #4CAF50; }
+        .status-text { font-size:12px; color:#555; }
+        .status-badges { display:flex; gap:6px; flex-wrap:wrap; }
+        .badge { display:inline-flex; align-items:center; gap:3px; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; font-family:monospace; white-space:nowrap; }
+        .badge.temp { background:#e8f5e9; color:#2e7d32; } .badge.temp.warn { background:#fff3e0; color:#e65100; } .badge.temp.crit { background:#ffebee; color:#c62828; }
+        .badge.info { background:#e3f2fd; color:#1565c0; }
+        .status-stats { display:flex; gap:14px; flex-wrap:wrap; }
+        .stat-mini { text-align:center; }
+        .stat-mini .v { font-size:14px; font-weight:bold; color:#667eea; font-family:monospace; min-width:5ch; text-align:center; display:inline-block; }
+        .stat-mini .l { font-size:9px; color:#999; text-transform:uppercase; }
 
-        .status-stats { display: flex; gap: 16px; flex-wrap: wrap; }
-        .stat-mini { text-align: center; }
-        .stat-mini .v { font-size: 15px; font-weight: bold; color: #667eea; font-family: monospace; }
-        .stat-mini .l { font-size: 10px; color: #999; text-transform: uppercase; }
+        /* Grid */
+        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-bottom:14px; }
+        .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; }
+        .panel h2 { font-size:13px; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #667eea; padding-bottom:6px; }
+        .panel.wide { grid-column:1/-1; }
 
-        /* ---- Grid ---- */
-        .grid {
-            display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 16px; margin-bottom: 16px;
-        }
-        .panel {
-            background: #f9f9f9; border-radius: 8px; padding: 16px; border: 1px solid #e0e0e0;
-        }
-        .panel h2 {
-            font-size: 14px; color: #555; margin-bottom: 12px; text-transform: uppercase;
-            letter-spacing: 0.5px; border-bottom: 2px solid #667eea; padding-bottom: 8px;
-        }
-        .panel.wide { grid-column: 1 / -1; }
+        /* GPIO */
+        .gpio-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
+        .gpio-button { padding:6px 2px; border:2px solid #ddd; border-radius:4px; background:white; cursor:pointer; transition:all .15s; text-align:center; font-weight:bold; font-size:10px; }
+        .gpio-button:hover { background:#f0f0f0; } .gpio-button.active { background:#4CAF50; color:white; border-color:#45a049; }
+        .gpio-button.input { cursor:default; background:#f5f5f5; } .gpio-button.input.active { background:#2196F3; color:white; }
 
-        /* ---- GPIO ---- */
-        .gpio-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
-        .gpio-button {
-            padding: 8px 2px; border: 2px solid #ddd; border-radius: 4px;
-            background: white; cursor: pointer; transition: all 0.15s;
-            text-align: center; font-weight: bold; font-size: 11px;
-        }
-        .gpio-button:hover { background: #f0f0f0; }
-        .gpio-button.active { background: #4CAF50; color: white; border-color: #45a049; }
-        .gpio-button.input { cursor: default; background: #f5f5f5; }
-        .gpio-button.input.active { background: #2196F3; color: white; }
+        /* Sliders */
+        .control-group { margin-bottom:10px; }
+        .control-group label { display:block; margin-bottom:3px; font-weight:600; color:#555; font-size:12px; }
+        .slider-container { display:flex; align-items:center; gap:6px; }
+        input[type="range"] { flex:1; height:6px; border-radius:3px; background:#ddd; outline:none; }
+        input[type="range"]::-webkit-slider-thumb { appearance:none; width:16px; height:16px; border-radius:50%; background:#667eea; cursor:pointer; }
+        .value-display { min-width:50px; text-align:right; font-family:monospace; font-weight:bold; font-size:13px; }
 
-        /* ---- DAC ---- */
-        .control-group { margin-bottom: 12px; }
-        .control-group label { display: block; margin-bottom: 4px; font-weight: 600; color: #555; font-size: 13px; }
-        .slider-container { display: flex; align-items: center; gap: 8px; }
-        input[type="range"] { flex: 1; height: 6px; border-radius: 3px; background: #ddd; outline: none; }
-        input[type="range"]::-webkit-slider-thumb {
-            appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #667eea; cursor: pointer;
-        }
-        .value-display { min-width: 50px; text-align: right; font-family: monospace; font-weight: bold; font-size: 14px; }
+        /* ADC */
+        .adc-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+        .adc-ch { background:white; padding:6px 8px; border-radius:4px; border-left:3px solid #667eea; position:relative; overflow:hidden; }
+        .adc-ch .bar { position:absolute; left:0; bottom:0; height:3px; background:linear-gradient(90deg,#667eea,#764ba2); transition:width .2s; }
+        .adc-ch .lbl { font-size:9px; color:#999; } .adc-ch .val { font-size:16px; font-weight:bold; color:#333; font-family:monospace; }
 
-        /* ---- ADC ---- */
-        .adc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-        .adc-ch {
-            background: white; padding: 8px 10px; border-radius: 4px; border-left: 3px solid #667eea;
-            position: relative; overflow: hidden;
-        }
-        .adc-ch .bar {
-            position: absolute; left: 0; bottom: 0; height: 3px;
-            background: linear-gradient(90deg, #667eea, #764ba2);
-            transition: width 0.2s;
-        }
-        .adc-ch .lbl { font-size: 10px; color: #999; }
-        .adc-ch .val { font-size: 18px; font-weight: bold; color: #333; font-family: monospace; }
+        /* Flags */
+        .flag-row { display:flex; gap:8px; flex-wrap:wrap; }
+        .flag-toggle { display:flex; align-items:center; gap:4px; font-size:12px; cursor:pointer; }
+        .flag-toggle input { cursor:pointer; }
 
-        /* ---- Sysinfo ---- */
-        .sysinfo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-        .sysinfo-section { }
-        .sysinfo-section h3 {
-            font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
-            color: #888; margin-bottom: 4px; font-weight: 600;
-        }
-        .sysinfo-row {
-            display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
-            padding: 3px 0; border-bottom: 1px dotted #e8e8e8;
-            font-family: 'SFMono-Regular', Consolas, Menlo, monospace; font-size: 12px;
-        }
-        .sysinfo-row:last-child { border-bottom: none; }
-        .sysinfo-row .label { color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .sysinfo-row .value { color: #333; font-weight: bold; white-space: nowrap; }
-        .sysinfo-unavailable { color: #999; font-style: italic; font-size: 13px; text-align: center; padding: 10px; }
+        /* Scope */
+        .scope-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:8px; flex-wrap:wrap; font-size:11px; }
+        .scope-toolbar select, .scope-toolbar button { font-size:11px; padding:2px 6px; }
+        .scope-toolbar button { cursor:pointer; border:1px solid #ccc; border-radius:3px; background:#f9f9f9; }
+        .scope-toolbar button.active { background:#667eea; color:white; border-color:#667eea; }
+        .scope-ch-list { display:flex; gap:6px; flex-wrap:wrap; }
+        .scope-ch-list label { font-size:10px; font-family:monospace; cursor:pointer; display:flex; align-items:center; gap:2px; }
+        canvas.scope { width:100%; height:200px; display:block; background:#1a1a2e; border-radius:4px; }
+
+        /* Sysinfo */
+        .sysinfo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+        .sysinfo-section h3 { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#888; margin-bottom:3px; font-weight:600; }
+        .sysinfo-row { display:flex; justify-content:space-between; align-items:baseline; gap:6px; padding:2px 0; border-bottom:1px dotted #e8e8e8; font-family:monospace; font-size:11px; }
+        .sysinfo-row:last-child { border-bottom:none; }
+        .sysinfo-row .label { color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .sysinfo-row .value { color:#333; font-weight:bold; white-space:nowrap; }
+        .sysinfo-unavailable { color:#999; font-style:italic; font-size:12px; text-align:center; padding:8px; }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>PhyCMD <small>Physical Commander</small></h1>
-
-    <!-- ============ STATUS BAR ============ -->
     <div class="status-bar">
         <div class="status-left">
             <div class="status-dot" id="statusDot"></div>
@@ -129,284 +89,256 @@
             <div class="stat-mini"><div class="v" id="uptimeValue">-</div><div class="l">Uptime</div></div>
             <div class="stat-mini"><div class="v" id="loopTimeValue">-</div><div class="l">Loop</div></div>
             <div class="stat-mini"><div class="v" id="errorCountValue">0</div><div class="l">Errors</div></div>
-            <div class="stat-mini"><div class="v" id="seqValue">-</div><div class="l">Seq</div></div>
+            <div class="stat-mini"><div class="v" id="seqValue">  0</div><div class="l">Seq</div></div>
         </div>
     </div>
 
     <div class="grid">
-        <!-- ============ SYSTEM TELEMETRY (first, always visible) ============ -->
-        <div class="panel wide" id="sysinfoPanel">
-            <h2>System Telemetry</h2>
-            <div id="sysinfoDisplay"><div class="sysinfo-unavailable">Loading...</div></div>
-        </div>
-
-        <!-- ============ DIGITAL OUTPUTS ============ -->
-        <div class="panel">
-            <h2>Digital Outputs</h2>
-            <div class="gpio-grid" id="gpioOutputs"></div>
-        </div>
-
-        <!-- ============ DIGITAL INPUTS ============ -->
-        <div class="panel">
-            <h2>Digital Inputs</h2>
-            <div class="gpio-grid" id="gpioInputs"></div>
-        </div>
-
-        <!-- ============ DAC CONTROL ============ -->
-        <div class="panel">
-            <h2>DAC Outputs</h2>
-            <div class="control-group">
-                <label>DAC 0</label>
-                <div class="slider-container">
-                    <input type="range" min="0" max="4095" value="0" id="dac0Slider">
-                    <span class="value-display" id="dac0Value">0</span>
-                </div>
+        <!-- Oscilloscope -->
+        <div class="panel wide">
+            <h2>Oscilloscope</h2>
+            <div class="scope-toolbar">
+                <span>Window:</span>
+                <select id="scopeWindow"><option value="200">200ms</option><option value="1000" selected>1s</option><option value="5000">5s</option><option value="10000">10s</option></select>
+                <button id="scopePause">Pause</button>
+                <span style="margin-left:8px">Analog:</span>
+                <div class="scope-ch-list" id="scopeAnalogCh"></div>
+                <span style="margin-left:8px">Digital:</span>
+                <div class="scope-ch-list" id="scopeDigitalCh"></div>
             </div>
-            <div class="control-group">
-                <label>DAC 1</label>
-                <div class="slider-container">
-                    <input type="range" min="0" max="4095" value="0" id="dac1Slider">
-                    <span class="value-display" id="dac1Value">0</span>
-                </div>
+            <canvas class="scope" id="scopeAnalog" height="200"></canvas>
+            <canvas class="scope" id="scopeDigital" height="120" style="margin-top:6px;height:120px;"></canvas>
+        </div>
+
+        <!-- Digital Outputs -->
+        <div class="panel"><h2>Digital Outputs</h2><div class="gpio-grid" id="gpioOutputs"></div></div>
+        <!-- Digital Inputs -->
+        <div class="panel"><h2>Digital Inputs</h2><div class="gpio-grid" id="gpioInputs"></div></div>
+
+        <!-- DAC + PWM -->
+        <div class="panel">
+            <h2>DAC / PWM Outputs</h2>
+            <div class="control-group"><label>DAC 0 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
+            <div class="control-group"><label>DAC 1 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
+            <div class="control-group"><label>PWM 0 (16-bit)</label><div class="slider-container"><input type="range" min="0" max="65535" value="0" id="pwm0S"><span class="value-display" id="pwm0V">0</span></div></div>
+            <div class="control-group"><label>PWM 1 (16-bit)</label><div class="slider-container"><input type="range" min="0" max="65535" value="0" id="pwm1S"><span class="value-display" id="pwm1V">0</span></div></div>
+        </div>
+
+        <!-- ADC -->
+        <div class="panel"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
+
+        <!-- Flags -->
+        <div class="panel">
+            <h2>Control Flags</h2>
+            <div class="flag-row">
+                <label class="flag-toggle"><input type="checkbox" id="flagAdc" checked>ADC Enable</label>
+                <label class="flag-toggle"><input type="checkbox" id="flagDac" checked>DAC Enable</label>
+                <label class="flag-toggle"><input type="checkbox" id="flagPwm">PWM Enable</label>
+                <label class="flag-toggle"><input type="checkbox" id="flagWd">Watchdog Disable</label>
+                <label class="flag-toggle"><input type="checkbox" id="flagResetSeq">Reset Seq</label>
             </div>
         </div>
 
-        <!-- ============ ADC READINGS ============ -->
-        <div class="panel">
-            <h2>ADC Inputs</h2>
-            <div class="adc-grid" id="adcDisplay"></div>
-        </div>
+        <!-- Sysinfo (bottom, collapsible, closed by default) -->
+        <details class="panel wide">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">System Telemetry</summary>
+            <div id="sysinfoDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
+        </details>
     </div>
 </div>
 
 <script>
-// ====================================================================
-//   State
-// ====================================================================
-let ws = null;
-let msgCount = 0;
-let lastRateTs = performance.now();
-let lastRateCount = 0;
+// ========== State ==========
+let ws=null, msgCount=0, lastRateTs=performance.now(), lastRateCount=0, scopePaused=false;
+let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enable:true,pwm_enable:false,reset_seq:false,watchdog_disable:false}, seq_num:0 };
 
-let currentCommand = {
-    digital_out: 0, dac: [0, 0], pwm: [0, 0],
-    flags: { adc_enable: true, dac_enable: true, pwm_enable: false, reset_seq: false, watchdog_disable: false },
-    seq_num: 0
-};
+// Scope data ring buffer
+const SCOPE_MAX = 10000;
+let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], din:[], dout:[], ts:[] };
+let scopeAnalogCh = [0,1]; // enabled ADC channels
+let scopeDigitalCh = []; // enabled digital bits (0-15 = din, 16-31 = dout)
+const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#7bc67e','#e74c3c','#3498db'];
 
-// ====================================================================
-//   Init DOM
-// ====================================================================
-const gpioOut = document.getElementById('gpioOutputs');
-const gpioIn  = document.getElementById('gpioInputs');
-const adcDisp = document.getElementById('adcDisplay');
+// ========== DOM init ==========
+const gpioOut=document.getElementById('gpioOutputs'), gpioIn=document.getElementById('gpioInputs'), adcDisp=document.getElementById('adcDisplay');
+for(let i=0;i<16;i++){const b=document.createElement('button');b.className='gpio-button';b.textContent=i;b.onclick=()=>{cmd.digital_out^=(1<<i);updateGpioOut();sendCmd()};gpioOut.appendChild(b);}
+for(let i=0;i<16;i++){const d=document.createElement('div');d.className='gpio-button input';d.textContent=i;gpioIn.appendChild(d);}
+for(let i=0;i<8;i++){const c=document.createElement('div');c.className='adc-ch';c.innerHTML=`<div class="lbl">CH${i}</div><div class="val" id="a${i}">0</div><div class="bar" id="ab${i}"></div>`;adcDisp.appendChild(c);}
 
-for (let i = 0; i < 16; i++) {
-    const b = document.createElement('button');
-    b.className = 'gpio-button'; b.textContent = i; b.dataset.pin = i;
-    b.onclick = () => toggleGpio(i);
-    gpioOut.appendChild(b);
+// DAC/PWM sliders
+function wireSlider(id,arr,idx,max){const s=document.getElementById(id+'S'),v=document.getElementById(id+'V');s.oninput=()=>{v.textContent=s.value;arr[idx]=+s.value;sendCmd()};}
+wireSlider('dac0',cmd.dac,0,4095);wireSlider('dac1',cmd.dac,1,4095);wireSlider('pwm0',cmd.pwm,0,65535);wireSlider('pwm1',cmd.pwm,1,65535);
+
+// Flag checkboxes
+document.getElementById('flagAdc').onchange=function(){cmd.flags.adc_enable=this.checked;sendCmd()};
+document.getElementById('flagDac').onchange=function(){cmd.flags.dac_enable=this.checked;sendCmd()};
+document.getElementById('flagPwm').onchange=function(){cmd.flags.pwm_enable=this.checked;sendCmd()};
+document.getElementById('flagWd').onchange=function(){cmd.flags.watchdog_disable=this.checked;sendCmd()};
+document.getElementById('flagResetSeq').onchange=function(){cmd.flags.reset_seq=this.checked;sendCmd()};
+
+// Scope channel selectors
+const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDEl=document.getElementById('scopeDigitalCh');
+for(let i=0;i<10;i++){
+    const lbl=i<8?`ADC${i}`:`DAC${i-8}`;
+    const l=document.createElement('label');
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=i<2;
+    cb.style.accentColor=COLORS[i];
+    cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
+    l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeAEl.appendChild(l);
 }
-for (let i = 0; i < 16; i++) {
-    const d = document.createElement('div');
-    d.className = 'gpio-button input'; d.textContent = i; d.dataset.pin = i;
-    gpioIn.appendChild(d);
+for(let i=0;i<4;i++){
+    const lbl=i<2?`DIN${i}`:`DOUT${i-2}`;
+    const idx=i; const l=document.createElement('label');
+    const cb=document.createElement('input');cb.type='checkbox';
+    cb.onchange=()=>{if(cb.checked&&!scopeDigitalCh.includes(idx))scopeDigitalCh.push(idx);else scopeDigitalCh=scopeDigitalCh.filter(x=>x!==idx)};
+    l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeDEl.appendChild(l);
 }
-for (let i = 0; i < 8; i++) {
-    const ch = document.createElement('div');
-    ch.className = 'adc-ch';
-    ch.innerHTML = `<div class="lbl">CH${i}</div><div class="val" id="adc${i}V">0</div><div class="bar" id="adc${i}Bar"></div>`;
-    adcDisp.appendChild(ch);
-}
+document.getElementById('scopePause').onclick=function(){scopePaused=!scopePaused;this.classList.toggle('active',scopePaused);this.textContent=scopePaused?'Resume':'Pause';};
 
-// DAC sliders
-const dac0S = document.getElementById('dac0Slider'), dac0V = document.getElementById('dac0Value');
-const dac1S = document.getElementById('dac1Slider'), dac1V = document.getElementById('dac1Value');
-dac0S.oninput = () => { dac0V.textContent = dac0S.value; currentCommand.dac[0] = +dac0S.value; sendCmd(); };
-dac1S.oninput = () => { dac1V.textContent = dac1S.value; currentCommand.dac[1] = +dac1S.value; sendCmd(); };
+// ========== GPIO ==========
+function updateGpioOut(){gpioOut.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(cmd.digital_out&(1<<i))!==0));}
+function updateGpioIn(v){gpioIn.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(v&(1<<i))!==0));}
 
-// ====================================================================
-//   GPIO toggle + update
-// ====================================================================
-function toggleGpio(pin) {
-    currentCommand.digital_out ^= (1 << pin);
-    updateGpioOut(); sendCmd();
+// ========== WebSocket ==========
+function sendCmd(){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd));}
+function connectWs(){
+    const p=location.protocol==='https:'?'wss:':'ws:';
+    ws=new WebSocket(`${p}//${location.host}/ws`);
+    ws.onopen=()=>{document.getElementById('statusDot').classList.add('connected');document.getElementById('statusText').textContent='Connected';};
+    ws.onmessage=e=>{msgCount++;const s=JSON.parse(e.data);updateStatus(s);pushScope(s);};
+    ws.onclose=()=>{document.getElementById('statusDot').classList.remove('connected');document.getElementById('statusText').textContent='Reconnecting...';setTimeout(connectWs,2000);};
 }
-function updateGpioOut() {
-    gpioOut.querySelectorAll('.gpio-button').forEach((b, i) => {
-        b.classList.toggle('active', (currentCommand.digital_out & (1 << i)) !== 0);
-    });
-}
-function updateGpioIn(val) {
-    gpioIn.querySelectorAll('.gpio-button').forEach((b, i) => {
-        b.classList.toggle('active', (val & (1 << i)) !== 0);
-    });
-}
-
-// ====================================================================
-//   WebSocket
-// ====================================================================
-function sendCmd() { if (ws && ws.readyState === 1) ws.send(JSON.stringify(currentCommand)); }
-
-function connectWs() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}/ws`);
-    ws.onopen = () => {
-        document.getElementById('statusDot').classList.add('connected');
-        document.getElementById('statusText').textContent = 'Connected';
-    };
-    ws.onmessage = (e) => { msgCount++; updateStatus(JSON.parse(e.data)); };
-    ws.onclose = () => {
-        document.getElementById('statusDot').classList.remove('connected');
-        document.getElementById('statusText').textContent = 'Reconnecting...';
-        setTimeout(connectWs, 2000);
-    };
-}
-
-function updateStatus(s) {
+function updateStatus(s){
     updateGpioIn(s.digital_in);
-    for (let i = 0; i < 8; i++) {
-        document.getElementById(`adc${i}V`).textContent = s.adc[i];
-        document.getElementById(`adc${i}Bar`).style.width = (s.adc[i] / 4095 * 100).toFixed(1) + '%';
+    for(let i=0;i<8;i++){document.getElementById('a'+i).textContent=s.adc[i];document.getElementById('ab'+i).style.width=(s.adc[i]/4095*100).toFixed(1)+'%';}
+    document.getElementById('uptimeValue').textContent=fmtUp(s.uptime_ms);
+    document.getElementById('loopTimeValue').textContent=s.loop_time_us+'us';
+    document.getElementById('errorCountValue').textContent=s.error_count;
+    document.getElementById('seqValue').textContent=String(s.seq_num).padStart(3,'\u2007');
+}
+setInterval(()=>{const n=performance.now(),dt=(n-lastRateTs)/1000;document.getElementById('rateValue').textContent=dt>0?((msgCount-lastRateCount)/dt).toFixed(0):'-';lastRateTs=n;lastRateCount=msgCount;},2000);
+function fmtUp(ms){const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);return(h<24)?h+'h '+(m%60)+'m':Math.floor(h/24)+'d '+(h%24)+'h';}
+
+// ========== Scope ring buffer ==========
+function pushScope(s){
+    if(scopePaused)return;
+    const now=performance.now();
+    scopeBuf.ts.push(now);
+    for(let i=0;i<8;i++)scopeBuf.adc[i].push(s.adc[i]);
+    scopeBuf.dac[0].push(cmd.dac[0]); scopeBuf.dac[1].push(cmd.dac[1]);
+    scopeBuf.din.push(s.digital_in); scopeBuf.dout.push(s.digital_out);
+    // Trim
+    while(scopeBuf.ts.length>SCOPE_MAX){
+        scopeBuf.ts.shift();
+        for(let i=0;i<8;i++)scopeBuf.adc[i].shift();
+        scopeBuf.dac[0].shift();scopeBuf.dac[1].shift();
+        scopeBuf.din.shift();scopeBuf.dout.shift();
     }
-    document.getElementById('uptimeValue').textContent = fmtUptime(s.uptime_ms);
-    document.getElementById('loopTimeValue').textContent = s.loop_time_us + 'us';
-    document.getElementById('errorCountValue').textContent = s.error_count;
-    document.getElementById('seqValue').textContent = s.seq_num;
-    if (s.error_count > 0) document.getElementById('errorCountValue').parentElement.querySelector('.v').style.color = '#c62828';
 }
 
-// Update rate measurement every 2s
-setInterval(() => {
-    const now = performance.now();
-    const dt = (now - lastRateTs) / 1000;
-    const hz = dt > 0 ? ((msgCount - lastRateCount) / dt).toFixed(0) : '-';
-    document.getElementById('rateValue').textContent = hz;
-    lastRateTs = now; lastRateCount = msgCount;
-}, 2000);
+// ========== Scope rendering ==========
+const cvA=document.getElementById('scopeAnalog'), cvD=document.getElementById('scopeDigital');
+function drawScope(){
+    requestAnimationFrame(drawScope);
+    const windowMs=+document.getElementById('scopeWindow').value;
+    const now=performance.now();
+    const tMin=now-windowMs;
 
-function fmtUptime(ms) {
-    const s = Math.floor(ms/1000);
-    if (s < 60) return s + 's';
-    const m = Math.floor(s/60);
-    if (m < 60) return m + 'm ' + (s%60) + 's';
-    const h = Math.floor(m/60);
-    if (h < 24) return h + 'h ' + (m%60) + 'm';
-    return Math.floor(h/24) + 'd ' + (h%24) + 'h';
+    // Find start index
+    let start=scopeBuf.ts.length-1;
+    while(start>0&&scopeBuf.ts[start]>tMin)start--;
+
+    // Analog canvas
+    const ctxA=cvA.getContext('2d');
+    const W=cvA.clientWidth, H=cvA.clientHeight;
+    if(cvA.width!==W*2){cvA.width=W*2;cvA.height=H*2;} // 2x for retina
+    ctxA.setTransform(2,0,0,2,0,0);
+    ctxA.clearRect(0,0,W,H);
+    // Grid
+    ctxA.strokeStyle='#333';ctxA.lineWidth=.5;
+    for(let y=0;y<H;y+=H/4){ctxA.beginPath();ctxA.moveTo(0,y);ctxA.lineTo(W,y);ctxA.stroke();}
+    for(let x=0;x<W;x+=W/10){ctxA.beginPath();ctxA.moveTo(x,0);ctxA.lineTo(x,H);ctxA.stroke();}
+    // Traces
+    ctxA.lineWidth=1.2;
+    scopeAnalogCh.forEach((ch)=>{
+        const arr=ch<8?scopeBuf.adc[ch]:scopeBuf.dac[ch-8];
+        const max=ch<8?4095:ch<10?4095:65535;
+        ctxA.strokeStyle=COLORS[ch%COLORS.length];
+        ctxA.beginPath();
+        let first=true;
+        for(let i=start;i<scopeBuf.ts.length;i++){
+            const x=(scopeBuf.ts[i]-tMin)/windowMs*W;
+            const y=H-(arr[i]/max)*H;
+            if(first){ctxA.moveTo(x,y);first=false;}else ctxA.lineTo(x,y);
+        }
+        ctxA.stroke();
+    });
+    // Labels
+    ctxA.font='10px monospace'; ctxA.fillStyle='#888';
+    ctxA.fillText('4095',2,12); ctxA.fillText('0',2,H-4);
+
+    // Digital canvas
+    const ctxD=cvD.getContext('2d');
+    const WD=cvD.clientWidth, HD=cvD.clientHeight;
+    if(cvD.width!==WD*2){cvD.width=WD*2;cvD.height=HD*2;}
+    ctxD.setTransform(2,0,0,2,0,0);
+    ctxD.clearRect(0,0,WD,HD);
+    ctxD.strokeStyle='#333';ctxD.lineWidth=.5;
+    for(let x=0;x<WD;x+=WD/10){ctxD.beginPath();ctxD.moveTo(x,0);ctxD.lineTo(x,HD);ctxD.stroke();}
+    const nDig=Math.max(scopeDigitalCh.length,1);
+    const rowH=HD/nDig;
+    ctxD.lineWidth=1.5;
+    scopeDigitalCh.forEach((ch,ci)=>{
+        const yBase=(ci+1)*rowH-4;
+        const arr=ch<2?scopeBuf.din:scopeBuf.dout;
+        const bit=ch<2?ch:ch-2;
+        ctxD.strokeStyle=COLORS[(ch+4)%COLORS.length];
+        ctxD.beginPath();
+        let first=true;
+        for(let i=start;i<scopeBuf.ts.length;i++){
+            const x=(scopeBuf.ts[i]-tMin)/windowMs*WD;
+            const v=(arr[i]>>bit)&1;
+            const y=yBase-v*(rowH-8);
+            if(first){ctxD.moveTo(x,y);first=false;}else ctxD.lineTo(x,y);
+        }
+        ctxD.stroke();
+        ctxD.font='9px monospace';ctxD.fillStyle=COLORS[(ch+4)%COLORS.length];
+        ctxD.fillText(ch<2?'DIN'+ch:'DOUT'+(ch-2),2,yBase-rowH/2+4);
+    });
+    if(!scopeDigitalCh.length){ctxD.font='11px sans-serif';ctxD.fillStyle='#666';ctxD.fillText('Select digital channels above',WD/2-80,HD/2);}
 }
 
-// ====================================================================
-//   System Telemetry
-// ====================================================================
-function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
-
-function fmtSensor(s) {
-    const v = Number(s.value);
-    if (s.unit === '\u00b0C') return v.toFixed(1) + ' \u00b0C';
-    if (s.unit === 'V')  return v.toFixed(3) + ' V';
-    if (s.unit === 'RPM') return v.toFixed(0) + ' RPM';
-    return v.toFixed(2) + ' ' + esc(s.unit);
+// ========== Sysinfo ==========
+function esc(s){const d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function fmtS(s){const v=+s.value;if(s.unit==='\u00b0C')return v.toFixed(1)+' \u00b0C';if(s.unit==='V')return v.toFixed(3)+' V';if(s.unit==='RPM')return v.toFixed(0)+' RPM';return v.toFixed(2)+' '+esc(s.unit);}
+function renderSysinfo(d){
+    const badges=document.getElementById('tempBadges');
+    if(d&&d.available&&d.hwmon){let b='';
+        for(const c of d.hwmon)for(const t of(c.temperatures||[])){const v=+t.value;const cls=v>=80?'crit':v>=60?'warn':'';const lbl=c.name==='coretemp'?'CPU':c.name==='drivetemp'?'Disk':esc(c.name);b+=`<span class="badge temp ${cls}">${lbl} ${v.toFixed(0)}\u00b0C</span>`;}
+        if(d.load_avg)b+=`<span class="badge info">Load ${d.load_avg.one.toFixed(2)}</span>`;
+        if(d.memory){const p=((d.memory.total_kb-d.memory.available_kb)/d.memory.total_kb*100).toFixed(0);b+=`<span class="badge info">RAM ${p}%</span>`;}
+        badges.innerHTML=b;
+    }
+    const el=document.getElementById('sysinfoDisplay');
+    if(!d||!d.available){el.innerHTML='<div class="sysinfo-unavailable">N/A</div>';return;}
+    let h='<div class="sysinfo-grid">';
+    if(d.hwmon&&d.hwmon.some(c=>(c.temperatures||[]).length||(c.voltages||[]).length||(c.fans||[]).length)){
+        h+='<div class="sysinfo-section"><h3>Sensors</h3>';
+        for(const c of d.hwmon)for(const s of[].concat(c.temperatures||[],c.voltages||[],c.fans||[],c.currents||[],c.powers||[]))
+            h+=`<div class="sysinfo-row"><span class="label">${esc(c.name)} \u00b7 ${esc(s.label)}</span><span class="value">${fmtS(s)}</span></div>`;
+        h+='</div>';
+    }
+    if(d.cpus&&d.cpus.length){h+='<div class="sysinfo-section"><h3>CPU</h3>';for(const c of d.cpus)h+=`<div class="sysinfo-row"><span class="label">cpu${c.cpu} (${esc(c.governor)})</span><span class="value">${(+c.freq_mhz).toFixed(0)} MHz</span></div>`;h+='</div>';}
+    h+='<div class="sysinfo-section"><h3>System</h3>';
+    if(d.load_avg){const l=d.load_avg;h+=`<div class="sysinfo-row"><span class="label">Load</span><span class="value">${l.one.toFixed(2)} / ${l.five.toFixed(2)} / ${l.fifteen.toFixed(2)}</span></div>`;}
+    if(d.uptime_seconds!=null){const s=Math.floor(d.uptime_seconds),dd=Math.floor(s/86400),hh=Math.floor((s%86400)/3600),mm=Math.floor((s%3600)/60);const p=[];if(dd)p.push(dd+'d');if(hh||dd)p.push(hh+'h');p.push(mm+'m');h+=`<div class="sysinfo-row"><span class="label">Uptime</span><span class="value">${p.join(' ')}</span></div>`;}
+    if(d.memory){const m=d.memory,t=(m.total_kb/1024).toFixed(0),u=((m.total_kb-m.available_kb)/1024).toFixed(0),p=(m.total_kb>0?(m.total_kb-m.available_kb)/m.total_kb*100:0).toFixed(1);h+=`<div class="sysinfo-row"><span class="label">RAM</span><span class="value">${u}/${t} MiB (${p}%)</span></div>`;if(m.swap_total_kb>0){const su=((m.swap_total_kb-m.swap_free_kb)/1024).toFixed(0),st=(m.swap_total_kb/1024).toFixed(0);h+=`<div class="sysinfo-row"><span class="label">Swap</span><span class="value">${su}/${st} MiB</span></div>`;}}
+    h+='</div></div>';el.innerHTML=h;
 }
+async function pollSysinfo(){try{const r=await fetch('/api/sysinfo');if(r.ok)renderSysinfo(await r.json());}catch(e){}}
 
-function tempClass(v) { return v >= 80 ? 'crit' : v >= 60 ? 'warn' : ''; }
-
-function renderSysinfo(data) {
-    // Temperature badges in status bar
-    const badges = document.getElementById('tempBadges');
-    if (data && data.available && data.hwmon) {
-        let bhtml = '';
-        for (const chip of data.hwmon) {
-            for (const t of (chip.temperatures || [])) {
-                const v = Number(t.value);
-                const cls = tempClass(v);
-                const lbl = chip.name === 'coretemp' ? 'CPU' : chip.name === 'drivetemp' ? 'Disk' : esc(chip.name);
-                bhtml += `<span class="badge temp ${cls}">${lbl} ${v.toFixed(0)}\u00b0C</span>`;
-            }
-        }
-        if (data.load_avg) {
-            bhtml += `<span class="badge info">Load ${data.load_avg.one.toFixed(2)}</span>`;
-        }
-        if (data.memory) {
-            const pct = ((data.memory.total_kb - data.memory.available_kb) / data.memory.total_kb * 100).toFixed(0);
-            bhtml += `<span class="badge info">RAM ${pct}%</span>`;
-        }
-        badges.innerHTML = bhtml;
-    }
-
-    // Detailed panel
-    const el = document.getElementById('sysinfoDisplay');
-    if (!data || !data.available) {
-        el.innerHTML = '<div class="sysinfo-unavailable">Hardware sensors not available</div>';
-        return;
-    }
-    let html = '<div class="sysinfo-grid">';
-
-    // Sensors
-    const hasHw = data.hwmon && data.hwmon.some(c =>
-        (c.temperatures||[]).length || (c.voltages||[]).length || (c.fans||[]).length ||
-        (c.currents||[]).length || (c.powers||[]).length);
-    if (hasHw) {
-        html += '<div class="sysinfo-section"><h3>Hardware Sensors</h3>';
-        for (const chip of data.hwmon) {
-            for (const s of [].concat(chip.temperatures||[], chip.voltages||[], chip.fans||[], chip.currents||[], chip.powers||[])) {
-                html += `<div class="sysinfo-row"><span class="label">${esc(chip.name)} \u00b7 ${esc(s.label)}</span><span class="value">${fmtSensor(s)}</span></div>`;
-            }
-        }
-        html += '</div>';
-    }
-
-    // CPUs
-    if (data.cpus && data.cpus.length) {
-        html += '<div class="sysinfo-section"><h3>CPU Cores</h3>';
-        for (const c of data.cpus) {
-            html += `<div class="sysinfo-row"><span class="label">cpu${c.cpu} (${esc(c.governor)})</span><span class="value">${Number(c.freq_mhz).toFixed(0)} MHz</span></div>`;
-        }
-        html += '</div>';
-    }
-
-    // System + Memory
-    html += '<div class="sysinfo-section"><h3>System</h3>';
-    if (data.load_avg) {
-        const la = data.load_avg;
-        html += `<div class="sysinfo-row"><span class="label">Load (1/5/15m)</span><span class="value">${la.one.toFixed(2)} / ${la.five.toFixed(2)} / ${la.fifteen.toFixed(2)}</span></div>`;
-    }
-    if (data.uptime_seconds != null) {
-        const s = Math.floor(data.uptime_seconds);
-        const d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
-        const parts = []; if(d) parts.push(d+'d'); if(h||d) parts.push(h+'h'); parts.push(m+'m');
-        html += `<div class="sysinfo-row"><span class="label">System uptime</span><span class="value">${parts.join(' ')}</span></div>`;
-    }
-    if (data.memory) {
-        const m = data.memory;
-        const totMiB = (m.total_kb/1024).toFixed(0);
-        const usedMiB = ((m.total_kb - m.available_kb)/1024).toFixed(0);
-        const pct = (m.total_kb > 0 ? (m.total_kb - m.available_kb)/m.total_kb*100 : 0).toFixed(1);
-        html += `<div class="sysinfo-row"><span class="label">RAM</span><span class="value">${usedMiB} / ${totMiB} MiB (${pct}%)</span></div>`;
-        if (m.swap_total_kb > 0) {
-            const swUsed = ((m.swap_total_kb - m.swap_free_kb)/1024).toFixed(0);
-            const swTot = (m.swap_total_kb/1024).toFixed(0);
-            html += `<div class="sysinfo-row"><span class="label">Swap</span><span class="value">${swUsed} / ${swTot} MiB</span></div>`;
-        }
-    }
-    html += '</div>';
-    html += '</div>'; // close sysinfo-grid
-    el.innerHTML = html;
-}
-
-async function pollSysinfo() {
-    try {
-        const r = await fetch('/api/sysinfo');
-        if (r.ok) renderSysinfo(await r.json());
-    } catch(e) {}
-}
-
-// ====================================================================
-//   Boot
-// ====================================================================
-connectWs();
-updateGpioOut();
-pollSysinfo();
-setInterval(pollSysinfo, 5000);
+// ========== Boot ==========
+connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000); requestAnimationFrame(drawScope);
 </script>
 </body>
 </html>

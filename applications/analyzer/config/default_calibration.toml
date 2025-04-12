@@ -1,0 +1,78 @@
+# Seed calibrations — defaults shipped with the analyzer.
+#
+# These are starting points, not replacements for your own calibration
+# runs. Every serious measurement should use a calibration curve
+# generated on your specific hardware with your specific reagent batch
+# via the `analyzer --calibrate <assay>` wizard.
+#
+# Seeds are useful:
+#   - for dry-running the software without hardware
+#   - as a sanity check target for the very first calibration (if your
+#     measured slope is within ~20 % of the seed, you're on the right
+#     track)
+#   - for tests that need deterministic calibration data
+
+# -------------------------------------------------------------------
+# Beer-Lambert linearity reference (methylene blue at 650 nm)
+# -------------------------------------------------------------------
+[[calibrations]]
+mode              = "absorbance_linearity"
+channel           = "650nm_laser"
+method            = "methylene_blue_serial_dilution"
+slope             = 0.075     # OD / µM, from ε ~ 75000 M^-1 cm^-1 at 1 cm
+intercept         = 0.0
+r_squared         = 0.9995
+notes             = "Theoretical — replace with run from first experiment."
+
+# -------------------------------------------------------------------
+# Ethanol — via enzymatic assay, not a simple absorbance calibration
+# The 'slope' here converts ΔA340 → % v/v assuming the standard
+# dilution protocol (1:1000 beer dilution, 2.35 mL cuvette, 0.1 mL
+# diluted sample, ε_NADH_340 = 6220 M^-1 cm^-1).
+# -------------------------------------------------------------------
+[[calibrations]]
+mode              = "ethanol"
+channel           = "340nm"
+method            = "ADH_NAD_enzymatic"
+slope             = 18.53     # %v/v per (ΔOD units) — theoretical at standard dilution
+intercept         = 0.0
+r_squared         = 0.9999
+notes             = "Theoretical seed; run calibration wizard with ethanol standards 1,2.5,5,7.5,10 %v/v."
+
+# -------------------------------------------------------------------
+# Bradford protein at 590 nm
+# (Bio-Rad kit with BSA standards 100, 250, 500, 750, 1000 mg/L)
+# -------------------------------------------------------------------
+[[calibrations]]
+mode              = "bradford"
+channel           = "590nm"
+method            = "Bradford_Coomassie_BSA"
+slope             = 0.00080   # OD units per (mg/L BSA) — typical for Bio-Rad kit
+intercept         = 0.010
+r_squared         = 0.9980
+notes             = "Typical Bio-Rad kit slope; validate against BSA series."
+
+# -------------------------------------------------------------------
+# Folin-Ciocalteu polyphenols at 740 nm (peak 765, slope ~80 % of peak)
+# Expressed as gallic acid equivalents (GAE).
+# -------------------------------------------------------------------
+[[calibrations]]
+mode              = "folin"
+channel           = "740nm"
+method            = "Folin_Ciocalteu_gallic_acid"
+slope             = 0.00125   # OD per (mg/L GAE) at 740 nm
+intercept         = 0.005
+r_squared         = 0.9950
+notes             = "Literature value; validate with gallic acid series 50-2000 mg/L."
+
+# -------------------------------------------------------------------
+# Haze (formazin) at 650 nm, 90° scattering
+# -------------------------------------------------------------------
+[[calibrations]]
+mode              = "haze_ebc"
+channel           = "650nm_laser"
+method            = "formazin_4000NTU_series"
+slope             = 0.05      # EBC haze unit per (raw R) — instrument-specific
+intercept         = 0.0
+r_squared         = 0.998
+notes             = "Instrument-specific; run formazin series (0.5, 1, 5, 10, 20 EBC)."

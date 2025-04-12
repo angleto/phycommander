@@ -1,29 +1,29 @@
 /**
  * \file
  *
- * \brief PhyCommander firmware for ATSAM3X8E (Arduino Due).
+ * \brief PhyCommander firmware — Step 3 (PhyCMD-64 protocol on vendor bulk).
  *
- * Implements the PhyCMD-64 protocol expected by the Rust physerver:
- *   - 64-byte fixed-size frames over USB CDC
- *   - Command  (host -> device): header 0xAA55, CRC-16-CCITT over bytes [0..14)
- *   - Status   (device -> host): header 0x55AA, CRC-16-CCITT over bytes [0..24)
+ * Hardware initialisation (GPIO, ADC, DAC, SysTick) runs once in
+ * main(). The USB transport (vendor class, two bulk endpoints) is
+ * managed by udi_vendor.c. When a 64-byte frame arrives on the OUT
+ * endpoint, the USB ISR callback in udi_vendor.c calls
+ * process_command_frame() here, which validates the PhyCMD-64 CRC,
+ * applies digital/DAC outputs, reads digital/ADC inputs, builds the
+ * 64-byte status response in the caller-supplied TX buffer, and
+ * returns. The ISR then queues that buffer for BULK IN transmission.
  *
- * Hardware setup (unchanged from the original firmware):
- *   - 16 digital inputs, 16 digital outputs (PIO)
- *   - 8-channel 12-bit ADC, DMA-buffered (free running)
- *   - 2-channel 12-bit DAC
- *
- * PWM and the comm watchdog are not implemented in this revision; the
- * corresponding status flag bits are reported as inactive.
+ * The entire protocol round-trip is IRQ-driven — main()'s infinite
+ * loop is an idle spin (no WFI, per Bug 3 from the investigation).
  */
 
 #include <asf.h>
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 /* ============================================================
- *  Protocol layout (must match physerver/src/protocol/types.rs)
+ *  Protocol constants (must match physerver/src/protocol/)
  * ============================================================ */
 
 #define MSG_SIZE             64
@@ -31,7 +31,6 @@
 #define STATUS_HEADER        0x55AAu
 #define CRC_OVER_CMD_BYTES   14u
 #define CRC_OVER_STAT_BYTES  24u
-
 #define DAC_MAX              4095u
 
 /* Command flags */
@@ -49,6 +48,10 @@
 #define STATUS_WATCHDOG_TRIGGERED (1u << 4)
 #define STATUS_USB_CONFIGURED     (1u << 5)
 #define STATUS_OVERRUN            (1u << 6)
+
+/* ============================================================
+ *  Protocol wire types (packed, 64 B each)
+ * ============================================================ */
 
 typedef struct __attribute__((packed)) {
 	uint16_t header;        /* 0xAA55 */
@@ -77,12 +80,11 @@ typedef struct __attribute__((packed)) {
 	uint8_t  reserved[30];
 } status_msg_t;
 
-_Static_assert(sizeof(command_msg_t) == MSG_SIZE, "command_msg_t must be 64 bytes");
-_Static_assert(sizeof(status_msg_t)  == MSG_SIZE, "status_msg_t must be 64 bytes");
+_Static_assert(sizeof(command_msg_t) == MSG_SIZE, "command_msg_t != 64");
+_Static_assert(sizeof(status_msg_t)  == MSG_SIZE, "status_msg_t != 64");
 
 /* ============================================================
- *  CRC-16-CCITT (poly=0x1021, init=0xFFFF, no final XOR, MSB-first).
- *  Bit-by-bit implementation; matches physerver/src/protocol/crc.rs.
+ *  CRC-16-CCITT (poly=0x1021, init=0xFFFF, MSB-first)
  * ============================================================ */
 
 static uint16_t crc16_ccitt(const uint8_t *data, size_t len)
@@ -91,238 +93,169 @@ static uint16_t crc16_ccitt(const uint8_t *data, size_t len)
 	for (size_t i = 0; i < len; i++) {
 		crc ^= ((uint16_t)data[i]) << 8;
 		for (int b = 0; b < 8; b++) {
-			if (crc & 0x8000u) {
+			if (crc & 0x8000u)
 				crc = (uint16_t)((crc << 1) ^ 0x1021u);
-			} else {
+			else
 				crc = (uint16_t)(crc << 1);
-			}
 		}
 	}
 	return crc;
 }
 
 /* ============================================================
- *  Buffers (single instance, statically allocated)
+ *  Protocol state (persistent across frames)
  * ============================================================ */
 
-static command_msg_t s_cmd;
-static status_msg_t  s_stat;
-
-/* I/O scratch (read/write directly into the packed structures) */
-static uint8_t * const s_in  = (uint8_t *)&s_cmd;
-static uint8_t * const s_out = (uint8_t *)&s_stat;
-
-/* ============================================================
- *  Uptime / loop time
- *  SysTick @ 1 kHz produces millisecond uptime. Loop time is
- *  measured by reading the cycle counter (DWT or fallback).
- * ============================================================ */
-
-static volatile uint32_t s_uptime_ms = 0;
+static uint8_t  s_last_seq    = 0xFFu;
 static uint16_t s_error_count = 0;
-static uint16_t s_last_loop_us = 0;
+static volatile uint32_t s_uptime_ms = 0;
 
-/* BISECTION: re-add SysTick_Handler ONLY (without ADC_Handler) */
-void SysTick_Handler(void); /* prototype */
+void SysTick_Handler(void);
 void SysTick_Handler(void)
 {
 	s_uptime_ms++;
 }
 
-static inline uint32_t cycles_now(void)
-{
-	/* DWT->CYCCNT is enabled by ASF cycle_counter init; if not, returns 0. */
-	return DWT->CYCCNT;
-}
-
-static inline uint16_t cycles_to_us(uint32_t cycles)
-{
-	/* sysclk_get_main_hz() returns 84_000_000 on Arduino Due. */
-	uint32_t mhz = sysclk_get_main_hz() / 1000000u;
-	if (mhz == 0) mhz = 84;
-	uint32_t us = cycles / mhz;
-	if (us > 0xFFFFu) us = 0xFFFFu;
-	return (uint16_t)us;
-}
-
 /* ============================================================
- *  Existing GPIO / ADC / DAC bringup (kept verbatim from original)
+ *  Digital I/O (16 in + 16 out, PIO direct register access)
  * ============================================================ */
-
-bool main_callback_cdc_enable(void);
-void main_callback_cdc_disable(void);
-void my_callback_rx_notify(uint8_t port);
-void my_callback_tx_empty_notify(uint8_t port);
-void my_callback_config(uint8_t port, usb_cdc_line_coding_t *cfg);
-void my_callback_cdc_set_dtr(uint8_t port, bool b_enable);
-void my_callback_cdc_set_rts(uint8_t port, bool b_enable);
-
-bool main_callback_cdc_enable(void) { return true; }
-void main_callback_cdc_disable(void) { }
-
-void my_callback_rx_notify(uint8_t port) { (void)port; }
-void my_callback_tx_empty_notify(uint8_t port) { (void)port; }
-void my_callback_config(uint8_t port, usb_cdc_line_coding_t *cfg) { (void)port; (void)cfg; }
-void my_callback_cdc_set_dtr(uint8_t port, bool b_enable) { (void)port; (void)b_enable; }
-void my_callback_cdc_set_rts(uint8_t port, bool b_enable) { (void)port; (void)b_enable; }
 
 static Pio *s_dig_in_ports[PHYCMD_DIGITAL_INPUT_NUM];
 static Pio *s_dig_out_ports[PHYCMD_DIGITAL_OUTPUT_NUM];
 
-static void init_dig_in_ports(Pio **arr)
+static void init_dig_in_ports(void)
 {
-	arr[0]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_0  >> 5)));
-	arr[1]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_1  >> 5)));
-	arr[2]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_2  >> 5)));
-	arr[3]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_3  >> 5)));
-	arr[4]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_4  >> 5)));
-	arr[5]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_5  >> 5)));
-	arr[6]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_6  >> 5)));
-	arr[7]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_7  >> 5)));
-	arr[8]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_8  >> 5)));
-	arr[9]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_9  >> 5)));
-	arr[10] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_10 >> 5)));
-	arr[11] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_11 >> 5)));
-	arr[12] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_12 >> 5)));
-	arr[13] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_13 >> 5)));
-	arr[14] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_14 >> 5)));
-	arr[15] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_15 >> 5)));
+	Pio **a = s_dig_in_ports;
+	a[0]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_0  >> 5)));
+	a[1]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_1  >> 5)));
+	a[2]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_2  >> 5)));
+	a[3]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_3  >> 5)));
+	a[4]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_4  >> 5)));
+	a[5]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_5  >> 5)));
+	a[6]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_6  >> 5)));
+	a[7]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_7  >> 5)));
+	a[8]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_8  >> 5)));
+	a[9]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_9  >> 5)));
+	a[10] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_10 >> 5)));
+	a[11] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_11 >> 5)));
+	a[12] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_12 >> 5)));
+	a[13] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_13 >> 5)));
+	a[14] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_14 >> 5)));
+	a[15] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_INPUT_15 >> 5)));
 }
 
-static void init_dig_out_ports(Pio **arr)
+static void init_dig_out_ports(void)
 {
-	arr[0]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_0  >> 5)));
-	arr[1]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_1  >> 5)));
-	arr[2]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_2  >> 5)));
-	arr[3]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_3  >> 5)));
-	arr[4]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_4  >> 5)));
-	arr[5]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_5  >> 5)));
-	arr[6]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_6  >> 5)));
-	arr[7]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_7  >> 5)));
-	arr[8]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_8  >> 5)));
-	arr[9]  = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_9  >> 5)));
-	arr[10] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_10 >> 5)));
-	arr[11] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_11 >> 5)));
-	arr[12] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_12 >> 5)));
-	arr[13] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_13 >> 5)));
-	arr[14] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_14 >> 5)));
-	arr[15] = (Pio *)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_15 >> 5)));
+	Pio **a = s_dig_out_ports;
+	a[0]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_0  >> 5)));
+	a[1]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_1  >> 5)));
+	a[2]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_2  >> 5)));
+	a[3]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_3  >> 5)));
+	a[4]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_4  >> 5)));
+	a[5]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_5  >> 5)));
+	a[6]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_6  >> 5)));
+	a[7]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_7  >> 5)));
+	a[8]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_8  >> 5)));
+	a[9]  = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_9  >> 5)));
+	a[10] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_10 >> 5)));
+	a[11] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_11 >> 5)));
+	a[12] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_12 >> 5)));
+	a[13] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_13 >> 5)));
+	a[14] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_14 >> 5)));
+	a[15] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_15 >> 5)));
 }
 
 static inline uint16_t get_dig_in_value(void)
 {
 	uint16_t v = 0;
-	v |= ((s_dig_in_ports[0]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_0  & 0x1F)) & 1u) << 0;
-	v |= ((s_dig_in_ports[1]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_1  & 0x1F)) & 1u) << 1;
-	v |= ((s_dig_in_ports[2]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_2  & 0x1F)) & 1u) << 2;
-	v |= ((s_dig_in_ports[3]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_3  & 0x1F)) & 1u) << 3;
-	v |= ((s_dig_in_ports[4]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_4  & 0x1F)) & 1u) << 4;
-	v |= ((s_dig_in_ports[5]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_5  & 0x1F)) & 1u) << 5;
-	v |= ((s_dig_in_ports[6]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_6  & 0x1F)) & 1u) << 6;
-	v |= ((s_dig_in_ports[7]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_7  & 0x1F)) & 1u) << 7;
-	v |= ((s_dig_in_ports[8]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_8  & 0x1F)) & 1u) << 8;
-	v |= ((s_dig_in_ports[9]->PIO_PDSR  >> (PHYCMD_DIGITAL_INPUT_9  & 0x1F)) & 1u) << 9;
-	v |= ((s_dig_in_ports[10]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_10 & 0x1F)) & 1u) << 10;
-	v |= ((s_dig_in_ports[11]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_11 & 0x1F)) & 1u) << 11;
-	v |= ((s_dig_in_ports[12]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_12 & 0x1F)) & 1u) << 12;
-	v |= ((s_dig_in_ports[13]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_13 & 0x1F)) & 1u) << 13;
-	v |= ((s_dig_in_ports[14]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_14 & 0x1F)) & 1u) << 14;
-	v |= ((s_dig_in_ports[15]->PIO_PDSR >> (PHYCMD_DIGITAL_INPUT_15 & 0x1F)) & 1u) << 15;
+	for (int i = 0; i < 16; i++) {
+		static const uint32_t pins[] = {
+			PHYCMD_DIGITAL_INPUT_0,  PHYCMD_DIGITAL_INPUT_1,
+			PHYCMD_DIGITAL_INPUT_2,  PHYCMD_DIGITAL_INPUT_3,
+			PHYCMD_DIGITAL_INPUT_4,  PHYCMD_DIGITAL_INPUT_5,
+			PHYCMD_DIGITAL_INPUT_6,  PHYCMD_DIGITAL_INPUT_7,
+			PHYCMD_DIGITAL_INPUT_8,  PHYCMD_DIGITAL_INPUT_9,
+			PHYCMD_DIGITAL_INPUT_10, PHYCMD_DIGITAL_INPUT_11,
+			PHYCMD_DIGITAL_INPUT_12, PHYCMD_DIGITAL_INPUT_13,
+			PHYCMD_DIGITAL_INPUT_14, PHYCMD_DIGITAL_INPUT_15,
+		};
+		v |= ((s_dig_in_ports[i]->PIO_PDSR >> (pins[i] & 0x1F)) & 1u) << i;
+	}
 	return v;
 }
 
 static inline void set_dig_out_value(uint16_t v)
 {
-#define PHY_SET(idx, def) \
-	if ((v >> (idx)) & 1u) \
-		s_dig_out_ports[idx]->PIO_SODR = 1u << ((def) & 0x1F); \
-	else \
-		s_dig_out_ports[idx]->PIO_CODR = 1u << ((def) & 0x1F)
-
-	PHY_SET(0,  PHYCMD_DIGITAL_OUTPUT_0);
-	PHY_SET(1,  PHYCMD_DIGITAL_OUTPUT_1);
-	PHY_SET(2,  PHYCMD_DIGITAL_OUTPUT_2);
-	PHY_SET(3,  PHYCMD_DIGITAL_OUTPUT_3);
-	PHY_SET(4,  PHYCMD_DIGITAL_OUTPUT_4);
-	PHY_SET(5,  PHYCMD_DIGITAL_OUTPUT_5);
-	PHY_SET(6,  PHYCMD_DIGITAL_OUTPUT_6);
-	PHY_SET(7,  PHYCMD_DIGITAL_OUTPUT_7);
-	PHY_SET(8,  PHYCMD_DIGITAL_OUTPUT_8);
-	PHY_SET(9,  PHYCMD_DIGITAL_OUTPUT_9);
-	PHY_SET(10, PHYCMD_DIGITAL_OUTPUT_10);
-	PHY_SET(11, PHYCMD_DIGITAL_OUTPUT_11);
-	PHY_SET(12, PHYCMD_DIGITAL_OUTPUT_12);
-	PHY_SET(13, PHYCMD_DIGITAL_OUTPUT_13);
-	PHY_SET(14, PHYCMD_DIGITAL_OUTPUT_14);
-	PHY_SET(15, PHYCMD_DIGITAL_OUTPUT_15);
-#undef PHY_SET
+	static const uint32_t pins[] = {
+		PHYCMD_DIGITAL_OUTPUT_0,  PHYCMD_DIGITAL_OUTPUT_1,
+		PHYCMD_DIGITAL_OUTPUT_2,  PHYCMD_DIGITAL_OUTPUT_3,
+		PHYCMD_DIGITAL_OUTPUT_4,  PHYCMD_DIGITAL_OUTPUT_5,
+		PHYCMD_DIGITAL_OUTPUT_6,  PHYCMD_DIGITAL_OUTPUT_7,
+		PHYCMD_DIGITAL_OUTPUT_8,  PHYCMD_DIGITAL_OUTPUT_9,
+		PHYCMD_DIGITAL_OUTPUT_10, PHYCMD_DIGITAL_OUTPUT_11,
+		PHYCMD_DIGITAL_OUTPUT_12, PHYCMD_DIGITAL_OUTPUT_13,
+		PHYCMD_DIGITAL_OUTPUT_14, PHYCMD_DIGITAL_OUTPUT_15,
+	};
+	for (int i = 0; i < 16; i++) {
+		if ((v >> i) & 1u)
+			s_dig_out_ports[i]->PIO_SODR = 1u << (pins[i] & 0x1F);
+		else
+			s_dig_out_ports[i]->PIO_CODR = 1u << (pins[i] & 0x1F);
+	}
 }
 
 static inline uint16_t get_dig_out_echo(void)
 {
 	uint16_t v = 0;
-	v |= ((s_dig_out_ports[0]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_0  & 0x1F)) & 1u) << 0;
-	v |= ((s_dig_out_ports[1]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_1  & 0x1F)) & 1u) << 1;
-	v |= ((s_dig_out_ports[2]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_2  & 0x1F)) & 1u) << 2;
-	v |= ((s_dig_out_ports[3]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_3  & 0x1F)) & 1u) << 3;
-	v |= ((s_dig_out_ports[4]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_4  & 0x1F)) & 1u) << 4;
-	v |= ((s_dig_out_ports[5]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_5  & 0x1F)) & 1u) << 5;
-	v |= ((s_dig_out_ports[6]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_6  & 0x1F)) & 1u) << 6;
-	v |= ((s_dig_out_ports[7]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_7  & 0x1F)) & 1u) << 7;
-	v |= ((s_dig_out_ports[8]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_8  & 0x1F)) & 1u) << 8;
-	v |= ((s_dig_out_ports[9]->PIO_ODSR  >> (PHYCMD_DIGITAL_OUTPUT_9  & 0x1F)) & 1u) << 9;
-	v |= ((s_dig_out_ports[10]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_10 & 0x1F)) & 1u) << 10;
-	v |= ((s_dig_out_ports[11]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_11 & 0x1F)) & 1u) << 11;
-	v |= ((s_dig_out_ports[12]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_12 & 0x1F)) & 1u) << 12;
-	v |= ((s_dig_out_ports[13]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_13 & 0x1F)) & 1u) << 13;
-	v |= ((s_dig_out_ports[14]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_14 & 0x1F)) & 1u) << 14;
-	v |= ((s_dig_out_ports[15]->PIO_ODSR >> (PHYCMD_DIGITAL_OUTPUT_15 & 0x1F)) & 1u) << 15;
+	static const uint32_t pins[] = {
+		PHYCMD_DIGITAL_OUTPUT_0,  PHYCMD_DIGITAL_OUTPUT_1,
+		PHYCMD_DIGITAL_OUTPUT_2,  PHYCMD_DIGITAL_OUTPUT_3,
+		PHYCMD_DIGITAL_OUTPUT_4,  PHYCMD_DIGITAL_OUTPUT_5,
+		PHYCMD_DIGITAL_OUTPUT_6,  PHYCMD_DIGITAL_OUTPUT_7,
+		PHYCMD_DIGITAL_OUTPUT_8,  PHYCMD_DIGITAL_OUTPUT_9,
+		PHYCMD_DIGITAL_OUTPUT_10, PHYCMD_DIGITAL_OUTPUT_11,
+		PHYCMD_DIGITAL_OUTPUT_12, PHYCMD_DIGITAL_OUTPUT_13,
+		PHYCMD_DIGITAL_OUTPUT_14, PHYCMD_DIGITAL_OUTPUT_15,
+	};
+	for (int i = 0; i < 16; i++)
+		v |= ((s_dig_out_ports[i]->PIO_ODSR >> (pins[i] & 0x1F)) & 1u) << i;
 	return v;
 }
 
-/* ---- ADC with PDC/DMA --------------------------------------------------- */
+/* ============================================================
+ *  ADC (8 channels, PDC/DMA free-running)
+ * ============================================================ */
+
 #define ADC_CHANNEL_NUM 8
-
-volatile int g_bufn;
 uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
-
-/* No ADC PDC chain servicing in this revision: the ADC fills the first
- * two buffers (g_adc_buf[0], g_adc_buf[1]) then stops. We always read
- * g_adc_buf[0] in the main loop, which holds the last sampled values.
- * Adequate for protocol bring-up; can be replaced with proper IRQ-based
- * chaining once everything else is verified. */
 
 static void adc_setup(void)
 {
 	pmc_enable_periph_clk(ID_ADC);
 	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_FAST);
-
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
-	adc_enable_channel(ADC, ADC_CHANNEL_0);
-	adc_enable_channel(ADC, ADC_CHANNEL_1);
-	adc_enable_channel(ADC, ADC_CHANNEL_2);
-	adc_enable_channel(ADC, ADC_CHANNEL_3);
-	adc_enable_channel(ADC, ADC_CHANNEL_4);
-	adc_enable_channel(ADC, ADC_CHANNEL_5);
-	adc_enable_channel(ADC, ADC_CHANNEL_6);
-	adc_enable_channel(ADC, ADC_CHANNEL_7);
+	for (int ch = 0; ch < ADC_CHANNEL_NUM; ch++)
+		adc_enable_channel(ADC, (enum adc_channel_num_t)ch);
 
-	ADC->ADC_MR |= 0x80;   /* free running */
+	ADC->ADC_MR  |= 0x80;       /* free running */
 	ADC->ADC_CHER = 0x80;
-	ADC->ADC_IDR = ~(1u << 27);
-	ADC->ADC_IER = 1u << 27;
-	ADC->ADC_RPR = (uint32_t)g_adc_buf[0];
-	ADC->ADC_RCR = ADC_CHANNEL_NUM;
+	ADC->ADC_IDR  = ~(1u << 27);
+	ADC->ADC_IER  = 1u << 27;
+	ADC->ADC_RPR  = (uint32_t)g_adc_buf[0];
+	ADC->ADC_RCR  = ADC_CHANNEL_NUM;
 	ADC->ADC_RNPR = (uint32_t)g_adc_buf[1];
 	ADC->ADC_RNCR = ADC_CHANNEL_NUM;
-	g_bufn = 1;
 	ADC->ADC_PTCR = 1;
-	ADC->ADC_CR = 2;
-
-	/* TEMPORARY: ADC IRQ disabled to bisect the boot crash */
-	/* NVIC_EnableIRQ(ADC_IRQn); */
+	ADC->ADC_CR   = 2;
+	/* ADC IRQ disabled — we just read the latest snapshot from
+	 * g_adc_buf[0] in the status frame builder. Sufficient for
+	 * protocol bring-up. */
 }
+
+/* ============================================================
+ *  DAC (2 channels, flexible selection)
+ * ============================================================ */
 
 static void dac_setup(void)
 {
@@ -331,61 +264,75 @@ static void dac_setup(void)
 	dacc_set_writeprotect(DACC, 0);
 	dacc_set_transfer_mode(DACC, 1);
 	dacc_enable_flexible_selection(DACC);
-	DACC->DACC_CHER = 3;  /* enable channel 0 and 1 */
-	/* dacc_set_timing(DACC, 0x01, 1, DACC_MR_STARTUP_0);
-	 * This call hung the chip on this build. Default timing after
-	 * dacc_reset is used instead. */
-	/* dacc_set_analog_control(DACC, ...) -- power optimization, not needed */
+	DACC->DACC_CHER = 3;  /* enable channels 0 and 1 */
 }
 
 static inline void dac_write_pair(uint16_t dac0, uint16_t dac1)
 {
 	if (dac0 > DAC_MAX) dac0 = DAC_MAX;
 	if (dac1 > DAC_MAX) dac1 = DAC_MAX;
-	/* Bit 12 is the channel-select tag in flexible selection mode for DACC. */
-	uint32_t word = ((uint32_t)(dac1 | 0x1000u) << 16) | (uint32_t)dac0;
-	dacc_write_conversion_data(DACC, word);
+	dacc_write_conversion_data(DACC, dac0);
+	DACC->DACC_CDR = dac1 | 0x1000u; /* channel 1 tag */
 }
 
 /* ============================================================
- *  Main loop
+ *  process_command_frame() — called from udi_vendor.c ISR
+ *
+ *  Validates the 64-byte command in rx_buf, applies outputs,
+ *  reads inputs, and fills the 64-byte status response in tx_buf.
  * ============================================================ */
 
-/* Process one fully-validated command and emit the corresponding status. */
-static void process_command_and_reply(uint8_t *last_seq)
+void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
 {
-	bool cmd_valid = (s_cmd.header == COMMAND_HEADER) &&
-	                 (crc16_ccitt(s_in, CRC_OVER_CMD_BYTES) == s_cmd.crc);
+	const command_msg_t *cmd  = (const command_msg_t *)rx_buf;
+	status_msg_t        *stat = (status_msg_t *)tx_buf;
+
+	bool cmd_valid = (cmd->header == COMMAND_HEADER) &&
+	                 (crc16_ccitt(rx_buf, CRC_OVER_CMD_BYTES) == cmd->crc);
 
 	if (!cmd_valid) {
-		if (s_error_count != 0xFFFFu) {
+		if (s_error_count < 0xFFFFu)
 			s_error_count++;
-		}
 	} else {
-		set_dig_out_value(s_cmd.digital_out);
-		*last_seq = s_cmd.seq_num;
-		if (s_cmd.flags & FLAG_RESET_SEQ) {
-			*last_seq = 0;
-		}
+		/* Apply digital outputs immediately */
+		set_dig_out_value(cmd->digital_out);
+
+		/* Apply DAC outputs */
+		if (cmd->flags & FLAG_DAC_ENABLE)
+			dac_write_pair(cmd->dac0, cmd->dac1);
+
+		/* Sequence tracking */
+		s_last_seq = cmd->seq_num;
+		if (cmd->flags & FLAG_RESET_SEQ)
+			s_last_seq = 0;
 	}
 
-	memset(&s_stat, 0, sizeof(s_stat));
-	s_stat.header      = STATUS_HEADER;
-	s_stat.digital_in  = get_dig_in_value();
-	s_stat.digital_out = get_dig_out_echo();
+	/* Build the 64-byte status response */
+	memset(stat, 0, sizeof(*stat));
+	stat->header      = STATUS_HEADER;
+	stat->digital_in  = get_dig_in_value();
+	stat->digital_out = get_dig_out_echo();
+
+	/* ADC: read latest PDC snapshot */
+	for (int i = 0; i < ADC_CHANNEL_NUM; i++)
+		stat->adc[i] = g_adc_buf[0][i];
+
+	/* Status flags */
 	uint8_t sf = STATUS_USB_CONFIGURED;
 	if (!cmd_valid) sf |= STATUS_ERROR_FLAG;
-	s_stat.status_flags = sf;
-	s_stat.seq_num      = *last_seq;
-	s_stat.error_count  = s_error_count;
-	s_stat.crc          = crc16_ccitt(s_out, CRC_OVER_STAT_BYTES);
+	stat->status_flags = sf;
 
-	/* Send the response. udi_cdc_write_buf returns the number of
-	 * bytes that COULD NOT be queued — we ignore it because the
-	 * host will simply time out for one frame and retry, and the
-	 * next iteration will produce a fresh response. */
-	(void)udi_cdc_write_buf(s_out, MSG_SIZE);
+	stat->seq_num     = s_last_seq;
+	stat->uptime_ms   = s_uptime_ms;
+	stat->error_count = s_error_count;
+
+	/* CRC over first 24 bytes of the status frame */
+	stat->crc = crc16_ccitt(tx_buf, CRC_OVER_STAT_BYTES);
 }
+
+/* ============================================================
+ *  main()
+ * ============================================================ */
 
 int main(void)
 {
@@ -394,80 +341,24 @@ int main(void)
 	cpu_irq_enable();
 	board_init();
 
-	udc_start();
+	/* SysTick at 1 kHz for uptime_ms */
+	SysTick_Config(sysclk_get_main_hz() / 1000);
 
-	init_dig_in_ports(s_dig_in_ports);
-	init_dig_out_ports(s_dig_out_ports);
-
-	/* Disable the SAM3X watchdog (WDT_MR is write-once). Recovery from
-	 * a hung firmware is handled at the systemd level: physerver has
-	 * Restart=always so a stuck transport will retry indefinitely. */
+	/* Disable the SAM3X watchdog (WDT_MR is write-once). */
 	WDT->WDT_MR = WDT_MR_WDDIS;
 
-	uint8_t last_seq = 0xFFu;
-	int collected = 0;
-	uint8_t in_buf[MSG_SIZE];
+	/* Initialise I/O peripherals */
+	init_dig_in_ports();
+	init_dig_out_ports();
+	adc_setup();
+	dac_setup();
 
-	/* Byte-by-byte framing loop. Two key properties make it robust
-	 * against the ASF UDI_CDC double-buffer race that bites the
-	 * udi_cdc_read_buf() block path:
-	 *
-	 *   1. We never ask UDI_CDC for more bytes than it currently has
-	 *      in the visible (selected) buffer — we only call read_buf()
-	 *      with `min(available, remaining)`. read_buf() never has to
-	 *      wait, so it cannot deadlock waiting for the other buffer.
-	 *
-	 *   2. We re-synchronise on the 0x55 0xAA frame header on every
-	 *      received byte, so even if a frame is dropped or chopped
-	 *      we re-align on the next valid header without losing the
-	 *      stream forever.
-	 */
+	/* Start USB device stack */
+	udc_start();
+
+	/* Idle spin — all protocol work happens in the UOTGHS ISR
+	 * via vendor_bulk_out_cb → process_command_frame. */
 	for (;;) {
-		iram_size_t avail = udi_cdc_get_nb_received_data();
-		if (avail == 0) {
-			/* Yield to interrupts. WFI wakes on any pending
-			 * interrupt (USB SOF, transfer complete, SETUP). */
-			__asm__ volatile ("wfi");
-			continue;
-		}
-
-		/* Read up to one frame worth of bytes from the current buffer. */
-		uint8_t chunk[MSG_SIZE];
-		iram_size_t to_read = avail;
-		if (to_read > MSG_SIZE) {
-			to_read = MSG_SIZE;
-		}
-		(void)udi_cdc_read_buf(chunk, to_read);
-
-		for (iram_size_t i = 0; i < to_read; i++) {
-			uint8_t b = chunk[i];
-			switch (collected) {
-			case 0:
-				if (b == 0x55) {
-					in_buf[0] = 0x55;
-					collected = 1;
-				}
-				break;
-			case 1:
-				if (b == 0xAA) {
-					in_buf[1] = 0xAA;
-					collected = 2;
-				} else if (b == 0x55) {
-					/* still a possible header start */
-					in_buf[0] = 0x55;
-				} else {
-					collected = 0;
-				}
-				break;
-			default:
-				in_buf[collected++] = b;
-				if (collected == MSG_SIZE) {
-					memcpy(s_in, in_buf, MSG_SIZE);
-					process_command_and_reply(&last_seq);
-					collected = 0;
-				}
-				break;
-			}
-		}
+		/* No WFI: see Bug 3 in the investigation report. */
 	}
 }

@@ -98,8 +98,14 @@
                 <button id="scopePause">Pause</button>
             </div>
             <div class="scope-toolbar">
-                <span>Analog:</span>
-                <div class="scope-ch-list" id="scopeAnalogCh"></div>
+                <span>Analog In:</span>
+                <div class="scope-ch-list" id="scopeAdcCh"></div>
+                <span style="margin-left:6px;color:#aaa;">|</span>
+                <span style="margin-left:6px;">Out:</span>
+                <div class="scope-ch-list" id="scopeDacCh"></div>
+                <span style="margin-left:6px;color:#aaa;">|</span>
+                <span style="margin-left:6px;">Pwm:</span>
+                <div class="scope-ch-list" id="scopePwmCh"></div>
             </div>
             <div class="scope-toolbar">
                 <span>Digital In:</span>
@@ -165,15 +171,32 @@ wireSlider('dac0',cmd.dac,0,4095);wireSlider('dac1',cmd.dac,1,4095);wireSlider('
 // from the UI. If needed for debugging, use POST /api/command.
 
 // Scope channel selectors
-const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDInEl=document.getElementById('scopeDigitalInCh'), scopeDOutEl=document.getElementById('scopeDigitalOutCh');
+const scopeAdcEl=document.getElementById('scopeAdcCh'), scopeDacEl=document.getElementById('scopeDacCh'), scopePwmEl=document.getElementById('scopePwmCh');
+const scopeDInEl=document.getElementById('scopeDigitalInCh'), scopeDOutEl=document.getElementById('scopeDigitalOutCh');
 // Analog channels: 0-7=ADC, 8-9=DAC, 10-11=PWM
-for(let i=0;i<12;i++){
-    const lbl=i<8?`ADC${i}`:i<10?`DAC${i-8}`:`PWM${i-10}`;
+// ADC (In) — indices 0-7
+for(let i=0;i<8;i++){
     const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=i<2;
     cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
-    l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeAEl.appendChild(l);
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(i)));scopeAdcEl.appendChild(l);
+}
+// DAC (Out) — indices 8-9
+for(let i=8;i<10;i++){
+    const l=document.createElement('label');
+    const cb=document.createElement('input');cb.type='checkbox';
+    cb.style.accentColor=COLORS[i%COLORS.length];
+    cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(i-8)));scopeDacEl.appendChild(l);
+}
+// PWM — indices 10-11
+for(let i=10;i<12;i++){
+    const l=document.createElement('label');
+    const cb=document.createElement('input');cb.type='checkbox';
+    cb.style.accentColor=COLORS[i%COLORS.length];
+    cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(i-10)));scopePwmEl.appendChild(l);
 }
 for(let i=0;i<16;i++){
     const idx=i; const l=document.createElement('label');

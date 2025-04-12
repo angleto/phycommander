@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "analyzer"
+version = "0.1.0"
+description = "Host-side application for the phycommander multi-function analytical bench instrument"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "CERN-OHL-S-2.0" }
+authors = [
+    { name = "Angelo Leto" },
+]
+keywords = ["phycommander", "DAQ", "lock-in", "spectrophotometer", "beer", "analyzer"]
+
+dependencies = [
+    "numpy >= 1.26",
+    "scipy >= 1.12",
+    "matplotlib >= 3.8",
+    "tomli >= 2.0 ; python_version < '3.11'",
+    "reportlab >= 4.0",
+    "rich >= 13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest >= 8.0",
+    "pytest-cov >= 4.0",
+    "ruff >= 0.3",
+    "mypy >= 1.8",
+]
+
+[project.scripts]
+analyzer = "analyzer.main:main"
+analyzer-self-test = "scripts.self_test:main"
+analyzer-methylene-blue = "scripts.methylene_blue_run:main"
+
+[tool.setuptools]
+packages = ["analyzer", "analyzer.modes", "analyzer.assays", "analyzer.hardware", "analyzer.ui"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true

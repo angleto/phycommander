@@ -154,7 +154,7 @@ let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enab
 
 // Scope data ring buffer
 const SCOPE_MAX = 10000;
-let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], din:[], dout:[], ts:[] };
+let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], pwm:[[],[]], din:[], dout:[], ts:[] };
 let scopeAnalogCh = [0,1]; // enabled ADC channels
 let scopeDigitalCh = []; // enabled digital bits (0-15 = din, 16-31 = dout)
 const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#7bc67e','#e74c3c','#3498db'];
@@ -178,18 +178,20 @@ document.getElementById('flagResetSeq').onchange=function(){cmd.flags.reset_seq=
 
 // Scope channel selectors
 const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDEl=document.getElementById('scopeDigitalCh');
-for(let i=0;i<10;i++){
-    const lbl=i<8?`ADC${i}`:`DAC${i-8}`;
+// Analog channels: 0-7=ADC, 8-9=DAC, 10-11=PWM
+for(let i=0;i<12;i++){
+    const lbl=i<8?`ADC${i}`:i<10?`DAC${i-8}`:`PWM${i-10}`;
     const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=i<2;
-    cb.style.accentColor=COLORS[i];
+    cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
     l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeAEl.appendChild(l);
 }
-for(let i=0;i<4;i++){
-    const lbl=i<2?`DIN${i}`:`DOUT${i-2}`;
+for(let i=0;i<32;i++){
+    const lbl=i<16?`DI${i}`:`DO${i-16}`;
     const idx=i; const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';
+    cb.style.accentColor=COLORS[(i+4)%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeDigitalCh.includes(idx))scopeDigitalCh.push(idx);else scopeDigitalCh=scopeDigitalCh.filter(x=>x!==idx)};
     l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeDEl.appendChild(l);
 }
@@ -226,12 +228,14 @@ function pushScope(s){
     scopeBuf.ts.push(now);
     for(let i=0;i<8;i++)scopeBuf.adc[i].push(s.adc[i]);
     scopeBuf.dac[0].push(cmd.dac[0]); scopeBuf.dac[1].push(cmd.dac[1]);
+    scopeBuf.pwm[0].push(cmd.pwm[0]); scopeBuf.pwm[1].push(cmd.pwm[1]);
     scopeBuf.din.push(s.digital_in); scopeBuf.dout.push(s.digital_out);
     // Trim
     while(scopeBuf.ts.length>SCOPE_MAX){
         scopeBuf.ts.shift();
         for(let i=0;i<8;i++)scopeBuf.adc[i].shift();
         scopeBuf.dac[0].shift();scopeBuf.dac[1].shift();
+        scopeBuf.pwm[0].shift();scopeBuf.pwm[1].shift();
         scopeBuf.din.shift();scopeBuf.dout.shift();
     }
 }
@@ -261,8 +265,8 @@ function drawScope(){
     // Traces
     ctxA.lineWidth=1.2;
     scopeAnalogCh.forEach((ch)=>{
-        const arr=ch<8?scopeBuf.adc[ch]:scopeBuf.dac[ch-8];
-        const max=ch<8?4095:ch<10?4095:65535;
+        const arr=ch<8?scopeBuf.adc[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10];
+        const max=ch<10?4095:65535;
         ctxA.strokeStyle=COLORS[ch%COLORS.length];
         ctxA.beginPath();
         let first=true;
@@ -275,7 +279,8 @@ function drawScope(){
     });
     // Labels
     ctxA.font='10px monospace'; ctxA.fillStyle='#888';
-    ctxA.fillText('4095',2,12); ctxA.fillText('0',2,H-4);
+    const hasPwm=scopeAnalogCh.some(c=>c>=10);
+    ctxA.fillText(hasPwm?'65535':'4095',2,12); ctxA.fillText('0',2,H-4);
 
     // Digital canvas
     const ctxD=cvD.getContext('2d');
@@ -290,8 +295,8 @@ function drawScope(){
     ctxD.lineWidth=1.5;
     scopeDigitalCh.forEach((ch,ci)=>{
         const yBase=(ci+1)*rowH-4;
-        const arr=ch<2?scopeBuf.din:scopeBuf.dout;
-        const bit=ch<2?ch:ch-2;
+        const arr=ch<16?scopeBuf.din:scopeBuf.dout;
+        const bit=ch<16?ch:ch-16;
         ctxD.strokeStyle=COLORS[(ch+4)%COLORS.length];
         ctxD.beginPath();
         let first=true;
@@ -303,7 +308,7 @@ function drawScope(){
         }
         ctxD.stroke();
         ctxD.font='9px monospace';ctxD.fillStyle=COLORS[(ch+4)%COLORS.length];
-        ctxD.fillText(ch<2?'DIN'+ch:'DOUT'+(ch-2),2,yBase-rowH/2+4);
+        ctxD.fillText(ch<16?'DI'+ch:'DO'+(ch-16),2,yBase-rowH/2+4);
     });
     if(!scopeDigitalCh.length){ctxD.font='11px sans-serif';ctxD.fillStyle='#666';ctxD.fillText('Select digital channels above',WD/2-80,HD/2);}
 }

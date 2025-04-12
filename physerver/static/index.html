@@ -51,11 +51,6 @@
         .adc-ch .bar { position:absolute; left:0; bottom:0; height:3px; background:linear-gradient(90deg,#667eea,#764ba2); transition:width .2s; }
         .adc-ch .lbl { font-size:9px; color:#999; } .adc-ch .val { font-size:16px; font-weight:bold; color:#333; font-family:monospace; }
 
-        /* Flags */
-        .flag-row { display:flex; gap:8px; flex-wrap:wrap; }
-        .flag-toggle { display:flex; align-items:center; gap:4px; font-size:12px; cursor:pointer; }
-        .flag-toggle input { cursor:pointer; }
-
         /* Scope */
         .scope-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:8px; flex-wrap:wrap; font-size:11px; }
         .scope-toolbar select, .scope-toolbar button { font-size:11px; padding:2px 6px; }
@@ -135,18 +130,6 @@
         <!-- ADC -->
         <div class="panel"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
 
-        <!-- Flags -->
-        <div class="panel">
-            <h2>Control Flags</h2>
-            <div class="flag-row">
-                <label class="flag-toggle"><input type="checkbox" id="flagAdc" checked>ADC Enable</label>
-                <label class="flag-toggle"><input type="checkbox" id="flagDac" checked>DAC Enable</label>
-                <label class="flag-toggle"><input type="checkbox" id="flagPwm">PWM Enable</label>
-                <label class="flag-toggle"><input type="checkbox" id="flagWd">Watchdog Disable</label>
-                <label class="flag-toggle"><input type="checkbox" id="flagResetSeq">Reset Seq</label>
-            </div>
-        </div>
-
         <!-- Sysinfo (bottom, collapsible, closed by default) -->
         <details class="panel wide">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">System Telemetry</summary>
@@ -177,12 +160,9 @@ for(let i=0;i<8;i++){const c=document.createElement('div');c.className='adc-ch';
 function wireSlider(id,arr,idx,max){const s=document.getElementById(id+'S'),v=document.getElementById(id+'V');s.oninput=()=>{v.textContent=s.value;arr[idx]=+s.value;sendCmd()};}
 wireSlider('dac0',cmd.dac,0,4095);wireSlider('dac1',cmd.dac,1,4095);wireSlider('pwm0',cmd.pwm,0,65535);wireSlider('pwm1',cmd.pwm,1,65535);
 
-// Flag checkboxes
-document.getElementById('flagAdc').onchange=function(){cmd.flags.adc_enable=this.checked;sendCmd()};
-document.getElementById('flagDac').onchange=function(){cmd.flags.dac_enable=this.checked;sendCmd()};
-document.getElementById('flagPwm').onchange=function(){cmd.flags.pwm_enable=this.checked;sendCmd()};
-document.getElementById('flagWd').onchange=function(){cmd.flags.watchdog_disable=this.checked;sendCmd()};
-document.getElementById('flagResetSeq').onchange=function(){cmd.flags.reset_seq=this.checked;sendCmd()};
+// Flags: ADC+DAC always enabled in the command frame; PWM/watchdog/
+// reset_seq are non-functional in the current firmware and hidden
+// from the UI. If needed for debugging, use POST /api/command.
 
 // Scope channel selectors
 const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDInEl=document.getElementById('scopeDigitalInCh'), scopeDOutEl=document.getElementById('scopeDigitalOutCh');

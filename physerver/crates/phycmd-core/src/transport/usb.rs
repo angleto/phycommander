@@ -218,15 +218,40 @@ impl Transport for UsbTransport {
         }
     }
 
+    /// Optimised single-call exchange: write OUT + read IN with no
+    /// intermediate timing, no debug logging, no read loop. The
+    /// PhyCMD-64 protocol always produces exactly 64 bytes per
+    /// direction, so a single bulk transfer per direction suffices.
     fn exchange(&mut self, cmd: &Command) -> Result<Status> {
-        // Optimized: single USB transaction
-        let start = std::time::Instant::now();
+        let bytes = protocol::encode_command(cmd);
 
-        self.send_command(cmd)?;
-        let status = self.receive_status()?;
+        let written = self
+            .device_handle
+            .write_bulk(EP_OUT, &bytes, Duration::from_millis(TIMEOUT_MS))
+            .context("USB bulk write")?;
+        if written != MESSAGE_SIZE {
+            anyhow::bail!("short write: {written}/{MESSAGE_SIZE}");
+        }
 
-        let elapsed = start.elapsed().as_micros() as u64;
-        debug!("USB exchange completed in {}µs", elapsed);
+        let read = self
+            .device_handle
+            .read_bulk(EP_IN, &mut self.read_buffer, Duration::from_millis(TIMEOUT_MS))
+            .context("USB bulk read")?;
+        if read != MESSAGE_SIZE {
+            anyhow::bail!("short read: {read}/{MESSAGE_SIZE}");
+        }
+
+        let status = protocol::decode_status(&self.read_buffer)
+            .map_err(|e| {
+                self.stats.crc_errors += 1;
+                self.stats.errors += 1;
+                anyhow::anyhow!("{e}")
+            })?;
+
+        self.stats.messages_sent += 1;
+        self.stats.messages_received += 1;
+        self.stats.bytes_sent += MESSAGE_SIZE as u64;
+        self.stats.bytes_received += MESSAGE_SIZE as u64;
 
         Ok(status)
     }

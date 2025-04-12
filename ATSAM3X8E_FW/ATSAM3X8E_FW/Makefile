@@ -44,8 +44,6 @@ INCLUDES := \
   -Isrc/ASF/common/services/serial/sam_uart \
   -Isrc/ASF/common/services/sleepmgr \
   -Isrc/ASF/common/services/usb \
-  -Isrc/ASF/common/services/usb/class/cdc \
-  -Isrc/ASF/common/services/usb/class/cdc/device \
   -Isrc/ASF/common/services/usb/udc \
   -Isrc/ASF/common/utils \
   -Isrc/ASF/common/utils/stdio/stdio_serial \
@@ -77,13 +75,12 @@ INCLUDES := \
 # ---- Sources (from .cproj <Compile Include="..."/>) ----
 SRCS := \
   src/main.c \
+  src/udi_vendor.c \
   src/ASF/common/services/clock/sam3x/sysclk.c \
   src/ASF/common/services/delay/sam/cycle_counter.c \
   src/ASF/common/services/fifo/fifo.c \
   src/ASF/common/services/serial/usart_serial.c \
   src/ASF/common/services/sleepmgr/sam/sleepmgr.c \
-  src/ASF/common/services/usb/class/cdc/device/udi_cdc.c \
-  src/ASF/common/services/usb/class/cdc/device/udi_cdc_desc.c \
   src/ASF/common/services/usb/udc/udc.c \
   src/ASF/common/utils/interrupt/interrupt_sam_nvic.c \
   src/ASF/common/utils/stdio/read.c \

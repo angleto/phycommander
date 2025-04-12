@@ -136,12 +136,6 @@
 // From module: USART - Univ. Syn Async Rec/Trans
 #include <usart.h>
 
-// From module: USB CDC Protocol
-#include <usb_protocol_cdc.h>
-
-// From module: USB Device CDC (Single Interface Device)
-#include <udi_cdc.h>
-
 // From module: USB Device Stack Core (Common API)
 #include <udc.h>
 #include <udd.h>

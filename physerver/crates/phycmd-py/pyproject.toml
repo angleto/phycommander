@@ -1,0 +1,33 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "phycmd"
+version = "0.1.0"
+description = "Hard-real-time Python bindings for the PhyCommander control stack"
+authors = [{ name = "PhyCMD Contributors" }]
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["real-time", "control", "usb", "phycommander", "embedded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering",
+    "Topic :: System :: Hardware",
+]
+
+[project.urls]
+Homepage = "https://github.com/phycmd/phycommander"
+Repository = "https://github.com/phycmd/phycommander"
+
+[tool.maturin]
+# The Rust cdylib is named `phycmd_ext` (see Cargo.toml); the
+# top-level Python package is `phycmd` (see `python/phycmd/__init__.py`)
+# and imports the compiled symbols from `phycmd.phycmd_ext`.
+module-name = "phycmd.phycmd_ext"
+python-source = "python"
+features = ["pyo3/extension-module"]

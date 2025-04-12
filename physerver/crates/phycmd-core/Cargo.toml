@@ -1,0 +1,62 @@
+[package]
+name = "phycmd-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["PhyCMD Contributors"]
+description = "Core protocol, transport, and real-time primitives for PhyCommander"
+license = "MIT"
+
+[lib]
+name = "phycmd_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Protocol / CRC
+thiserror = "1.0"
+
+# Serde for Command/Status wire types (consumed by IPC / HTTP downstream)
+serde = { version = "1.0", features = ["derive"] }
+
+# Error handling
+anyhow = "1.0"
+
+# Transport: serial (USB CDC) — always compiled
+serialport = "4.3"
+
+# Transport: direct USB bulk — gated by feature
+rusb = { version = "0.9", optional = true }
+
+# Logging
+tracing = "0.1"
+
+# Fast Mutex/Condvar with wait_while(); avoids std's lock-poisoning overhead
+# and gives the staging buffer a cleaner predicate-based wait API.
+parking_lot = "0.12"
+
+# Bounded SPSC channel for the pipelined transport: the SCHED_FIFO
+# scheduler thread submits commands and reaps results via a pair of
+# crossbeam bounded(1) channels to/from a dedicated I/O helper thread.
+# Never allocates on the hot path; recv_timeout gives us the deadline
+# we need for reap.
+crossbeam-channel = "0.5"
+
+# Real-time primitives (mlockall, sched_setscheduler, sched_setaffinity)
+nix = { version = "0.27", features = ["sched", "signal", "mman"] }
+libc = "0.2"
+
+# tokio::sync::broadcast for the StatusBus observer pattern; only the
+# sync primitives are pulled in (no net, no fs). `rt` gives us
+# `blocking_recv` so non-async callers can consume frames without
+# needing a runtime of their own.
+tokio = { version = "1.35", features = ["sync", "rt"], default-features = false }
+
+[features]
+default = ["usb"]
+usb = ["rusb"]
+
+# Exposes `transport::mock::MockTransport` outside of `cfg(test)`
+# so that sibling crates in the workspace can reuse it in their
+# own integration tests.
+test-mock = []
+
+[dev-dependencies]

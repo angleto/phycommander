@@ -1,3 +1,18 @@
+[workspace]
+members = [
+    "crates/phycmd-core",
+    "crates/phycmd-rust",
+    "crates/phycmd-py",
+]
+# The `physerver` binary/library also lives at the workspace root —
+# it is implicitly a member.
+#
+# Note: `phycmd-py` is a pyo3 `cdylib` and is normally built via
+# `maturin develop` / `maturin build` from its own directory — the
+# workspace member entry lets `cargo build --workspace` verify that
+# it compiles as an rlib, which catches type errors at the Rust
+# level without requiring a Python toolchain.
+
 [package]
 name = "physerver"
 version = "1.0.0"
@@ -15,13 +30,20 @@ name = "physerver"
 path = "src/main.rs"
 
 [dependencies]
+# Core protocol/transport/rt primitives extracted into their own crate.
+phycmd-core = { path = "crates/phycmd-core", features = ["usb"] }
+
 # Async runtime
 tokio = { version = "1.35", features = ["full", "rt-multi-thread"] }
 
-# Serial port communication
+# Serial port communication — still needed directly by the legacy
+# serial::SerialPortHandler auto-detect helper in src/transport/serial.rs
+# callers. Will go away once the binary stops poking at serialport
+# directly and uses phycmd-core::transport abstractions only.
 serialport = "4.3"
 
-# Direct USB communication (optional, requires libudev)
+# Direct USB communication (optional, requires libudev) — same note:
+# re-exported via phycmd-core but kept here for any residual direct use.
 rusb = { version = "0.9", optional = true }
 
 # Protocol and serialization
@@ -61,6 +83,7 @@ crossbeam-channel = "0.5"
 parking_lot = "0.12"
 once_cell = "1.19"
 bytes = "1.5"
+num_cpus = "1.16"
 
 # CRC calculation
 crc = "3.0"

@@ -101,10 +101,18 @@
                 <span>Window:</span>
                 <select id="scopeWindow"><option value="200">200ms</option><option value="1000" selected>1s</option><option value="5000">5s</option><option value="10000">10s</option></select>
                 <button id="scopePause">Pause</button>
-                <span style="margin-left:8px">Analog:</span>
+            </div>
+            <div class="scope-toolbar">
+                <span>Analog:</span>
                 <div class="scope-ch-list" id="scopeAnalogCh"></div>
-                <span style="margin-left:8px">Digital:</span>
-                <div class="scope-ch-list" id="scopeDigitalCh"></div>
+            </div>
+            <div class="scope-toolbar">
+                <span>Digital In:</span>
+                <div class="scope-ch-list" id="scopeDigitalInCh"></div>
+            </div>
+            <div class="scope-toolbar">
+                <span>Digital Out:</span>
+                <div class="scope-ch-list" id="scopeDigitalOutCh"></div>
             </div>
             <canvas class="scope" id="scopeAnalog" height="200"></canvas>
             <canvas class="scope" id="scopeDigital" height="120" style="margin-top:6px;height:120px;"></canvas>
@@ -177,7 +185,7 @@ document.getElementById('flagWd').onchange=function(){cmd.flags.watchdog_disable
 document.getElementById('flagResetSeq').onchange=function(){cmd.flags.reset_seq=this.checked;sendCmd()};
 
 // Scope channel selectors
-const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDEl=document.getElementById('scopeDigitalCh');
+const scopeAEl=document.getElementById('scopeAnalogCh'), scopeDInEl=document.getElementById('scopeDigitalInCh'), scopeDOutEl=document.getElementById('scopeDigitalOutCh');
 // Analog channels: 0-7=ADC, 8-9=DAC, 10-11=PWM
 for(let i=0;i<12;i++){
     const lbl=i<8?`ADC${i}`:i<10?`DAC${i-8}`:`PWM${i-10}`;
@@ -187,13 +195,19 @@ for(let i=0;i<12;i++){
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
     l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeAEl.appendChild(l);
 }
-for(let i=0;i<32;i++){
-    const lbl=i<16?`DI${i}`:`DO${i-16}`;
+for(let i=0;i<16;i++){
     const idx=i; const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';
     cb.style.accentColor=COLORS[(i+4)%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeDigitalCh.includes(idx))scopeDigitalCh.push(idx);else scopeDigitalCh=scopeDigitalCh.filter(x=>x!==idx)};
-    l.appendChild(cb);l.appendChild(document.createTextNode(lbl));scopeDEl.appendChild(l);
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(i)));scopeDInEl.appendChild(l);
+}
+for(let i=16;i<32;i++){
+    const idx=i; const l=document.createElement('label');
+    const cb=document.createElement('input');cb.type='checkbox';
+    cb.style.accentColor=COLORS[(i+4)%COLORS.length];
+    cb.onchange=()=>{if(cb.checked&&!scopeDigitalCh.includes(idx))scopeDigitalCh.push(idx);else scopeDigitalCh=scopeDigitalCh.filter(x=>x!==idx)};
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(i-16)));scopeDOutEl.appendChild(l);
 }
 document.getElementById('scopePause').onclick=function(){scopePaused=!scopePaused;this.classList.toggle('active',scopePaused);this.textContent=scopePaused?'Resume':'Pause';};
 

@@ -4,6 +4,7 @@
 
 use physerver::{Command, CommandFlags, Status, StatusFlags};
 use physerver::protocol::{encode_command, decode_status};
+use physerver::protocol::crc::crc16_ccitt_table;
 
 #[test]
 fn test_protocol_integration() {
@@ -60,7 +61,7 @@ fn test_status_decode_integration() {
     data[23] = 42;
 
     // Calculate CRC
-    let crc = physerver::protocol::crc16_ccitt_table(&data[0..24]);
+    let crc = crc16_ccitt_table(&data[0..24]);
     data[24] = (crc & 0xFF) as u8;
     data[25] = (crc >> 8) as u8;
 
@@ -154,7 +155,7 @@ fn test_error_detection() {
     data[0] = 0xAA;
     data[1] = 0x55;
 
-    let crc = physerver::protocol::crc16_ccitt_table(&data[0..24]);
+    let crc = crc16_ccitt_table(&data[0..24]);
     data[24] = (crc & 0xFF) as u8;
     data[25] = (crc >> 8) as u8;
 

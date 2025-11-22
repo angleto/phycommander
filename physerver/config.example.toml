@@ -1,0 +1,59 @@
+# PhyServer Configuration File
+# Copy this to config.toml and adjust as needed
+
+[transport]
+# Transport type: "usb" (direct USB bulk) or "serial" (USB CDC)
+# USB: Best performance (10kHz, <100µs latency)
+# Serial: Better compatibility (1kHz, ~750µs latency)
+type = "usb"
+
+# Serial port device (only used if type = "serial")
+serial_port = "/dev/ttyACM0"
+
+# Baud rate (only used if type = "serial", ignored by USB)
+baud_rate = 921600
+
+# Update rate in Hz
+# USB: up to 10000 Hz
+# Serial: up to 1000 Hz
+update_rate = 5000
+
+# Auto-detect device on startup
+auto_detect = true
+
+[web]
+# Enable web server
+enabled = true
+
+# Web server port
+port = 8080
+
+# Bind address
+# "0.0.0.0" = all interfaces (accessible remotely)
+# "127.0.0.1" = localhost only (local access only)
+bind_address = "0.0.0.0"
+
+[realtime]
+# Enable real-time scheduling (requires elevated privileges)
+# Run with: sudo setcap cap_sys_nice,cap_ipc_lock=eip ./physerver
+enabled = false
+
+# Real-time priority (1-99, higher = more priority)
+priority = 80
+
+# Lock memory to prevent paging
+lock_memory = true
+
+# Set CPU affinity (pin to specific core)
+cpu_affinity = false
+# cpu_core = 2
+
+# Set DMA latency (Linux only)
+dma_latency = true
+
+[ipc]
+# Enable IPC (shared memory for local clients)
+enabled = true
+
+# Shared memory name
+shm_name = "phycmd_state"

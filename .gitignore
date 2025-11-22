@@ -1,0 +1,37 @@
+# Rust
+target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dll
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Atmel Studio
+*.atsuo
+*.atsln
+*.componentinfo.xml
+*.cproj.user
+
+# Node modules (if web frontend uses npm)
+node_modules/
+dist/
+
+# Logs
+*.log
+
+# System
+.env
+.env.local

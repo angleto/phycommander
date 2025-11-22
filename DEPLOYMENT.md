@@ -27,7 +27,7 @@ Complete guide for deploying PhyServer in production environments.
 - [ ] PhyServer built with release profile
 - [ ] Configuration file created
 - [ ] System permissions configured
-- [ ] Real-time optimizations applied (if needed)
+- [ ] Real-time optimizations applied (see [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md))
 - [ ] Systemd service configured
 - [ ] Firewall configured
 - [ ] Monitoring configured
@@ -69,6 +69,8 @@ Complete guide for deploying PhyServer in production environments.
 - RT-preempt kernel or PREEMPT_RT patch
 - CPU core isolation
 - Fast USB 2.0/3.0 controller
+
+See [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) for complete real-time OS configuration instructions
 
 ---
 

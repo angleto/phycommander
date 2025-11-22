@@ -296,6 +296,8 @@ let client = IpcClient::connect_named("/physerver1")?;
 
 Controls real-time scheduling and performance optimizations.
 
+> **Note**: For comprehensive OS-level real-time configuration (RT kernel installation, CPU isolation, system tuning), see [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md). This section covers PhyServer-specific RT settings.
+
 ### Complete Real-Time Section
 
 ```toml
@@ -367,6 +369,9 @@ cpu_core = 2
 - More consistent performance
 
 **Requirements**:
+
+> **See Also**: For complete CPU isolation setup including RT kernel installation and system tuning, refer to [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md).
+
 1. **Isolate CPU core** in kernel parameters (`/etc/default/grub`):
    ```
    GRUB_CMDLINE_LINUX="isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3"

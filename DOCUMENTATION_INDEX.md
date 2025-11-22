@@ -26,6 +26,7 @@ Complete guide to PhyCMD documentation.
 - **Deployment**: [DEPLOYMENT.md](DEPLOYMENT.md)
 - **Configuration**: [CONFIGURATION.md](CONFIGURATION.md)
 - **Performance**: [PERFORMANCE.md](PERFORMANCE.md)
+- **Real-Time OS Setup**: [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md)
 
 #### Hardware/Firmware Engineers
 - **Firmware Upload**: [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md)
@@ -53,6 +54,7 @@ Complete guide to PhyCMD documentation.
 | [BUILDING.md](BUILDING.md) | Build instructions | 20 pages |
 | [CONFIGURATION.md](CONFIGURATION.md) | Configuration guide | 30 pages |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment | 35 pages |
+| [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) | Real-time Linux OS configuration | 45 pages |
 
 ### Technical Reference
 
@@ -75,7 +77,8 @@ Complete guide to PhyCMD documentation.
 1. [SETUP.md](SETUP.md) - Initial setup
 2. [BUILDING.md](BUILDING.md) - Build from source
 3. [FIRMWARE_UPLOAD.md](FIRMWARE_UPLOAD.md) - Upload firmware
-4. [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
+4. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Configure RT OS (optional)
+5. [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment
 
 ### Configuration
 
@@ -98,10 +101,11 @@ Complete guide to PhyCMD documentation.
 
 ### Performance Tuning
 
-1. [PERFORMANCE.md](PERFORMANCE.md) - Benchmarks and tuning
-2. [CONFIGURATION.md](CONFIGURATION.md) - RT configuration
-3. [DEPLOYMENT.md](DEPLOYMENT.md) - Production optimization
-4. [USER_MANUAL.md](USER_MANUAL.md) - Real-time operation section
+1. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Real-time OS setup
+2. [PERFORMANCE.md](PERFORMANCE.md) - Benchmarks and tuning
+3. [CONFIGURATION.md](CONFIGURATION.md) - RT configuration
+4. [DEPLOYMENT.md](DEPLOYMENT.md) - Production optimization
+5. [USER_MANUAL.md](USER_MANUAL.md) - Real-time operation section
 
 ### Troubleshooting
 
@@ -164,7 +168,8 @@ All documentation includes working code examples in:
 **Configuration**:
 - TOML config → [CONFIGURATION.md](CONFIGURATION.md)
 - Command-line → [QUICK_REFERENCE.md](QUICK_REFERENCE.md), [CONFIGURATION.md](CONFIGURATION.md)
-- Real-time → [CONFIGURATION.md](CONFIGURATION.md), [USER_MANUAL.md](USER_MANUAL.md)
+- Real-time → [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md), [CONFIGURATION.md](CONFIGURATION.md), [USER_MANUAL.md](USER_MANUAL.md)
+- RT kernel → [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md)
 
 **Deployment**:
 - Systemd → [DEPLOYMENT.md](DEPLOYMENT.md)
@@ -194,7 +199,8 @@ PhyCMD/
 │   ├── SETUP.md              # Initial setup
 │   ├── BUILDING.md           # Build instructions
 │   ├── CONFIGURATION.md      # Configuration reference
-│   └── DEPLOYMENT.md         # Production deployment
+│   ├── DEPLOYMENT.md         # Production deployment
+│   └── REALTIME_OS_CONFIG.md # Real-time OS configuration
 │
 ├── Technical Reference
 │   ├── ARCHITECTURE.md       # System architecture
@@ -232,9 +238,10 @@ PhyCMD/
 ### For System Administrators
 
 1. [README.md](README.md) - Overview
-2. [DEPLOYMENT.md](DEPLOYMENT.md) - Deploy to production
-3. [CONFIGURATION.md](CONFIGURATION.md) - Configure properly
-4. [PERFORMANCE.md](PERFORMANCE.md) - Optimize performance
+2. [REALTIME_OS_CONFIG.md](REALTIME_OS_CONFIG.md) - Configure RT OS
+3. [DEPLOYMENT.md](DEPLOYMENT.md) - Deploy to production
+4. [CONFIGURATION.md](CONFIGURATION.md) - Configure properly
+5. [PERFORMANCE.md](PERFORMANCE.md) - Optimize performance
 
 ### For Integration Engineers
 

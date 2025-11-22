@@ -73,7 +73,7 @@ default = ["usb"]
 usb = ["rusb"]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.7"
 
 [profile.release]
 opt-level = 3

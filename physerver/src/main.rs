@@ -1,5 +1,7 @@
 mod protocol;
 mod serial;
+mod transport;
+mod config;
 mod ipc;
 mod web;
 mod rt;
@@ -8,6 +10,7 @@ mod telemetry;
 use anyhow::{Context, Result};
 use clap::Parser;
 use protocol::{Command, Status};
+use transport::{Transport, TransportType};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -16,29 +19,37 @@ use tracing::{error, info, warn};
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
+    /// Configuration file path
+    #[arg(short, long)]
+    config: Option<String>,
+
+    /// Transport type: "serial" or "usb"
+    #[arg(short, long)]
+    transport: Option<String>,
+
     /// Serial port device (e.g., /dev/ttyACM0)
     #[arg(short, long)]
     port: Option<String>,
 
     /// Baud rate
-    #[arg(short, long, default_value = "921600")]
-    baud: u32,
+    #[arg(short, long)]
+    baud: Option<u32>,
 
     /// Web server port
-    #[arg(short, long, default_value = "8080")]
-    web_port: u16,
+    #[arg(short, long)]
+    web_port: Option<u16>,
 
     /// Update rate in Hz
-    #[arg(short, long, default_value = "1000")]
-    rate: u32,
+    #[arg(short, long)]
+    rate: Option<u32>,
 
     /// Enable real-time scheduling (requires root/capabilities)
-    #[arg(long, default_value = "false")]
-    rt: bool,
+    #[arg(long)]
+    rt: Option<bool>,
 
     /// Real-time priority (1-99)
-    #[arg(long, default_value = "80")]
-    rt_priority: i32,
+    #[arg(long)]
+    rt_priority: Option<i32>,
 
     /// Disable IPC (shared memory)
     #[arg(long, default_value = "false")]
@@ -49,8 +60,8 @@ struct Args {
     no_web: bool,
 
     /// Auto-detect device
-    #[arg(long, default_value = "false")]
-    auto_detect: bool,
+    #[arg(long)]
+    auto_detect: Option<bool>,
 }
 
 #[tokio::main]
@@ -61,32 +72,118 @@ async fn main() -> Result<()> {
     // Parse command-line arguments
     let args = Args::parse();
 
-    info!("PhySever - Physical Commander Server v{}", env!("CARGO_PKG_VERSION"));
+    info!("PhyServer - Physical Commander Server v{}", env!("CARGO_PKG_VERSION"));
 
-    // Determine serial port
-    let port_name = if let Some(port) = args.port {
-        port
-    } else if args.auto_detect {
-        info!("Auto-detecting PhyCMD device...");
-        serial::SerialPortHandler::find_phycmd_device()
-            .context("Failed to auto-detect device")?
+    // Load configuration
+    let mut config = if let Some(config_path) = &args.config {
+        info!("Loading configuration from: {}", config_path);
+        config::Config::load(config_path)
+            .context("Failed to load configuration file")?
     } else {
-        // List available ports and ask user to specify
-        let ports = serial::SerialPortHandler::available_ports()?;
-        if ports.is_empty() {
-            anyhow::bail!("No serial ports found. Is the device connected?");
-        }
-
-        info!("Available serial ports:");
-        for port in &ports {
-            info!("  - {}", port);
-        }
-
-        anyhow::bail!("Please specify a port with --port or use --auto-detect");
+        config::Config::default()
     };
 
+    // Override config with command-line arguments
+    if let Some(transport_type) = &args.transport {
+        config.transport.transport_type = transport_type.clone();
+    }
+    if let Some(port) = &args.port {
+        config.transport.serial_port = port.clone();
+    }
+    if let Some(baud) = args.baud {
+        config.transport.baud_rate = baud;
+    }
+    if let Some(rate) = args.rate {
+        config.transport.update_rate = rate;
+    }
+    if let Some(auto_detect) = args.auto_detect {
+        config.transport.auto_detect = auto_detect;
+    }
+    if let Some(web_port) = args.web_port {
+        config.web.port = web_port;
+    }
+    if let Some(rt) = args.rt {
+        config.realtime.enabled = rt;
+    }
+    if let Some(rt_priority) = args.rt_priority {
+        config.realtime.priority = rt_priority;
+    }
+
+    // Create transport
+    info!("Transport mode: {}", config.transport.transport_type);
+
+    let mut transport: Box<dyn Transport> = if config.transport.auto_detect {
+        info!("Auto-detecting PhyCMD device...");
+
+        // Try USB first (better performance) if feature is enabled
+        #[cfg(feature = "usb")]
+        {
+            match transport::usb::UsbTransport::new() {
+                Ok(usb) => {
+                    info!("✓ USB transport detected");
+                    Box::new(usb)
+                }
+                Err(_) => {
+                    info!("USB transport not available, trying serial...");
+                    // Try serial auto-detect
+                    let port_name = serial::SerialPortHandler::find_phycmd_device()
+                        .context("Failed to auto-detect any device")?;
+                    let serial = transport::serial::SerialTransport::new(&port_name, config.transport.baud_rate)
+                        .context("Failed to open serial transport")?;
+                    info!("✓ Serial transport detected on {}", port_name);
+                    Box::new(serial)
+                }
+            }
+        }
+        #[cfg(not(feature = "usb"))]
+        {
+            // USB not available, use serial only
+            info!("USB support not compiled in, using serial...");
+            let port_name = serial::SerialPortHandler::find_phycmd_device()
+                .context("Failed to auto-detect serial device")?;
+            let serial = transport::serial::SerialTransport::new(&port_name, config.transport.baud_rate)
+                .context("Failed to open serial transport")?;
+            info!("✓ Serial transport detected on {}", port_name);
+            Box::new(serial)
+        }
+    } else {
+        // Use configured transport type
+        match config.transport.transport_type.as_str() {
+            #[cfg(feature = "usb")]
+            "usb" => {
+                info!("Creating USB transport...");
+                let usb = transport::usb::UsbTransport::new()
+                    .context("Failed to create USB transport")?;
+                info!("✓ USB transport initialized (VID:PID = 0x2341:0x003e)");
+                Box::new(usb)
+            }
+            #[cfg(not(feature = "usb"))]
+            "usb" => {
+                anyhow::bail!("USB transport not available. Rebuild with --features usb and install libudev-dev");
+            }
+            "serial" => {
+                info!("Creating serial transport on {}", config.transport.serial_port);
+                let serial = transport::serial::SerialTransport::new(
+                    &config.transport.serial_port,
+                    config.transport.baud_rate
+                ).context("Failed to create serial transport")?;
+                info!("✓ Serial transport initialized ({} baud)", config.transport.baud_rate);
+                Box::new(serial)
+            }
+            _ => {
+                anyhow::bail!("Invalid transport type: {}. Use 'serial'{}",
+                    config.transport.transport_type,
+                    if cfg!(feature = "usb") { " or 'usb'" } else { "" });
+            }
+        }
+    };
+
+    info!("Transport info: max_rate={}Hz, typical_latency={}µs",
+          transport.max_rate(),
+          transport.typical_latency_us());
+
     // Apply real-time optimizations if requested
-    if args.rt {
+    if config.realtime.enabled {
         info!("Applying real-time optimizations...");
 
         if !rt::check_rt_capabilities() {
@@ -96,10 +193,10 @@ async fn main() -> Result<()> {
 
         let rt_config = rt::RtConfig {
             enable_rt_scheduler: true,
-            rt_priority: args.rt_priority,
+            rt_priority: config.realtime.priority,
             lock_memory: true,
-            set_cpu_affinity: false,
-            cpu_core: None,
+            set_cpu_affinity: config.realtime.cpu_affinity,
+            cpu_core: config.realtime.cpu_core,
             set_dma_latency: true,
         };
 
@@ -130,23 +227,22 @@ async fn main() -> Result<()> {
     // Start web server if enabled
     if !args.no_web {
         let web_state_clone = web_state.clone();
-        let web_port = args.web_port;
+        let web_port = config.web.port;
 
         tokio::spawn(async move {
             if let Err(e) = web::start_web_server(web_state_clone, web_port).await {
                 error!("Web server error: {}", e);
             }
         });
+
+        info!("Web server started on http://{}:{}", config.web.host, config.web.port);
     }
 
-    // Open serial port
-    let mut serial = serial::SerialPortHandler::new(&port_name, args.baud)
-        .context("Failed to open serial port")?;
-
-    info!("Starting main communication loop at {} Hz", args.rate);
+    let update_rate = config.transport.update_rate;
+    info!("Starting main communication loop at {} Hz", update_rate);
 
     // Calculate loop period
-    let period = Duration::from_micros(1_000_000 / args.rate as u64);
+    let period = Duration::from_micros(1_000_000 / update_rate as u64);
     let mut interval = tokio::time::interval(period);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -167,7 +263,7 @@ async fn main() -> Result<()> {
         cmd.seq_num = seq_num;
 
         // Exchange with device
-        match serial.exchange(&cmd) {
+        match transport.exchange(&cmd) {
             Ok(status) => {
                 // Verify sequence number
                 if status.seq_num != seq_num {

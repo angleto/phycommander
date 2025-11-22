@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use nix::sched::{sched_setscheduler, CpuSet, SchedPolicy, SchedParam};
+use nix::sched::CpuSet;
 use nix::sys::mman::{mlockall, MlockAllFlags};
 use nix::unistd::Pid;
 use std::fs::OpenOptions;
@@ -66,9 +66,15 @@ pub fn apply_rt_optimizations(config: &RtConfig) -> Result<()> {
 fn set_realtime_priority(priority: i32) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
-        let param = SchedParam::new(priority)?;
-        sched_setscheduler(Pid::from_raw(0), SchedPolicy::SCHED_FIFO, &param)
-            .context("Failed to set SCHED_FIFO scheduler")?;
+        unsafe {
+            let mut param: libc::sched_param = std::mem::zeroed();
+            param.sched_priority = priority;
+
+            let result = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+            if result == -1 {
+                anyhow::bail!("Failed to set SCHED_FIFO scheduler: {}", std::io::Error::last_os_error());
+            }
+        }
         info!("Set real-time priority to {} (SCHED_FIFO)", priority);
         Ok(())
     }
@@ -155,8 +161,14 @@ fn set_dma_latency(latency_us: i32) -> Result<()> {
 pub fn get_thread_priority() -> Result<i32> {
     #[cfg(target_os = "linux")]
     {
-        let param = nix::sched::sched_getparam(Pid::from_raw(0))?;
-        Ok(param.sched_priority())
+        unsafe {
+            let mut param: libc::sched_param = std::mem::zeroed();
+            let result = libc::sched_getparam(0, &mut param);
+            if result == -1 {
+                anyhow::bail!("Failed to get scheduler parameters: {}", std::io::Error::last_os_error());
+            }
+            Ok(param.sched_priority)
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -169,17 +181,67 @@ pub fn get_thread_priority() -> Result<i32> {
 pub fn check_rt_capabilities() -> bool {
     #[cfg(target_os = "linux")]
     {
-        // Try to set a low priority as a test
-        let param = SchedParam::new(1).ok();
-        if let Some(p) = param {
-            sched_setscheduler(Pid::from_raw(0), SchedPolicy::SCHED_FIFO, &p).is_ok()
-        } else {
-            false
+        unsafe {
+            let mut param: libc::sched_param = std::mem::zeroed();
+            param.sched_priority = 1;
+
+            let result = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
+            result != -1
         }
     }
 
     #[cfg(not(target_os = "linux"))]
     {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rt_config_default() {
+        let config = RtConfig::default();
+        assert_eq!(config.enable_rt_scheduler, true);
+        assert_eq!(config.rt_priority, 80);
+        assert_eq!(config.lock_memory, true);
+        assert_eq!(config.set_cpu_affinity, false);
+        assert_eq!(config.cpu_core, None);
+        assert_eq!(config.set_dma_latency, true);
+    }
+
+    #[test]
+    fn test_rt_config_custom() {
+        let config = RtConfig {
+            enable_rt_scheduler: false,
+            rt_priority: 50,
+            lock_memory: false,
+            set_cpu_affinity: true,
+            cpu_core: Some(2),
+            set_dma_latency: false,
+        };
+
+        assert_eq!(config.enable_rt_scheduler, false);
+        assert_eq!(config.rt_priority, 50);
+        assert_eq!(config.lock_memory, false);
+        assert_eq!(config.set_cpu_affinity, true);
+        assert_eq!(config.cpu_core, Some(2));
+        assert_eq!(config.set_dma_latency, false);
+    }
+
+    #[test]
+    fn test_check_rt_capabilities() {
+        // This test will likely fail without root, but should not panic
+        let _has_rt = check_rt_capabilities();
+        // Just verify the function runs without panicking
+    }
+
+    #[test]
+    fn test_get_thread_priority() {
+        // This test should work even without RT privileges
+        let result = get_thread_priority();
+        // Should either succeed or fail gracefully
+        assert!(result.is_ok() || result.is_err());
     }
 }

@@ -1,0 +1,26 @@
+# Clippy linting configuration for PhyServer
+
+# Warn on all clippy lints by default
+warn-on-all-wildcard-imports = true
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 30
+
+# Documentation
+missing-docs-in-crate-items = true
+
+# Performance
+too-many-arguments-threshold = 7
+type-complexity-threshold = 250
+
+# Style
+single-char-binding-names-threshold = 4
+
+# Allowed lints (if needed)
+# allowed-lints = []
+
+# Disallowed methods (unsafe operations we want to carefully review)
+disallowed-methods = [
+    { path = "std::ptr::read", reason = "use safer alternatives" },
+    { path = "std::ptr::write", reason = "use safer alternatives" },
+]

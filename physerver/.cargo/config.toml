@@ -1,0 +1,5 @@
+[env]
+# Skip libudev requirement for serialport on Linux
+# Users should install libudev-dev on their system: sudo apt-get install libudev-dev
+PKG_CONFIG_ALLOW_SYSTEM_LIBS = "1"
+PKG_CONFIG_ALLOW_SYSTEM_CFLAGS = "1"

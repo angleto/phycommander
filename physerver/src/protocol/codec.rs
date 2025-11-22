@@ -141,4 +141,123 @@ mod tests {
         let result = decode_status(&data);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_encode_decode_roundtrip() {
+        // Encode a command
+        let cmd = Command {
+            digital_out: 0xABCD,
+            dac: [1234, 2345],
+            pwm: [12345, 54321],
+            flags: CommandFlags {
+                adc_enable: true,
+                dac_enable: false,
+                pwm_enable: true,
+                reset_seq: false,
+                watchdog_disable: false,
+            },
+            seq_num: 123,
+        };
+
+        let bytes = encode_command(&cmd);
+
+        // Verify header
+        assert_eq!(bytes[0], 0x55);
+        assert_eq!(bytes[1], 0xAA);
+
+        // Verify CRC is calculated
+        let crc = crc::crc16_ccitt_table(&bytes[0..14]);
+        assert_eq!(bytes[14], (crc & 0xFF) as u8);
+        assert_eq!(bytes[15], (crc >> 8) as u8);
+    }
+
+    #[test]
+    fn test_decode_full_status() {
+        let mut data = [0u8; 64];
+
+        // Header
+        data[0] = 0xAA;
+        data[1] = 0x55;
+
+        // Digital I/O
+        data[2] = 0x12;
+        data[3] = 0x34;
+        data[4] = 0x56;
+        data[5] = 0x78;
+
+        // ADC values (8 channels)
+        for i in 0..8 {
+            let val = 100 + i * 100;
+            data[6 + i * 2] = (val & 0xFF) as u8;
+            data[7 + i * 2] = (val >> 8) as u8;
+        }
+
+        // Status flags
+        data[22] = 0b00111111;
+
+        // Sequence number
+        data[23] = 99;
+
+        // Calculate and set CRC
+        let crc = crc::crc16_ccitt_table(&data[0..24]);
+        data[24] = (crc & 0xFF) as u8;
+        data[25] = (crc >> 8) as u8;
+
+        // Loop time
+        data[26] = 200 & 0xFF;
+        data[27] = (200 >> 8) as u8;
+
+        // Uptime
+        let uptime = 123456u32;
+        data[28] = (uptime & 0xFF) as u8;
+        data[29] = ((uptime >> 8) & 0xFF) as u8;
+        data[30] = ((uptime >> 16) & 0xFF) as u8;
+        data[31] = ((uptime >> 24) & 0xFF) as u8;
+
+        // Error count
+        data[32] = 5;
+        data[33] = 0;
+
+        let status = decode_status(&data).unwrap();
+
+        assert_eq!(status.digital_in, 0x3412);
+        assert_eq!(status.digital_out, 0x7856);
+        assert_eq!(status.adc[0], 100);
+        assert_eq!(status.adc[1], 200);
+        assert_eq!(status.seq_num, 99);
+        assert_eq!(status.loop_time_us, 200);
+        assert_eq!(status.uptime_ms, 123456);
+        assert_eq!(status.error_count, 5);
+    }
+
+    #[test]
+    fn test_invalid_message_length() {
+        let data = [0u8; 32]; // Too short
+        let result = decode_status(&data);
+        assert!(result.is_err());
+
+        let data = [0u8; 128]; // Too long
+        let result = decode_status(&data);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_dac_clamping() {
+        let cmd = Command {
+            digital_out: 0,
+            dac: [5000, 6000], // Over 4095 max
+            pwm: [0, 0],
+            flags: CommandFlags::default(),
+            seq_num: 0,
+        };
+
+        let bytes = encode_command(&cmd);
+
+        // DAC values should be clamped to 4095
+        let dac0 = u16::from_le_bytes([bytes[4], bytes[5]]);
+        let dac1 = u16::from_le_bytes([bytes[6], bytes[7]]);
+
+        assert_eq!(dac0, 4095);
+        assert_eq!(dac1, 4095);
+    }
 }

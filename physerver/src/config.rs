@@ -204,6 +204,8 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::io::Write;
 
     #[test]
     fn test_default_config() {
@@ -221,5 +223,161 @@ mod tests {
 
         // Should be valid TOML
         let _parsed: Config = toml::from_str(&toml_str).unwrap();
+    }
+
+    #[test]
+    fn test_config_roundtrip() {
+        let config = Config::default();
+        let toml_str = toml::to_string_pretty(&config).unwrap();
+        let parsed: Config = toml::from_str(&toml_str).unwrap();
+
+        assert_eq!(config.transport.transport_type, parsed.transport.transport_type);
+        assert_eq!(config.transport.update_rate, parsed.transport.update_rate);
+        assert_eq!(config.web.port, parsed.web.port);
+        assert_eq!(config.web.enabled, parsed.web.enabled);
+    }
+
+    #[test]
+    fn test_transport_config_custom() {
+        let mut config = Config::default();
+        config.transport.transport_type = "serial".to_string();
+        config.transport.update_rate = 1000;
+        config.transport.serial_port = "/dev/ttyUSB0".to_string();
+        config.transport.baud_rate = 115200;
+
+        assert_eq!(config.transport.transport_type, "serial");
+        assert_eq!(config.transport.update_rate, 1000);
+        assert_eq!(config.transport.serial_port, "/dev/ttyUSB0");
+        assert_eq!(config.transport.baud_rate, 115200);
+    }
+
+    #[test]
+    fn test_web_config_custom() {
+        let mut config = Config::default();
+        config.web.port = 9090;
+        config.web.enabled = false;
+        config.web.bind_address = "127.0.0.1".to_string();
+
+        assert_eq!(config.web.port, 9090);
+        assert!(!config.web.enabled);
+        assert_eq!(config.web.bind_address, "127.0.0.1");
+    }
+
+    #[test]
+    fn test_realtime_config_custom() {
+        let mut config = Config::default();
+        config.realtime.enabled = true;
+        config.realtime.priority = 50;
+        config.realtime.lock_memory = false;
+        config.realtime.cpu_affinity = true;
+        config.realtime.cpu_core = Some(2);
+        config.realtime.dma_latency = false;
+
+        assert!(config.realtime.enabled);
+        assert_eq!(config.realtime.priority, 50);
+        assert!(!config.realtime.lock_memory);
+        assert!(config.realtime.cpu_affinity);
+        assert_eq!(config.realtime.cpu_core, Some(2));
+        assert!(!config.realtime.dma_latency);
+    }
+
+    #[test]
+    fn test_ipc_config_custom() {
+        let mut config = Config::default();
+        config.ipc.enabled = false;
+        config.ipc.shm_name = "custom_shm".to_string();
+
+        assert!(!config.ipc.enabled);
+        assert_eq!(config.ipc.shm_name, "custom_shm");
+    }
+
+    #[test]
+    fn test_load_or_default_with_nonexistent_file() {
+        let config = Config::load_or_default("/nonexistent/path/config.toml");
+
+        // Should return default config
+        assert_eq!(config.transport.transport_type, "usb");
+        assert_eq!(config.web.port, 8080);
+    }
+
+    #[test]
+    fn test_save_and_load_config() -> anyhow::Result<()> {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("physerver_test_config.toml");
+
+        // Create and save a config
+        let mut original = Config::default();
+        original.transport.transport_type = "serial".to_string();
+        original.web.port = 9999;
+
+        original.save(&config_path)?;
+
+        // Load it back
+        let loaded = Config::from_file(&config_path)?;
+
+        assert_eq!(loaded.transport.transport_type, "serial");
+        assert_eq!(loaded.web.port, 9999);
+
+        // Clean up
+        fs::remove_file(&config_path)?;
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_config_from_invalid_file() {
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("physerver_invalid_config.toml");
+
+        // Write invalid TOML
+        let mut file = fs::File::create(&config_path).unwrap();
+        file.write_all(b"this is not valid toml [[[").unwrap();
+
+        // Should fail to load
+        let result = Config::from_file(&config_path);
+        assert!(result.is_err());
+
+        // Clean up
+        fs::remove_file(&config_path).ok();
+    }
+
+    #[test]
+    fn test_default_serial_port() {
+        assert_eq!(default_serial_port(), "/dev/ttyACM0");
+    }
+
+    #[test]
+    fn test_default_baud_rate() {
+        assert_eq!(default_baud_rate(), 921600);
+    }
+
+    #[test]
+    fn test_default_update_rate() {
+        assert_eq!(default_update_rate(), 1000);
+    }
+
+    #[test]
+    fn test_default_web_port() {
+        assert_eq!(default_web_port(), 8080);
+    }
+
+    #[test]
+    fn test_default_bind_address() {
+        assert_eq!(default_bind_address(), "0.0.0.0");
+    }
+
+    #[test]
+    fn test_default_rt_priority() {
+        assert_eq!(default_rt_priority(), 80);
+    }
+
+    #[test]
+    fn test_default_shm_name() {
+        assert_eq!(default_shm_name(), "phycmd_state");
+    }
+
+    #[test]
+    fn test_default_true() {
+        assert_eq!(default_true(), true);
     }
 }

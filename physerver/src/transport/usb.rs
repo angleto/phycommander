@@ -163,7 +163,19 @@ impl Transport for UsbTransport {
         let mut total_read = 0;
 
         while total_read < MESSAGE_SIZE {
-            let read = self.bulk_read(&mut self.read_buffer[total_read..])?;
+            let start = std::time::Instant::now();
+
+            let read = self
+                .device_handle
+                .read_bulk(
+                    EP_IN,
+                    &mut self.read_buffer[total_read..],
+                    Duration::from_millis(TIMEOUT_MS)
+                )
+                .context("USB bulk read failed")?;
+
+            let elapsed = start.elapsed().as_micros() as u64;
+            self.stats.avg_latency_us = (self.stats.avg_latency_us + elapsed) / 2;
 
             if read == 0 {
                 anyhow::bail!("USB read returned 0 bytes (disconnected?)");

@@ -77,7 +77,7 @@ async fn main() -> Result<()> {
     // Load configuration
     let mut config = if let Some(config_path) = &args.config {
         info!("Loading configuration from: {}", config_path);
-        config::Config::load(config_path)
+        config::Config::from_file(config_path)
             .context("Failed to load configuration file")?
     } else {
         config::Config::default()
@@ -235,7 +235,7 @@ async fn main() -> Result<()> {
             }
         });
 
-        info!("Web server started on http://{}:{}", config.web.host, config.web.port);
+        info!("Web server started on http://{}:{}", config.web.bind_address, config.web.port);
     }
 
     let update_rate = config.transport.update_rate;
@@ -282,7 +282,7 @@ async fn main() -> Result<()> {
                 }
 
                 // Broadcast to WebSocket clients
-                let _ = web_state.status_broadcast.send(status);
+                let _ = web_state.status_broadcast.send(status.clone());
 
                 // Check for errors
                 if status.flags.error {

@@ -234,3 +234,42 @@ impl IpcClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shared_state_size() {
+        // Ensure SharedState has a reasonable size
+        let size = std::mem::size_of::<SharedState>();
+        assert!(size > 0);
+        assert!(size < 4096); // Should fit in a page
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(SHARED_MEM_NAME, "phycmd_state");
+        assert_eq!(PROTOCOL_VERSION, 1);
+    }
+
+    // Note: IPC roundtrip tests are commented out as they require
+    // system resources (shared memory) that may conflict with running server
+    // These should be tested in integration tests instead
+
+    /*
+    #[test]
+    fn test_ipc_server_roundtrip() -> Result<()> {
+        // This test requires shared memory which may conflict with running server
+        // Test manually or use integration tests
+        Ok(())
+    }
+
+    #[test]
+    fn test_ipc_command_roundtrip() -> Result<()> {
+        // This test requires shared memory which may conflict with running server
+        // Test manually or use integration tests
+        Ok(())
+    }
+    */
+}

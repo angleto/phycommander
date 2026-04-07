@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
+#[cfg(target_os = "linux")]
 use nix::sched::CpuSet;
 use nix::sys::mman::{mlockall, MlockAllFlags};
+#[cfg(target_os = "linux")]
 use nix::unistd::Pid;
 use std::fs::OpenOptions;
 use std::io::Write;

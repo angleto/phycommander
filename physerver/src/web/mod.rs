@@ -44,6 +44,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/gpio/set", post(set_gpio))
         .route("/api/dac/set", post(set_dac))
         .route("/api/adc/read", get(read_adc))
+        .route("/api/sysinfo", get(get_sysinfo))
         .route("/ws", get(websocket_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -144,6 +145,13 @@ async fn read_adc(State(state): State<Arc<AppState>>) -> Json<AdcResponse> {
     Json(AdcResponse {
         channels: status.adc,
     })
+}
+
+/// Read a fresh system telemetry snapshot (hwmon sensors, CPU freq, load,
+/// memory, uptime). This reads directly from sysfs/procfs on every call —
+/// cheap enough for a REST endpoint polled every few seconds.
+async fn get_sysinfo() -> Json<crate::sysinfo::SysInfoSnapshot> {
+    Json(crate::sysinfo::read_snapshot())
 }
 
 /// WebSocket handler

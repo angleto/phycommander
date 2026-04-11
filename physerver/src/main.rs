@@ -3,6 +3,7 @@ mod serial;
 mod transport;
 mod config;
 mod ipc;
+mod sysinfo;
 mod web;
 mod rt;
 mod telemetry;

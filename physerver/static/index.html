@@ -220,6 +220,63 @@
             color: #888;
             margin-top: 5px;
         }
+
+        .sysinfo-section {
+            margin-bottom: 14px;
+        }
+
+        .sysinfo-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .sysinfo-section h3 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: #888;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+
+        .sysinfo-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 10px;
+            padding: 4px 0;
+            border-bottom: 1px dotted #e0e0e0;
+            font-family: 'SFMono-Regular', Consolas, Menlo, monospace;
+            font-size: 13px;
+        }
+
+        .sysinfo-row:last-child {
+            border-bottom: none;
+        }
+
+        .sysinfo-row .label {
+            color: #555;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sysinfo-row .value {
+            color: #333;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+
+        .sysinfo-unavailable {
+            color: #999;
+            font-style: italic;
+            font-size: 13px;
+            padding: 10px 0;
+            text-align: center;
+        }
+
+        .sysinfo-panel {
+            grid-column: 1 / -1;
+        }
     </style>
 </head>
 <body>
@@ -283,6 +340,14 @@
             <div class="panel">
                 <h2>ADC Inputs</h2>
                 <div class="adc-display" id="adcDisplay"></div>
+            </div>
+
+            <!-- System Telemetry -->
+            <div class="panel sysinfo-panel">
+                <h2>System Telemetry</h2>
+                <div id="sysinfoDisplay">
+                    <div class="sysinfo-unavailable">Caricamento…</div>
+                </div>
             </div>
         </div>
     </div>
@@ -443,9 +508,144 @@
             return days + 'd';
         }
 
+        // -------- System telemetry (polled every 5 s from /api/sysinfo) --------
+
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = (s == null ? '' : String(s));
+            return div.innerHTML;
+        }
+
+        function formatSensorValue(s) {
+            const v = Number(s.value);
+            if (s.unit === '°C') return v.toFixed(1) + ' °C';
+            if (s.unit === 'V')  return v.toFixed(3) + ' V';
+            if (s.unit === 'A')  return v.toFixed(3) + ' A';
+            if (s.unit === 'W')  return v.toFixed(2) + ' W';
+            if (s.unit === 'RPM') return v.toFixed(0) + ' RPM';
+            return v.toFixed(2) + ' ' + escapeHtml(s.unit);
+        }
+
+        function formatSystemUptime(seconds) {
+            const sec = Math.floor(seconds);
+            const d = Math.floor(sec / 86400);
+            const h = Math.floor((sec % 86400) / 3600);
+            const m = Math.floor((sec % 3600) / 60);
+            const parts = [];
+            if (d > 0) parts.push(d + 'd');
+            if (h > 0 || d > 0) parts.push(h + 'h');
+            parts.push(m + 'm');
+            return parts.join(' ');
+        }
+
+        function renderSysinfo(data) {
+            const el = document.getElementById('sysinfoDisplay');
+            if (!data || !data.available) {
+                el.innerHTML = '<div class="sysinfo-unavailable">Sensori hardware non disponibili su questa piattaforma</div>';
+                return;
+            }
+
+            let html = '';
+
+            // Hardware sensors from hwmon (temperatures, voltages, fans, ...)
+            const hasHwmon = Array.isArray(data.hwmon) && data.hwmon.some(c =>
+                (c.temperatures && c.temperatures.length) ||
+                (c.voltages && c.voltages.length) ||
+                (c.fans && c.fans.length) ||
+                (c.currents && c.currents.length) ||
+                (c.powers && c.powers.length));
+
+            if (hasHwmon) {
+                html += '<div class="sysinfo-section"><h3>Sensori hardware</h3>';
+                for (const chip of data.hwmon) {
+                    const readings = [].concat(
+                        chip.temperatures || [],
+                        chip.voltages || [],
+                        chip.fans || [],
+                        chip.currents || [],
+                        chip.powers || []);
+                    for (const s of readings) {
+                        const label = escapeHtml(chip.name) + ' · ' + escapeHtml(s.label);
+                        html += '<div class="sysinfo-row"><span class="label">' + label +
+                                '</span><span class="value">' + formatSensorValue(s) + '</span></div>';
+                    }
+                }
+                html += '</div>';
+            }
+
+            // CPUs
+            if (Array.isArray(data.cpus) && data.cpus.length > 0) {
+                html += '<div class="sysinfo-section"><h3>CPU</h3>';
+                for (const c of data.cpus) {
+                    const label = 'cpu' + c.cpu + ' (' + escapeHtml(c.governor) + ')';
+                    const val = Number(c.freq_mhz).toFixed(0) + ' MHz';
+                    html += '<div class="sysinfo-row"><span class="label">' + label +
+                            '</span><span class="value">' + val + '</span></div>';
+                }
+                html += '</div>';
+            }
+
+            // System (load avg + uptime)
+            if (data.load_avg || data.uptime_seconds != null) {
+                html += '<div class="sysinfo-section"><h3>Sistema</h3>';
+                if (data.load_avg) {
+                    const la = data.load_avg;
+                    const val = la.one.toFixed(2) + ' / ' + la.five.toFixed(2) + ' / ' + la.fifteen.toFixed(2);
+                    html += '<div class="sysinfo-row"><span class="label">Load avg (1/5/15m)</span>' +
+                            '<span class="value">' + val + '</span></div>';
+                }
+                if (data.uptime_seconds != null) {
+                    html += '<div class="sysinfo-row"><span class="label">Uptime sistema</span>' +
+                            '<span class="value">' + formatSystemUptime(data.uptime_seconds) + '</span></div>';
+                }
+                html += '</div>';
+            }
+
+            // Memory
+            if (data.memory) {
+                const m = data.memory;
+                const totalMiB = m.total_kb / 1024;
+                const usedMiB = (m.total_kb - m.available_kb) / 1024;
+                const pct = totalMiB > 0 ? (usedMiB / totalMiB * 100).toFixed(1) : '0.0';
+                html += '<div class="sysinfo-section"><h3>Memoria</h3>';
+                html += '<div class="sysinfo-row"><span class="label">RAM usata</span>' +
+                        '<span class="value">' + usedMiB.toFixed(0) + ' / ' + totalMiB.toFixed(0) +
+                        ' MiB (' + pct + '%)</span></div>';
+                if (m.swap_total_kb > 0) {
+                    const swapTotal = m.swap_total_kb / 1024;
+                    const swapUsed = (m.swap_total_kb - m.swap_free_kb) / 1024;
+                    html += '<div class="sysinfo-row"><span class="label">Swap usata</span>' +
+                            '<span class="value">' + swapUsed.toFixed(0) + ' / ' +
+                            swapTotal.toFixed(0) + ' MiB</span></div>';
+                }
+                html += '</div>';
+            }
+
+            if (html === '') {
+                el.innerHTML = '<div class="sysinfo-unavailable">Nessuna telemetria disponibile</div>';
+            } else {
+                el.innerHTML = html;
+            }
+        }
+
+        async function pollSysinfo() {
+            try {
+                const res = await fetch('/api/sysinfo');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                renderSysinfo(data);
+            } catch (e) {
+                // Silently ignore transient errors — the next tick will retry.
+            }
+        }
+
         // Connect on page load
         connectWebSocket();
         updateGpioOutputButtons();
+
+        // Kick off system telemetry polling (immediate + every 5 s)
+        pollSysinfo();
+        setInterval(pollSysinfo, 5000);
     </script>
 </body>
 </html>

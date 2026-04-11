@@ -74,6 +74,7 @@ usb = ["rusb"]
 
 [dev-dependencies]
 criterion = "0.5"
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

@@ -1,8 +1,9 @@
 # Firmware High-Rate Stability Investigation
 
 **Date:** 2026-04-11
-**Status:** Investigation in progress, kHz-rate target NOT YET achieved.
-**Target:** USB CDC communication at maximum supported rate (5 kHz via CDC serial transport, or up to 10 kHz via direct USB bulk), sustained 24/7 with <0.01% error rate.
+**Status:** Investigation done, architecture for the fix decided. Implementation deferred to the next focused session.
+**Target:** Sustained 24/7 operation at 5 kHz (minimum acceptable) up to 10 kHz (ceiling) with ≤0.01 % error rate.
+**Chosen path:** Replace ASF UDI_CDC with a **custom USB Vendor Class bulk** firmware layer written in bare-metal C, on top of ASF's UDD + CMSIS + peripheral drivers, hitting the host through the `rusb`-based transport that already exists in `physerver/src/transport/usb.rs`. No Arduino SDK, no CDC, no `cdc_acm`, no `tcdrain`. See **"Chosen path — Vendor Class bulk (L1)"** below.
 
 ## Current state of the tree
 
@@ -137,63 +138,176 @@ This looks like a UOTGHS/PHY state that `AIRCR.SYSRESETREQ` does not actually cl
 | Remove `__WFI()` from idle spin | `main.c` | Fixed the 5.5 s `SET_CONTROL_LINE_STATE` timeout, made control transfers respond <1 ms. Did not fix the high-rate TX stall. Currently re-applied in this tree. |
 | Disable WDT via `WDT->WDT_MR = WDT_MR_WDDIS` | `main.c` | Kept. SAM3X `WDT_MR` is write-once, so re-arming it at a smaller timeout after boot fires immediately — this single write is the safest thing to do. |
 
-## The three paths forward
+## Chosen path — Vendor Class bulk (L1)
 
-**Ranked in order of likelihood to actually deliver 5 kHz 24/7.**
+The fix is to **throw away UDI_CDC and talk directly to UDD with two bulk endpoints in a Vendor-specific class**. No `/dev/ttyACM*`, no kernel `cdc_acm` driver, no `tcdrain`, no line coding, no DTR/RTS dance. The host side is already built: `physerver/src/transport/usb.rs` uses `rusb` (libusb) to do BULK IN/OUT directly on a target VID/PID. It just needs a firmware that answers on those endpoints with our PhyCMD-64 frames.
 
-### Path A — Fix the CDC path (cheapest, lowest ceiling)
+### How much of ASF do we keep?
 
-1. Re-apply the dc42 non-blocking `udi_cdc_write_buf` patch.
-2. Keep our byte-by-byte `main.c` framing (which already avoids Bug 1).
-3. Remove any `WFI` from the idle path.
-4. Re-test at 1 kHz, 2 kHz, 5 kHz for **5+ minutes each** with `usbmon` capture running so we can see the first sign of misbehaviour instead of guessing from `seq_num` drift.
-5. Measure and document the actual achievable rate.
+Picking the right level of "bare-metal" matters a lot. Going too minimal wastes weeks rewriting code that already works; staying too high leaves the buggy layer in place. The right cut is **L1**: keep everything in ASF *except* `UDI_CDC`.
 
-Estimated ceiling: **~2-3 kHz sustained**, realistically. USB CDC ACM has protocol overhead (line state notifications on the interrupt endpoint) and Linux `cdc_acm` is not tuned for extremely tight request/response. Duet3D runs well into the multi-kHz range over CDC, so 5 kHz may be reachable with the right patches.
+| Level | What's kept from ASF | What we write ourselves | Effort | Stability |
+|---|---|---|---|---|
+| L0 — current state (CDC) | Everything: UDI_CDC, UDC, UDD, UOTGHS driver, peripheral drivers, startup | Protocol loop + framing | — | ≤ 2 kHz, fragile (5 bugs) |
+| **L1 — chosen** | **UDC (class registrar), UDD (USB device driver), UOTGHS driver, `sysclk`, `pmc`, `pio`, `adc`, `dacc`, startup, linker script** | **Vendor Class descriptors + 2 bulk endpoint handlers via `udd_ep_run()` + protocol loop** | **1-2 gg** | **5-10 kHz, robust** |
+| L2 — UDC/UDD bypass | `sysclk`, `pmc`, `pio`, `adc`, `dacc`, startup, linker script, CMSIS headers | Full USB device driver for UOTGHS (endpoint config, SETUP handler, bulk DMA) + descriptors + everything else | 1-2 weeks | Same ceiling as L1, higher risk |
+| L3 — full custom | Only CMSIS register definitions (`sam3x8e.h`) | Clock init, USB stack, all peripheral drivers, startup, linker script | 3-4 weeks | Maximum control, reinvents the wheel |
 
-### Path B — Direct USB bulk class (highest ceiling, proper fix)
+**Why L1 and not L2/L3.** The bugs catalogued above (1-5) all live inside `UDI_CDC`. The layer below it — `UDC` and especially `UDD` — is a thin wrapper over the UOTGHS peripheral. `udd_ep_run()` arms a bulk transfer with the chip's hardware FIFO + DMA and calls a user callback when it completes; that's it. No spin loops, no class protocol, no state machine we can trip on. It's ~1000 lines of driver that's been in production on thousands of SAM-based products for a decade. Rewriting it from scratch (L2/L3) would produce code with the **same reliability as the current UDD** because we'd be rediscovering the same edge cases Atmel already debugged.
 
-The README already calls this out as the intended high-performance path:
+The same reasoning applies to `sysclk`, `pmc`, `pio`, `adc`, `dacc`: these are leaf drivers that program peripheral registers. They do one job and have no bug pattern we've observed. Keeping them costs nothing and removes weeks of re-implementation.
 
-> Transport & Communication: **Modular transport system** (USB Bulk / USB CDC Serial)
-> **Direct USB bulk transfer** (10 kHz, 120 µs latency)
-> Status: ⏳ Direct USB bulk endpoint support in firmware
+### What the new firmware looks like at the code level
 
-`physerver` already has a `usb` transport (`physerver/src/transport/usb.rs`) that uses `rusb` to do direct BULK IN/OUT to VID `0x2341` PID `0x003e`. The firmware currently doesn't implement this — it only exposes CDC. To enable it:
+Concretely, L1 means these files change (all in `ATSAM3X8E_FW/ATSAM3X8E_FW/src/`):
 
-1. Rewrite `conf_usb.h` to describe a **Vendor-specific class interface** with just two bulk endpoints (BULK IN `0x82`, BULK OUT `0x02`), no CDC descriptors at all.
-2. Replace `udi_cdc.c` dependency with a minimal descriptor + the raw `udd_ep_run()` API from `udd.h`. Arm an OUT transfer, handle `udi_cdc_data_received`-style callback, echo back via BULK IN. This is ~200 lines of C.
-3. Change VID/PID to match what `transport::usb::UsbTransport::find_device()` looks for (`0x2341:0x003e`) — or change `find_device()` to accept our `0x03eb:0x2404`.
-4. Add a `udev` rule `SUBSYSTEM=="usb", ATTRS{idVendor}=="...", ATTRS{idProduct}=="...", MODE="0666"` so `rusb` can claim the interface without root.
+| File | Change |
+|---|---|
+| `config/conf_usb.h` | Remove every `UDI_CDC_*` define. Set `USB_DEVICE_NB_INTERFACE = 1`. Set the class via `UDC_DESC_STORAGE` + our own descriptor table (device + configuration + interface + two endpoint descriptors). `USB_DEVICE_CLASS = 0xFF` (vendor-specific). `USB_DEVICE_VENDOR_ID = 0x2341`, `USB_DEVICE_PRODUCT_ID = 0x003E` to match `physerver/src/transport/usb.rs`. |
+| `main.c` | Replace the `udi_cdc_*` loop with a pair of bulk endpoint callbacks plus a tight main loop. Sketch below. |
+| `Makefile` | Drop the four `src/ASF/common/services/usb/class/cdc/device/udi_cdc*.c` entries from `SRCS`. Everything else stays. |
 
-This **completely bypasses** `cdc_acm`, `tcdrain`, `serialport-rs`, CDC class overhead, line coding negotiation, and every other source of the bugs above. It's what the README promises and what the existing `physerver` transport was built for.
+The main.c skeleton is ~200 lines, most of which are descriptor tables:
 
-Estimated ceiling: **10 kHz sustained** (the value in the README).
+```c
+/* -- 1. USB descriptors (static ROM data, ~80 lines) -- */
+COMPILER_WORD_ALIGNED
+static const uint8_t device_descriptor[] = {
+    0x12,                   /* bLength              */
+    USB_DT_DEVICE,          /* bDescriptorType      */
+    0x00, 0x02,             /* bcdUSB 2.00          */
+    0xFF,                   /* bDeviceClass         — vendor-specific */
+    0x00,                   /* bDeviceSubClass      */
+    0x00,                   /* bDeviceProtocol      */
+    64,                     /* bMaxPacketSize0      */
+    0x41, 0x23,             /* idVendor 0x2341      */
+    0x3E, 0x00,             /* idProduct 0x003E     */
+    0x00, 0x01,             /* bcdDevice 1.00       */
+    0x01, 0x02, 0x03,       /* iManufacturer, iProduct, iSerial */
+    0x01,                   /* bNumConfigurations   */
+};
 
-Estimated effort: 1-2 focused days.
+static const uint8_t config_descriptor[] = {
+    /* configuration */
+    0x09, USB_DT_CONFIGURATION, 0x20, 0x00, 0x01, 0x01, 0x00, 0x80, 0xFA,
+    /* interface 0, class=0xFF, 2 endpoints */
+    0x09, USB_DT_INTERFACE, 0x00, 0x00, 0x02, 0xFF, 0x00, 0x00, 0x00,
+    /* EP 0x82, bulk IN, 64 bytes, interval 0 */
+    0x07, USB_DT_ENDPOINT, 0x82, 0x02, 0x40, 0x00, 0x00,
+    /* EP 0x02, bulk OUT, 64 bytes, interval 0 */
+    0x07, USB_DT_ENDPOINT, 0x02, 0x02, 0x40, 0x00, 0x00,
+};
 
-### Path C — Use Arduino core USB (escape hatch)
+/* string descriptors (vendor, product, serial) — same as current */
 
-If both ASF paths keep hitting walls, the nuclear option is to drop ASF UDI_CDC entirely and adopt the Arduino core USB stack from `github.com/arduino/ArduinoCore-sam`. This is the same CDC code that runs on every Arduino Due today, is maintained, and is tested by thousands of users. It would require porting our digital-I/O + ADC + protocol code on top of it, and re-organising the project so Arduino IDE or `arduino-cli` can build it.
+/* -- 2. Class hooks registered with UDC, ~30 lines -- */
+static bool my_class_enable(void) {
+    /* Host completed SET_CONFIGURATION. Arm the first bulk OUT. */
+    arm_out_transfer();
+    return true;
+}
+static void my_class_disable(void) { /* nothing */ }
+static bool my_class_setup(void)   { /* no vendor-specific requests */ return false; }
 
-Estimated effort: 2-3 days, high chance of success but invasive.
+UDC_DESC_STORAGE udi_api_t my_class_api = {
+    .enable    = my_class_enable,
+    .disable   = my_class_disable,
+    .setup     = my_class_setup,
+    .getsetting= NULL,
+};
 
-## Checklist for the next session
+/* UDC configuration: one interface, our class API */
+UDC_DESC_STORAGE udc_config_speed_t udc_config_fshs[1] = { {
+    .desc = (usb_conf_desc_t *)config_descriptor,
+    .udi_apis = (udi_api_t *[]) { &my_class_api },
+} };
 
-Before attacking the high-rate problem again, these preconditions should be met so iteration doesn't get stuck on Bugs 4 & 5:
+UDC_DESC_STORAGE udc_config_t udc_config = {
+    .confdev_lsfs = (usb_dev_desc_t *)device_descriptor,
+    .conf_fs_nb   = 1, .conf_fs = udc_config_fshs,
+    .conf_hs_nb   = 1, .conf_hs = udc_config_fshs,
+    .conf_bos     = NULL,
+};
 
-- [ ] **Physical access to the Arduino Due is available**, so that USB can be unplugged/replugged if the SAM3X enters the "zombie" state that AIRCR reset cannot clear.
-- [ ] **A full host reboot of `192.168.0.22` has just happened**, so `cdc_acm` is in a fresh state. First iteration of a test run is almost always clean; the fifth iteration is almost never clean.
-- [ ] `usbmon` is enabled and a capture script is ready: `cat /sys/kernel/debug/usb/usbmon/2u > /tmp/usbmon.log &` before starting `physerver`, so we can grep NAK/STALL/short-packet/URB-unlink events on failure.
-- [ ] `physerver` is only started ONCE in each test (no `restart` loops while hunting bugs — use foreground runs).
-- [ ] The test target is explicit and numerical: *"5 kHz sustained for 5+ minutes with 0 errors"*, not *"runs OK for a bit"*. Anything less is not production.
-- [ ] The session starts with a clear choice of Path A vs Path B vs Path C, **not** an exploratory iteration.
+/* -- 3. Bulk endpoint DMA handlers, ~40 lines -- */
+static volatile bool g_cmd_ready = false;
+static COMPILER_WORD_ALIGNED uint8_t rx_buf[64];
+static COMPILER_WORD_ALIGNED uint8_t tx_buf[64];
 
-## Recommendation
+static void bulk_out_cb(udd_ep_status_t status, iram_size_t n, udd_ep_id_t ep) {
+    (void)ep;
+    if (status == UDD_EP_TRANSFER_OK && n == 64) {
+        memcpy(s_in, rx_buf, 64);   /* s_in is the packed command_msg_t* */
+        g_cmd_ready = true;
+    }
+    /* Immediately re-arm for the next frame.  No spin, no flow control,
+     * the host is gated by the bulk IN we'll send right after. */
+    udd_ep_run(UDI_EP_OUT, false, rx_buf, 64, bulk_out_cb);
+}
 
-Take **Path B**. It is the architecture the project README already promises, it completely sidesteps every CDC bug catalogued here, and it is what every other hobbyist/industrial SAM3X project that needs >1 kHz already does.
+static void bulk_in_cb(udd_ep_status_t status, iram_size_t n, udd_ep_id_t ep) {
+    (void)status; (void)n; (void)ep;
+    /* Transfer complete, nothing to do here. */
+}
 
-Path A should only be attempted if Path B is somehow blocked and there is a hard requirement to ship over `cdc_acm`.
+/* -- 4. Main loop, ~15 lines -- */
+int main(void) {
+    sysclk_init();
+    irq_initialize_vectors();
+    cpu_irq_enable();
+    board_init();
+    adc_setup();   /* PDC free-running, its own rate — no longer bound to the USB loop */
+    dac_setup();
+    init_digital_io();
+    udc_start();
+
+    for (;;) {
+        if (!g_cmd_ready) continue;
+        g_cmd_ready = false;
+
+        process_command();                /* validate CRC, apply outputs */
+        build_status_into(tx_buf);        /* compute CRC, fill 64 B */
+        udd_ep_run(UDI_EP_IN, false, tx_buf, 64, bulk_in_cb);
+    }
+}
+```
+
+The entire hot path is: hardware DMA fills `rx_buf`, ISR sets `g_cmd_ready` and re-arms OUT, main loop picks it up, processes, fires a single `udd_ep_run()` to send `tx_buf`, loop. **Zero spin loops. Zero flow control in software. Zero dependency on ASF's CDC state machine.**
+
+ADC can now run continuously at its own rate via PDC (free-running, ~70 kHz buffer fills on 8 channels) and the main loop just reads the latest snapshot from `g_adc_buf` when it builds the status frame. DAC writes are applied instantly when a valid command arrives. This is finally what the README describes as *"USB Bulk (10 kHz) — direct libusb — 120 µs latency"*.
+
+### Paths not taken (for the record)
+
+Two other approaches were considered and rejected:
+
+- **Fix CDC in place** (re-apply Duet3D's `write_buf` non-blocking patch + misc ASF patches). Ceiling stops at ~2-3 kHz realistically; still depends on `cdc_acm` kernel driver which has its own corruption issues (Bug 4). Not worth the patch maintenance burden when L1 is the proper architecture anyway.
+- **Port to Arduino core (`ArduinoCore-sam`)**. Would drag in Arduino.h, `setup()`/`loop()`, and re-organise the tree around `arduino-cli`. Contrary to the project stance of writing plain C on bare-metal, and still uses CDC underneath. Only worth considering as a last resort.
+
+## Implementation plan for the next session
+
+Ordered so that each step is independently testable — if the chip doesn't enumerate after step 3, you know the descriptors are wrong, not the main loop.
+
+### Pre-conditions (environment)
+
+- [ ] **Physical access to the Arduino Due.** Power-cycling via an accessible USB port is required if the SAM3X enters the "zombie" state (Bug 5). A switched USB hub works fine.
+- [ ] **Full host reboot of `192.168.0.22`** immediately before starting, so kernel USB state is clean.
+- [ ] **`usbmon` capture ready**: `sudo cat /sys/kernel/debug/usb/usbmon/2u > /tmp/usbmon.log &` *before* the first `physerver` run. After each failure, inspect the capture for NAK, STALL, short packet, URB unlink (`ENOENT`).
+- [ ] `physerver` started **once, in foreground**, while tuning. `systemctl` restart loops mask symptoms behind cdc_acm corruption.
+
+### Code work (firmware)
+
+- [ ] **Step 1 — descriptor-only build.** Rewrite `src/config/conf_usb.h`: remove all `UDI_CDC_*` defines, declare Vendor Class interface with 2 bulk endpoints. Drop the `udi_cdc.c`, `udi_cdc_desc.c` entries from `Makefile` `SRCS`. Write a stub `main.c` that just calls `udc_start()` and loops. Build, flash, confirm device enumerates with the expected VID/PID (`0x2341:0x003E`), expected device/config/interface/endpoint descriptors (check with `lsusb -v`). No data transfer yet.
+- [ ] **Step 2 — bulk echo.** Add `bulk_out_cb` / `bulk_in_cb` handlers that raw-echo (OUT payload → IN payload). Test with a short Python script using `pyusb` that writes 64 bytes and reads 64 bytes in a tight loop. Measure the achievable rate. Expect **≥5 kHz** at this step; if lower, the problem is in the endpoint configuration (packet size, interval, double buffering).
+- [ ] **Step 3 — PhyCMD-64 protocol wiring.** Copy `crc16_ccitt`, the packed command/status structs, and the digital I/O helpers from the current `main.c`. `bulk_out_cb` drops the frame into `s_cmd`, main loop validates + processes + fills `s_stat`, fires `udd_ep_run()` on BULK IN. Same protocol layer we already have today — just a different transport.
+- [ ] **Step 4 — re-enable ADC (PDC free-running) and DAC (one-shot writes).** These run at their own rates, decoupled from the USB loop. Main loop just reads the latest snapshot from `g_adc_buf` when building a status frame.
+- [ ] **Step 5 — physerver wiring.** `/etc/physerver/config.toml`: change `type = "serial"` to `type = "usb"`. Confirm `physerver/src/transport/usb.rs` looks for the same VID/PID; if not, either update it or update the firmware descriptors to match (prefer aligning firmware to host). Add a udev rule `SUBSYSTEM=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="003e", MODE="0666"` so physerver can `libusb_open()` as the `angelo` user.
+
+### Gate of "done"
+
+- [ ] `physerver` runs at `update_rate = 5000` for **≥5 minutes** continuously with **0** communication errors logged.
+- [ ] Round-trip latency measured via `stats.avg_latency_us` stays below 250 µs.
+- [ ] `usbmon` capture shows a clean OUT/IN ping-pong with no NAK, no STALL, no URB unlink.
+- [ ] Bonus: push to `update_rate = 10000` and measure where it starts dropping frames. That value is the practical ceiling of the hardware, document it in the README.
 
 ## References
 

@@ -1,6 +1,7 @@
 pub mod protocol;
 pub mod transport;
 pub mod ipc;
+pub mod sysinfo;
 pub mod web;
 pub mod rt;
 pub mod telemetry;

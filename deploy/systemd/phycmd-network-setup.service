@@ -1,0 +1,12 @@
+[Unit]
+Description=PhyCommander source-based routing for dual-homed eno0/wlp2s0
+After=network-online.target wifi-ensure-connection.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/phycmd-network-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

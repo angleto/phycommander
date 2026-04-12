@@ -5,7 +5,6 @@
 use physerver::{
     config,
     ipc,
-    protocol,
     rt,
     serial,
     telemetry,
@@ -13,11 +12,17 @@ use physerver::{
     web,
 };
 
+// Hard-RT primitives from phycmd-core (re-exported transparently via
+// physerver::transport because phycmd-core is the actual implementor).
+use phycmd_core::{
+    CommandStaging, RtConfig as CoreRtConfig, RtScheduler, RtStats,
+    StatusBus, WriteMode,
+};
+
 use anyhow::{Context, Result};
 use clap::Parser;
 use transport::Transport;
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{error, info, warn};
 
 #[derive(Parser, Debug)]
@@ -212,12 +217,14 @@ async fn main() -> Result<()> {
     // Create shared state for web server
     let web_state = Arc::new(web::AppState::new());
 
-    // Create IPC server if enabled
-    let ipc_server = if !args.no_ipc {
+    // Create IPC server if enabled. Wrap in Arc so we can clone the
+    // handle into both the status-consumer and command-forwarder tokio
+    // tasks below. IpcServer itself does not implement Clone.
+    let ipc_server: Option<Arc<ipc::IpcServer>> = if !args.no_ipc {
         match ipc::IpcServer::new() {
             Ok(server) => {
                 info!("IPC server initialized");
-                Some(server)
+                Some(Arc::new(server))
             }
             Err(e) => {
                 warn!("Failed to create IPC server: {}", e);
@@ -243,66 +250,145 @@ async fn main() -> Result<()> {
     }
 
     let update_rate = config.transport.update_rate;
-    info!("Starting main communication loop at {} Hz", update_rate);
+    info!("Starting hard-RT scheduler at {} Hz", update_rate);
 
-    // Calculate loop period
-    let period = Duration::from_micros(1_000_000 / update_rate as u64);
-    let mut interval = tokio::time::interval(period);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // =================================================================
+    //   Hard real-time loop via phycmd-core::RtScheduler
+    //
+    //   The scheduler runs on a dedicated std::thread with SCHED_FIFO
+    //   and clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME). It is
+    //   fully decoupled from the tokio async runtime that serves HTTP
+    //   and WebSocket — tokio cannot preempt or delay the RT thread.
+    //
+    //   Communication with the tokio side:
+    //     * CommandStaging  — HTTP/WS handlers push setpoints here.
+    //                          The scheduler takes a snapshot each tick.
+    //     * StatusBus       — scheduler publishes each status frame.
+    //                          A tokio task consumes and forwards to
+    //                          the WebSocket broadcast + IPC + web_state.
+    // =================================================================
 
-    // Main communication loop
-    let mut seq_num: u8 = 0;
+    // RT shared state
+    let staging = Arc::new(CommandStaging::new(WriteMode::Coalesce));
+    let bus = Arc::new(StatusBus::new(1024));
+    let stats = Arc::new(RtStats::new());
 
-    loop {
-        interval.tick().await;
+    // Build the RT scheduler config from the service config.toml
+    let rt_cfg = CoreRtConfig {
+        rate_hz: update_rate,
+        default_write_mode: WriteMode::Coalesce,
+        // RT optimisations have already been applied at the process
+        // level above; tell the scheduler NOT to re-apply them on its
+        // own thread (mlockall is process-wide; SCHED_FIFO is
+        // thread-specific and the rt::apply_rt_optimizations call
+        // above only affected the main thread). So we re-enable here
+        // so the dedicated RT thread also gets SCHED_FIFO.
+        enable_rt: config.realtime.enabled,
+        rt_priority: config.realtime.priority,
+        lock_memory: false, // already done process-wide
+        cpu_affinity: config.realtime.cpu_core,
+        dma_latency_us: None,
+        ..Default::default()
+    };
 
-        // Read command from IPC or web state
-        let mut cmd = if let Some(ref ipc) = ipc_server {
-            ipc.read_command()
-        } else {
-            web_state.current_command.read().await.clone()
-        };
+    // Note on IPC: the shared_memory crate's IpcServer holds raw
+    // pointers that are not Send, so we cannot use it from tokio
+    // tasks directly. For now the status goes to the web state and
+    // broadcast only; IPC shared memory is initialised but not
+    // written to by the new RT scheduler path. A future refactor
+    // will move IPC read/write into the RT thread itself via a
+    // custom Transport wrapper.
+    let _ipc_server = ipc_server; // keep alive, avoid drop
 
-        // Set sequence number
-        cmd.seq_num = seq_num;
-
-        // Exchange with device
-        match transport.exchange(&cmd) {
-            Ok(status) => {
-                // Verify sequence number
-                if status.seq_num != seq_num {
-                    warn!("Sequence mismatch: sent {}, received {}", seq_num, status.seq_num);
-                }
-
-                // Update IPC
-                if let Some(ref ipc) = ipc_server {
-                    ipc.write_status(&status);
-                }
-
-                // Update web state
-                {
-                    let mut current_status = web_state.current_status.write().await;
-                    *current_status = status.clone();
-                }
-
-                // Broadcast to WebSocket clients
-                let _ = web_state.status_broadcast.send(status.clone());
-
-                // Check for errors
-                if status.flags.error {
-                    warn!("Device reported error flag. Error count: {}", status.error_count);
-                }
-
-                if status.loop_time_us > 1000 {
-                    warn!("Device loop time high: {} µs", status.loop_time_us);
+    // Consumer task: forward every status frame from the bus to the
+    // web state + WebSocket broadcast.
+    {
+        let mut rx = bus.subscribe();
+        let web_state_c = web_state.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(frame) => {
+                        let status = frame.status;
+                        web_state_c.maybe_init_error_baseline(status.error_count);
+                        {
+                            let mut s = web_state_c.current_status.write().await;
+                            *s = status.clone();
+                        }
+                        let _ = web_state_c.status_broadcast.send(status);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("status bus lagged by {n} frames");
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
-            Err(e) => {
-                error!("Communication error: {}", e);
-                // Continue running, will retry next iteration
-            }
-        }
-
-        seq_num = seq_num.wrapping_add(1);
+        });
     }
+
+    // Command forwarder task: poll web_state.current_command at 500 Hz
+    // and push every field into the staging buffer in Coalesce mode.
+    {
+        let staging_c = Arc::clone(&staging);
+        let web_state_c = web_state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_millis(2));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let cmd = web_state_c.current_command.read().await.clone();
+                // Coalesce writes — cheap, non-blocking.
+                let _ = staging_c.set_dac0(cmd.dac[0]);
+                let _ = staging_c.set_dac1(cmd.dac[1]);
+                let _ = staging_c.set_pwm0(cmd.pwm[0]);
+                let _ = staging_c.set_pwm1(cmd.pwm[1]);
+                let _ = staging_c.set_digital_out(cmd.digital_out);
+                let _ = staging_c.set_flags(cmd.flags);
+            }
+        });
+    }
+
+    // Expose stats through the web module.
+    web_state.set_rt_stats(Arc::clone(&stats));
+
+    // Spawn the RT scheduler on a dedicated thread with its own
+    // SCHED_FIFO scheduling class. This is where the hard-real-time
+    // ticking actually happens.
+    let scheduler = RtScheduler::new(
+        rt_cfg,
+        Arc::clone(&staging),
+        Arc::clone(&bus),
+        Arc::clone(&stats),
+        transport,
+    );
+    let stop_handle = scheduler.stop_handle();
+    let rt_thread = std::thread::Builder::new()
+        .name("phycmd-rt".to_string())
+        .spawn(move || {
+            if let Err(e) = scheduler.run() {
+                error!("RT scheduler terminated with error: {e}");
+            }
+        })
+        .context("Failed to spawn RT scheduler thread")?;
+
+    // Install a signal handler so Ctrl-C / systemd stop shuts the
+    // RT thread down cleanly instead of aborting mid-tick.
+    tokio::spawn({
+        let stop_handle = stop_handle.clone();
+        async move {
+            let _ = tokio::signal::ctrl_c().await;
+            info!("shutdown requested, stopping RT scheduler");
+            stop_handle.stop();
+        }
+    });
+
+    // Block the main thread until the RT thread exits. When SIGTERM
+    // hits us (systemd stop), tokio's main will exit, which drops
+    // everything and the RT thread exits via the stop flag.
+    rt_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("RT thread panicked"))?;
+
+    info!("physerver terminated cleanly");
+    Ok(())
 }

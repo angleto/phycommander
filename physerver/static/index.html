@@ -83,7 +83,7 @@
             <div class="stat-mini"><div class="v" id="rateValue">-</div><div class="l">Hz</div></div>
             <div class="stat-mini"><div class="v" id="uptimeValue">-</div><div class="l">Uptime</div></div>
             <div class="stat-mini"><div class="v" id="loopTimeValue">-</div><div class="l">Loop</div></div>
-            <div class="stat-mini"><div class="v" id="errorCountValue">0</div><div class="l">Errors</div></div>
+            <div class="stat-mini" id="errorsBox" title="Click to reset" style="cursor:pointer;"><div class="v" id="errorCountValue">0</div><div class="l">Errors</div></div>
             <div class="stat-mini"><div class="v" id="seqValue">  0</div><div class="l">Seq</div></div>
         </div>
     </div>
@@ -358,6 +358,16 @@ function renderSysinfo(d){
     h+='</div></div>';el.innerHTML=h;
 }
 async function pollSysinfo(){try{const r=await fetch('/api/sysinfo');if(r.ok)renderSysinfo(await r.json());}catch(e){}}
+
+// ========== Error reset ==========
+document.getElementById('errorsBox').onclick = async () => {
+    try {
+        await fetch('/api/reset_errors', { method: 'POST' });
+        const v = document.getElementById('errorCountValue');
+        v.style.color = '#4CAF50'; v.textContent = '0';
+        setTimeout(() => { v.style.color = '#667eea'; }, 1000);
+    } catch(e) { console.error('reset_errors failed', e); }
+};
 
 // ========== Boot ==========
 connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000); requestAnimationFrame(drawScope);

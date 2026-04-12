@@ -1,0 +1,13 @@
+[Unit]
+Description=PhyCommander WiFi keepalive (rtw88 driver workaround)
+After=wifi-ensure-connection.service phycmd-network-setup.service
+Wants=phycmd-network-setup.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/phycmd-wifi-keepalive.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

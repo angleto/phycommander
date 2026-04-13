@@ -1315,9 +1315,35 @@ uint32_t waveform_get_dac_clock(void) { return s_dac_clock_hz; }
 bool waveform_set_adc_rate(uint32_t rate_hz)
 {
 	if (rate_hz == 0 || rate_hz > WAVE_MAX_DAC_SAMPLE_RATE_HZ) return false;
-	/* ADC TC reconfig is a follow-up step (task #52). For now we
-	 * just store the value so GET_RATE roundtrips cleanly. The
-	 * existing free-running ADC keeps working at its native rate. */
+
+	/* Switch ADC from free-running mode to TC0 channel 1 trigger so
+	 * the per-channel sampling rate becomes a function of `rate_hz`.
+	 * Each TC trigger fires one sweep through all 8 enabled ADC
+	 * channels (PDC RX continues to fill g_adc_buf as before). */
+	pmc_enable_periph_clk(ID_TC0);   /* idempotent */
+
+	uint32_t tc_clock = sysclk_get_main_hz() / 2u;     /* TIMER_CLOCK1 = MCK/2 */
+	uint32_t rc = tc_clock / rate_hz;
+	if (rc < 4u)        rc = 4u;
+	if (rc > 0xFFFFu)   rc = 0xFFFFu;
+
+	tc_init(TC0, 1,
+	        TC_CMR_TCCLKS_TIMER_CLOCK1 |
+	        TC_CMR_WAVE                 |
+	        TC_CMR_WAVSEL_UP_RC         |
+	        TC_CMR_ACPA_SET             |
+	        TC_CMR_ACPC_CLEAR);
+	tc_write_ra(TC0, 1, rc / 2u);
+	tc_write_rc(TC0, 1, rc);
+	tc_start(TC0, 1);
+
+	/* Reconfigure ADC_MR: clear FREE_RUN bit, set TRGEN, route
+	 * TRGSEL=ADC_TRIG2 → TIOA from TC0 channel 1. */
+	uint32_t mr = ADC->ADC_MR;
+	mr &= ~(ADC_MR_FREERUN | ADC_MR_TRGEN | ADC_MR_TRGSEL_Msk);
+	mr |=  ADC_MR_TRGEN_EN | ADC_MR_TRGSEL_ADC_TRIG2;
+	ADC->ADC_MR = mr;
+
 	s_adc_rate_hz = rate_hz;
 	return true;
 }

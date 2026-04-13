@@ -54,12 +54,28 @@
 #define  USB_DEVICE_MAX_EP                4
 
 /**
- * USB Device Callbacks definitions (Optional, unused here)
+ * USB Device Callbacks definitions (Optional)
  */
 /* #define  UDC_VBUS_EVENT(b_vbus_high)      user_callback_vbus_action(b_vbus_high) */
 /* #define  UDC_SOF_EVENT()                  user_callback_sof_action() */
 /* #define  UDC_SUSPEND_EVENT()              user_callback_suspend_action() */
 /* #define  UDC_RESUME_EVENT()               user_callback_resume_action() */
+
+/**
+ * Vendor SETUP request callback (recipient=device).
+ *
+ * UDC routes:
+ *   * standard requests             → handled internally by UDC
+ *   * class requests (recipient=if) → routed to udi_<class>_setup()
+ *   * vendor requests (recipient=if)→ also routed to udi_<class>_setup()
+ *   * vendor requests (recipient=dev) → THIS callback
+ *
+ * The function is implemented in udi_vendor.c and dispatches to the
+ * waveform_*() primitives declared in waveform.h. Returning false
+ * makes the UDC STALL the control transfer.
+ */
+extern bool phycmd_vendor_request(void);
+#define USB_DEVICE_SPECIFIC_REQUEST()    phycmd_vendor_request()
 
 /* NB: udi_vendor.h is intentionally NOT included here to avoid a
  * circular include — conf_usb.h is processed while udc_desc.h has

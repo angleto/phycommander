@@ -28,22 +28,38 @@ streaming transport is selected.
 
 ### 1.1 Frame layout (64 bytes, little-endian, `__attribute__((packed))`)
 
+Both directions use the same 64-byte fixed-length frame so that the
+firmware ISR and the host transport can use a single static buffer
+size everywhere. All multi-byte fields are little-endian (matches
+both x86_64 and ARM Cortex-M3 native order — zero conversion cost).
+
 #### Command (host → device, EP `0x02` bulk or EP `0x04` iso)
 
 | Offset | Size | Field         | Notes                                                 |
 | -----: | ---: | ------------- | ----------------------------------------------------- |
 |     0 |   2 | `header`      | `0xAA55`                                              |
-|     2 |   2 | `digital_out` | 16 GPIO output bits. Always applied.                  |
-|     4 |   2 | `dac0`        | DAC channel 0 setpoint (0–4095). **Ignored when DAC0 is in GENERATOR mode.** |
-|     6 |   2 | `dac1`        | DAC channel 1 setpoint (0–4095). **Ignored when DAC1 is in GENERATOR mode.** |
-|     8 |   2 | `pwm0`        | PWM channel 0 duty (0–65535). *(reserved — firmware does not yet drive PWM peripherals; see §4.)* |
-|    10 |   2 | `pwm1`        | PWM channel 1 duty (0–65535). *(reserved)*           |
-|    12 |   1 | `flags`       | bit 0 ADC_ENABLE, bit 1 DAC_ENABLE, bit 2 PWM_ENABLE, bit 3 RESET_SEQ, bit 4 WATCHDOG_DISABLE |
-|    13 |   1 | `seq_num`     | 8-bit free-running counter (host-side); device echoes it in status. |
+|     2 |   2 | `digital_out` | 16 GPIO output bits. Bit `i` of `1 << i` drives pin `i`. **Always applied** (every DOUT pin honours its bit on every frame; per-pin GENERATOR mode is reserved for the future via PWM/TC). |
+|     4 |   2 | `dac0`        | DAC0 setpoint (0–4095). **Ignored if DAC0 is in GENERATOR mode** (`GEN_GET_STATE.shape != SHAPE_OFF`). |
+|     6 |   2 | `dac1`        | DAC1 setpoint (0–4095). **Ignored if DAC1 is in GENERATOR mode.** |
+|     8 |   2 | `pwm0`        | PWM0 duty (0–65535). *(reserved — firmware does not yet drive PWM peripherals; see §4.)* |
+|    10 |   2 | `pwm1`        | PWM1 duty (0–65535). *(reserved)*                    |
+|    12 |   1 | `flags`       | command flag bitmask, see table below                 |
+|    13 |   1 | `seq_num`     | 8-bit free-running counter (host-side); device echoes in status. |
 |    14 |   2 | `crc`         | CRC-16-CCITT (poly `0x1021`, init `0xFFFF`) over bytes `0..14`. |
 |    16 |  48 | `reserved`    | Must be sent as zeros. Reserved for protocol extensions. |
 
 *Total: 64 bytes.*
+
+##### Command `flags` bitmask
+
+| Bit | Macro                  | Meaning                                                            |
+| --: | ---------------------- | ------------------------------------------------------------------ |
+|   0 | `FLAG_ADC_ENABLE`      | Reserved (firmware always samples ADC at the configured rate).     |
+|   1 | `FLAG_DAC_ENABLE`      | Apply `dac0` / `dac1` fields (when in MANUAL mode). When clear, MANUAL DAC writes are skipped. |
+|   2 | `FLAG_PWM_ENABLE`      | Reserved (no firmware action yet).                                 |
+|   3 | `FLAG_RESET_SEQ`       | One-shot: device resets its echoed `seq_num` to 0 and acknowledges by reflecting `seq_num=0` in the next status. |
+|   4 | `FLAG_WATCHDOG_DISABLE`| Reserved.                                                          |
+| 5-7 | reserved               | Must be 0.                                                         |
 
 For iso transfers the wire packet is 256 bytes; bytes `0..63` carry the
 PhyCMD-64 frame and bytes `64..255` are zero padding (firmware ignores
@@ -57,16 +73,29 @@ revision could fail when the layout grows).
 |     0 |   2 | `header`      | `0x55AA`                                               |
 |     2 |   2 | `digital_in`  | 16 GPIO input bits.                                    |
 |     4 |   2 | `digital_out` | echo of the most recently applied output mask.         |
-|     6 |  16 | `adc[0..7]`   | 8 × 16-bit ADC samples, latest from the PDC ring.      |
-|    22 |   1 | `status_flags`| bit 0 ADC_ACTIVE, bit 1 DAC_ACTIVE, bit 2 PWM_ACTIVE, bit 3 ERROR, bit 4 WATCHDOG_TRIGGERED, bit 5 USB_CONFIGURED, bit 6 OVERRUN |
+|     6 |  16 | `adc[0..7]`   | 8 × 16-bit ADC samples, latest from the PDC ring (decimated by the iso IN rate; see §4.1). |
+|    22 |   1 | `status_flags`| status flag bitmask, see table below                   |
 |    23 |   1 | `seq_num`     | echo of the last applied command's `seq_num`.          |
 |    24 |   2 | `crc`         | CRC-16-CCITT over bytes `0..24`.                       |
 |    26 |   2 | `loop_time_us`| device main-loop / ISR latency, microseconds.          |
 |    28 |   4 | `uptime_ms`   | wall-clock since boot, milliseconds.                   |
-|    32 |   2 | `error_count` | total CRC / header errors observed, saturating.        |
+|    32 |   2 | `error_count` | total CRC / header errors observed, saturating at 0xFFFF. |
 |    34 |  30 | `reserved`    | Sent as zeros.                                         |
 
 *Total: 64 bytes.*
+
+##### Status `status_flags` bitmask
+
+| Bit | Macro                       | Meaning                                                                |
+| --: | --------------------------- | ---------------------------------------------------------------------- |
+|   0 | `STATUS_ADC_ACTIVE`         | ADC PDC ring is producing fresh samples.                              |
+|   1 | `STATUS_DAC_ACTIVE`         | At least one DAC channel is currently in GENERATOR mode.              |
+|   2 | `STATUS_PWM_ACTIVE`         | Reserved (PWM driver not yet implemented).                            |
+|   3 | `STATUS_ERROR`              | The most recently received command failed CRC / header check.         |
+|   4 | `STATUS_WATCHDOG_TRIGGERED` | Reserved.                                                              |
+|   5 | `STATUS_USB_CONFIGURED`     | Set after `udi_vendor_enable()`. Cleared on disconnect.               |
+|   6 | `STATUS_OVERRUN`            | A previous status frame was dropped because the iso TX bank was full. |
+|   7 | reserved                    | Always 0.                                                              |
 
 ### 1.2 Interaction with the per-channel control plane
 
@@ -101,13 +130,15 @@ STALL as "this firmware revision does not support that request".
 
 | `bRequest` | Direction | Name                       | wIndex   | wValue | DATA stage | Description |
 | ---------: | --------- | -------------------------- | -------- | ------ | ---------- | ----------- |
-|     `0x10` | IN  | `GEN_GET_CAPS`            | 0        | 0      | `Capabilities` (16 B) | Channel inventory & per-kind capability matrix (§2.2). |
-|     `0x11` | IN  | `GEN_GET_STATE`           | channel  | 0      | `ChannelState` (24 B) | Current spec for one channel (§2.3). |
-|     `0x12` | OUT | `GEN_PLAY_BUILTIN`        | channel  | 0      | `WaveBuiltinSpec` (16 B) | Start a built-in waveform on the channel, **or** seamlessly update the parameters of an already-running one (phase is preserved across updates). |
-|     `0x13` | OUT | `GEN_PLAY_ARBITRARY`      | channel  | 0      | `WaveArbHeader` (8 B) + `int16_t samples[N]` | Start (or replace) replay of an uploaded sample buffer. `sample_rate_hz` lives in the header. |
-|     `0x14` | OUT | `GEN_STOP`                | channel  | 0      | none      | Stop the generator on this channel. Streaming `Command` frames immediately resume driving the channel. |
-|     `0x20` | OUT | `ADC_SET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B)  | Set ADC sampling rate in Hz. Range 1 – 1_000_000. |
-|     `0x21` | IN  | `ADC_GET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B) | Read current ADC rate. |
+|     `0x10` | IN  | `GEN_GET_CAPS`            | 0        | 0      | `Capabilities` (32 B) | Channel inventory + per-kind mode bitmask + sample-rate limits (§2.2). |
+|     `0x11` | IN  | `GEN_GET_STATE`           | channel  | 0      | `ChannelState` (32 B) | Current spec + live phase for one channel (§2.3). |
+|     `0x12` | OUT | `GEN_PLAY_BUILTIN`        | channel  | 0      | `WaveBuiltinSpec` (16 B) | Start a built-in waveform, **or** seamlessly update the parameters of an already-running one (phase preserved). |
+|     `0x13` | OUT | `GEN_PLAY_ARBITRARY`      | channel  | 0      | `WaveArbHeader` (8 B) + `int16_t samples[N]` | Start (or replace) replay of an uploaded sample buffer. |
+|     `0x14` | OUT | `GEN_STOP`                | channel  | 0      | none      | Stop the generator. Streaming `Command` frames immediately resume driving the channel. |
+|     `0x18` | OUT | `DAC_SET_CLOCK`           | 0        | 0      | `u32 clock_hz` (4 B)  | Set the **shared** DAC sample clock in Hz. Range 1 – 1_000_000. Both DAC channels share this clock; per-channel signal frequency is independent (set via `freq_mHz` in `WaveBuiltinSpec`). |
+|     `0x19` | IN  | `DAC_GET_CLOCK`           | 0        | 0      | `u32 clock_hz` (4 B)  | Read current shared DAC sample clock. |
+|     `0x20` | OUT | `ADC_SET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B)  | Set ADC sampling rate in Hz. Range 1 – 1_000_000. Independent of DAC clock. |
+|     `0x21` | IN  | `ADC_GET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B)  | Read current ADC rate. |
 
 There is **no** explicit `SET_MANUAL` request: a channel's mode is
 *implicit* in what was last requested for it. After power-on (or after
@@ -125,27 +156,62 @@ are reserved for future use. Requests in the standard / class ranges
 (`0x00..0x1F` of `bmRequestType`'s class field) are handled by the UDC
 stack and not delivered to the vendor handler.
 
-### 2.2 `GEN_GET_CAPS` payload (16 bytes)
+### 2.2 `GEN_GET_CAPS` payload (32 bytes, all fields little-endian)
+
+All structures in this section are designed for **direct memcpy
+encode/decode**: every field is naturally aligned within the struct,
+the wire layout is identical to the C / Rust struct memory layout, and
+both the host (x86_64) and the SAM3X (Cortex-M3) use little-endian.
+The `__attribute__((packed))` qualifier is applied as defence in
+depth — given the natural alignment it does not introduce any extra
+load instructions.
 
 ```c
-struct Capabilities {
-    uint8_t  protocol_version;   // 1
-    uint8_t  num_channels;       // total channels exposed (typ. 18: DAC0/1, PWM0..7, DOUT0..7)
-    uint8_t  num_dac_channels;
-    uint8_t  num_pwm_channels;   // hardware PWM-capable
-    uint8_t  num_dout_channels;
-    uint8_t  num_din_channels;
-    uint8_t  num_adc_channels;
-    uint8_t  reserved0;
-    uint32_t max_dac_sample_rate_hz;  // typ. 1_000_000
-    uint32_t max_arb_buffer_samples;  // typ. 1024
+struct __attribute__((packed)) Capabilities {  // 32 bytes
+    /* offset 0 */
+    uint8_t  protocol_version;     //  1 in this revision
+    uint8_t  reserved0;            //  must be 0
+    uint16_t firmware_minor;       //  e.g. semver minor.patch packed
+    uint16_t firmware_major;
+    uint16_t reserved1;
+    /* offset 8 — channel counts */
+    uint8_t  num_dac;              //  e.g. 2
+    uint8_t  num_pwm;              //  e.g. 8
+    uint8_t  num_dout;             //  e.g. 16
+    uint8_t  num_din;              //  e.g. 16
+    uint8_t  num_adc;              //  e.g. 8
+    uint8_t  reserved2[3];
+    /* offset 16 — per-kind supported-mode bitmask */
+    uint8_t  modes_dac;            //  e.g. 0x07 = MANUAL|BUILTIN|ARBITRARY
+    uint8_t  modes_pwm;            //  v1: 0x01 (MANUAL only)
+    uint8_t  modes_dout;           //  v1: 0x01
+    uint8_t  modes_din;            //  0 (read-only)
+    uint8_t  modes_adc;            //  0 (read-only)
+    uint8_t  reserved3[3];
+    /* offset 24 — limits */
+    uint32_t max_dac_sample_rate_hz;  //  typ. 1_000_000
+    uint32_t max_arb_buffer_samples;  //  typ. 1024
 };
 ```
+
+#### Mode bitmask (`modes_*`)
+
+| Bit | Macro            | Meaning                                          |
+| --: | ---------------- | ------------------------------------------------ |
+|   0 | `MODE_MANUAL`    | The streaming `Command` field drives this channel. |
+|   1 | `MODE_BUILTIN`   | `GEN_PLAY_BUILTIN` accepted on this kind.        |
+|   2 | `MODE_ARBITRARY` | `GEN_PLAY_ARBITRARY` accepted on this kind.      |
+| 3-7 | reserved         | Must be ignored by the host (set to 0 by v1 firmware; reserved for future modes such as `MODE_PWM_DUTY`, `MODE_TC_TOGGLE`, `MODE_CLOSED_LOOP`). |
+
+The host should always check the relevant bit before issuing a
+`GEN_PLAY_*` request — for example, `caps.modes_pwm & MODE_BUILTIN`
+returns 0 in v1 firmware, and the host must surface that as
+"unsupported on this firmware revision" rather than blindly STALLing.
 
 ### 2.3 `WaveBuiltinSpec` / `WaveArbHeader` / `ChannelState`
 
 ```c
-typedef enum {
+typedef enum : uint8_t {
     SHAPE_OFF       = 0,   // channel is "manual": streaming Command frame drives it
     SHAPE_DC        = 1,   // generator-driven, constant level at `offset`
     SHAPE_SINE      = 2,
@@ -155,47 +221,82 @@ typedef enum {
     SHAPE_ARBITRARY = 6,   // generator-driven from an uploaded buffer
 } wave_shape_t;
 
-struct WaveBuiltinSpec {                  // 16 bytes
-    uint8_t  shape;        // wave_shape_t. SHAPE_OFF here is a no-op
-                           //   (use GEN_STOP to return to manual).
-                           //   SHAPE_ARBITRARY is invalid here
-                           //   (use GEN_PLAY_ARBITRARY).
-    uint8_t  reserved0;
-    uint16_t amplitude;    // peak-to-peak in raw device units (DAC: 0–4095)
-    uint16_t offset;       // mid-point in raw device units
-    uint16_t duty_x10;     // 0–1000 = 0.0–100.0 % (square only; ignored otherwise)
-    uint32_t freq_mHz;     // fundamental frequency in milli-Hertz (1 mHz = 0.001 Hz)
-    uint32_t sample_rate_hz; // device-side sampling rate. 0 = "auto" (firmware
-                             //   picks the highest rate ≤ max_dac_sample_rate_hz
-                             //   that yields ≥ 8 samples/cycle).
+typedef enum : uint8_t {
+    CHAN_KIND_DAC  = 0,
+    CHAN_KIND_PWM  = 1,
+    CHAN_KIND_DOUT = 2,
+    CHAN_KIND_DIN  = 3,
+    CHAN_KIND_ADC  = 4,
+} channel_kind_t;
+
+struct __attribute__((packed)) WaveBuiltinSpec {  // 16 bytes
+    /* offset  0 */ uint8_t  shape;        // wave_shape_t (SHAPE_OFF or SHAPE_ARBITRARY invalid here)
+    /* offset  1 */ uint8_t  flags;        // reserved bits for future features (must be 0 in v1)
+    /* offset  2 */ uint16_t duty_x10;     // 0–1000 = 0.0–100.0 % (SQUARE only; ignored otherwise)
+    /* offset  4 */ uint16_t amplitude;    // peak-to-peak, raw device units (DAC: 0–4095)
+    /* offset  6 */ uint16_t offset;       // mid-point, raw device units
+    /* offset  8 */ uint32_t freq_mHz;     // signal frequency, milli-Hz (1 mHz = 0.001 Hz)
+    /* offset 12 */ uint16_t phase_offset_x16; // 0–65535 = 0–360°. Reserved for v2 phase-locked
+                                               //   multi-channel start; must be 0 in v1.
+    /* offset 14 */ uint16_t reserved1;    // must be 0
 };
 
-struct WaveArbHeader {                    // 8 bytes header preceding the int16 samples
-    uint16_t n_samples;    // 1..max_arb_buffer_samples
-    uint16_t loop_count;   // 0 = infinite, otherwise number of times to play
-                           //   before the channel auto-stops (returns to SHAPE_OFF).
-    uint32_t sample_rate_hz; // playback rate, in Hz. Must be ≤ max_dac_sample_rate_hz.
+struct __attribute__((packed)) WaveArbHeader {    // 8 bytes header
+    /* offset  0 */ uint16_t n_samples;    // 1..max_arb_buffer_samples
+    /* offset  2 */ uint16_t loop_count;   // 0 = infinite; otherwise plays N times then SHAPE_OFF
+    /* offset  4 */ uint32_t sample_rate_hz; // playback rate, must be ≤ max_dac_sample_rate_hz
     // followed by int16_t samples[n_samples]
 };
 
-struct ChannelState {                     // 24 bytes
-    uint8_t  channel_kind;     // 0=DAC, 1=PWM, 2=DOUT, 3=DIN, 4=ADC
-    uint8_t  channel_index;    // index within its kind (DAC0 → kind=0,index=0)
-    uint8_t  shape;            // wave_shape_t. SHAPE_OFF means the channel is
-                               //   currently driven by the streaming plane (manual).
-    uint8_t  reserved0;
-    uint16_t amplitude;
-    uint16_t offset;
-    uint16_t duty_x10;
-    uint32_t freq_mHz;
-    uint32_t sample_rate_hz;
-    uint16_t arb_n_samples;    // 0 if not arbitrary
-    uint16_t arb_loop_count;   // remaining loops; 0 = infinite or N/A
+struct __attribute__((packed)) ChannelState {     // 32 bytes
+    /* offset  0 */ uint8_t  channel_kind;       // channel_kind_t
+    /* offset  1 */ uint8_t  channel_index;      // 0..num_<kind>-1
+    /* offset  2 */ uint8_t  shape;              // wave_shape_t (SHAPE_OFF = manual)
+    /* offset  3 */ uint8_t  flags;              // mirrors WaveBuiltinSpec.flags
+    /* offset  4 */ uint32_t freq_mHz;           // 0 if SHAPE_OFF or SHAPE_ARBITRARY
+    /* offset  8 */ uint16_t duty_x10;
+    /* offset 10 */ uint16_t amplitude;
+    /* offset 12 */ uint16_t offset;
+    /* offset 14 */ uint16_t phase_offset_x16;
+    /* offset 16 */ uint16_t arb_n_samples;      // 0 if not arbitrary
+    /* offset 18 */ uint16_t arb_loops_remaining; // 0 = infinite or N/A
+    /* offset 20 */ uint32_t arb_sample_rate_hz;
+    /* offset 24 */ uint32_t cur_phase_q24_8;    // current phase as Q24.8 fixed-point
+                                                  //   (0..0x100_0000 = 0..1.0 of a cycle).
+                                                  //   Useful for diagnostics & sync verification.
+    /* offset 28 */ uint32_t reserved;
 };
 ```
 
-The `shape` field doubles as the mode indicator: `SHAPE_OFF` → manual,
-anything else → generator-driven. There is no separate `mode` byte.
+`shape` doubles as the mode indicator: `SHAPE_OFF` → manual, any
+other shape → generator-driven. No separate `mode` byte.
+
+#### Encode / decode performance
+
+All four control-plane structures (`Capabilities`, `ChannelState`,
+`WaveBuiltinSpec`, `WaveArbHeader`) are designed to be:
+
+- **memcpy-encoded** on the host (no field-by-field serialisation).
+- **memcpy-decoded** on the SAM3X (no byte-swap, no alignment fixups).
+- **Naturally aligned**: every 16-bit field on a 16-bit boundary,
+  every 32-bit field on a 32-bit boundary. `__attribute__((packed))`
+  is therefore a no-op in compiler terms but acts as a contract
+  guarantee against silent layout drift.
+- **Power-of-two sized** (16, 24, 32 bytes), to fit cleanly in EP0
+  control packets (which are 64-byte max on full/high speed).
+
+Decode cost on the SAM3X is bounded:
+| Struct           | Size  | Cortex-M3 load instructions |
+| ---------------- | ----: | --------------------------: |
+| `Capabilities`   | 32 B  | 8 × `LDR` (32-bit aligned)  |
+| `ChannelState`   | 32 B  | 8 × `LDR`                   |
+| `WaveBuiltinSpec`| 16 B  | 4 × `LDR`                   |
+| `WaveArbHeader`  | 8 B   | 2 × `LDR`                   |
+
+For the streaming data plane (PhyCMD-64) the layout is unchanged from
+prior firmware revisions; encode/decode there is dominated by the
+CRC-16-CCITT computation (~14 cycles/byte with table) rather than the
+field copies.
 
 ### 2.4 Channel ID encoding (`wIndex`)
 
@@ -217,18 +318,29 @@ revisions — always derive it from `GEN_GET_CAPS`.
 
 ### 2.5 Behaviour on errors
 
-| Condition                                              | Firmware response                       |
-| ------------------------------------------------------ | --------------------------------------- |
-| Unknown `bRequest`                                     | STALL                                   |
-| `wIndex` out of range                                  | STALL                                   |
-| Channel does not support the requested mode            | STALL                                   |
-| `wLength` doesn't match the expected struct size       | STALL                                   |
-| Arbitrary upload exceeds `max_arb_buffer_samples`      | STALL (with no partial write)           |
-| `freq_mHz` × `sample_rate_hz` exceeds Nyquist          | accepted but aliasing is the user's problem |
+The firmware fast-rejects malformed requests by **STALL**ing the EP0
+control transfer. The host's `libusb_control_transfer` returns
+`LIBUSB_ERROR_PIPE` in that case. Validation order, fail on the first
+match:
 
-A successful `GEN_SET_*` request applies the new configuration
+| # | Condition                                              | Firmware response                |
+| - | ------------------------------------------------------ | -------------------------------- |
+| 1 | Unknown `bRequest`                                     | STALL                            |
+| 2 | `wLength` doesn't match the expected struct size for the request | STALL                  |
+| 3 | `wIndex` out of `0..num_channels-1` range              | STALL                            |
+| 4 | Channel kind doesn't have the requested mode bit set in `Capabilities.modes_<kind>` | STALL |
+| 5 | `WaveBuiltinSpec.shape ∈ {SHAPE_OFF, SHAPE_ARBITRARY}` (use `GEN_STOP` / `GEN_PLAY_ARBITRARY` instead) | STALL |
+| 6 | `WaveBuiltinSpec.flags`, `phase_offset_x16`, or any reserved field nonzero in v1 | STALL (forces forward-compat hygiene) |
+| 7 | `WaveArbHeader.n_samples == 0` or `> max_arb_buffer_samples` | STALL (no partial write)   |
+| 8 | `WaveArbHeader.sample_rate_hz > max_dac_sample_rate_hz` | STALL                           |
+| 9 | DAC clock or ADC rate request out of `1..1_000_000` range | STALL                          |
+| 10 | `freq_mHz` × oversample exceeds Nyquist                | accepted (aliasing is the user's problem; firmware logs a debug warning) |
+
+A successful `GEN_PLAY_*` request applies the new configuration
 atomically: the next ping-pong buffer fill picks up the new spec, so
 parameter sweeps are seamless (no glitch on the analog output).
+`GEN_STOP` takes effect at the next TC trigger (≤ one DAC sample
+period) — typically ≤ 1 µs.
 
 ---
 
@@ -444,10 +556,189 @@ output keeps tracking the live parameters without glitches.
 
 ---
 
-## 6. Compatibility / versioning
+## 6. Reference: shared type definitions (firmware & host)
+
+These declarations are the **single source of truth** for the wire
+layout. Firmware (`ATSAM3X8E_FW/src/waveform.h`) and host
+(`physerver/crates/phycmd-core/src/protocol/wave_types.rs`) MUST stay
+byte-identical with this section. The `static_assert` lines verify
+struct sizes at compile time on both sides — break one, the build
+fails immediately.
+
+### 6.1 C (firmware)
+
+```c
+#pragma once
+#include <stdint.h>
+
+/* bRequest opcodes (vendor SETUP) ------------------------------- */
+#define VREQ_GEN_GET_CAPS         0x10
+#define VREQ_GEN_GET_STATE        0x11
+#define VREQ_GEN_PLAY_BUILTIN     0x12
+#define VREQ_GEN_PLAY_ARBITRARY   0x13
+#define VREQ_GEN_STOP             0x14
+#define VREQ_DAC_SET_CLOCK        0x18
+#define VREQ_DAC_GET_CLOCK        0x19
+#define VREQ_ADC_SET_RATE         0x20
+#define VREQ_ADC_GET_RATE         0x21
+
+/* Wave shape ---------------------------------------------------- */
+typedef enum : uint8_t {
+    SHAPE_OFF = 0, SHAPE_DC, SHAPE_SINE, SHAPE_SQUARE,
+    SHAPE_TRIANGLE, SHAPE_SAWTOOTH, SHAPE_ARBITRARY,
+} wave_shape_t;
+
+/* Channel kind -------------------------------------------------- */
+typedef enum : uint8_t {
+    CHAN_KIND_DAC = 0, CHAN_KIND_PWM, CHAN_KIND_DOUT,
+    CHAN_KIND_DIN, CHAN_KIND_ADC,
+} channel_kind_t;
+
+/* Mode bitmask (one bit per supported mode) -------------------- */
+#define MODE_MANUAL    (1u << 0)
+#define MODE_BUILTIN   (1u << 1)
+#define MODE_ARBITRARY (1u << 2)
+
+/* Streaming Command flags -------------------------------------- */
+#define FLAG_ADC_ENABLE       (1u << 0)
+#define FLAG_DAC_ENABLE       (1u << 1)
+#define FLAG_PWM_ENABLE       (1u << 2)
+#define FLAG_RESET_SEQ        (1u << 3)
+#define FLAG_WATCHDOG_DISABLE (1u << 4)
+
+/* Status flags -------------------------------------------------- */
+#define STATUS_ADC_ACTIVE         (1u << 0)
+#define STATUS_DAC_ACTIVE         (1u << 1)
+#define STATUS_PWM_ACTIVE         (1u << 2)
+#define STATUS_ERROR              (1u << 3)
+#define STATUS_WATCHDOG_TRIGGERED (1u << 4)
+#define STATUS_USB_CONFIGURED     (1u << 5)
+#define STATUS_OVERRUN            (1u << 6)
+
+/* Vendor SETUP payloads ---------------------------------------- */
+struct __attribute__((packed)) Capabilities {
+    uint8_t  protocol_version, reserved0;
+    uint16_t firmware_minor, firmware_major, reserved1;
+    uint8_t  num_dac, num_pwm, num_dout, num_din, num_adc;
+    uint8_t  reserved2[3];
+    uint8_t  modes_dac, modes_pwm, modes_dout, modes_din, modes_adc;
+    uint8_t  reserved3[3];
+    uint32_t max_dac_sample_rate_hz;
+    uint32_t max_arb_buffer_samples;
+};
+_Static_assert(sizeof(struct Capabilities) == 32, "Capabilities size");
+
+struct __attribute__((packed)) WaveBuiltinSpec {
+    uint8_t  shape, flags;
+    uint16_t duty_x10, amplitude, offset;
+    uint32_t freq_mHz;
+    uint16_t phase_offset_x16, reserved1;
+};
+_Static_assert(sizeof(struct WaveBuiltinSpec) == 16, "WaveBuiltinSpec size");
+
+struct __attribute__((packed)) WaveArbHeader {
+    uint16_t n_samples, loop_count;
+    uint32_t sample_rate_hz;
+    /* int16_t samples[n_samples] follows */
+};
+_Static_assert(sizeof(struct WaveArbHeader) == 8, "WaveArbHeader size");
+
+struct __attribute__((packed)) ChannelState {
+    uint8_t  channel_kind, channel_index, shape, flags;
+    uint32_t freq_mHz;
+    uint16_t duty_x10, amplitude, offset, phase_offset_x16;
+    uint16_t arb_n_samples, arb_loops_remaining;
+    uint32_t arb_sample_rate_hz;
+    uint32_t cur_phase_q24_8;
+    uint32_t reserved;
+};
+_Static_assert(sizeof(struct ChannelState) == 32, "ChannelState size");
+```
+
+### 6.2 Rust (host)
+
+```rust
+#[repr(u8)] #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum WaveShape {
+    Off = 0, Dc, Sine, Square, Triangle, Sawtooth, Arbitrary,
+}
+
+#[repr(u8)] #[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ChannelKind { Dac = 0, Pwm, Dout, Din, Adc }
+
+bitflags::bitflags! {
+    #[repr(transparent)]
+    pub struct ModeMask: u8 {
+        const MANUAL    = 1 << 0;
+        const BUILTIN   = 1 << 1;
+        const ARBITRARY = 1 << 2;
+    }
+}
+
+#[repr(C, packed)] #[derive(Copy, Clone, Debug)]
+pub struct Capabilities {
+    pub protocol_version: u8, pub _r0: u8,
+    pub firmware_minor: u16, pub firmware_major: u16, pub _r1: u16,
+    pub num_dac: u8, pub num_pwm: u8, pub num_dout: u8,
+    pub num_din: u8, pub num_adc: u8, pub _r2: [u8; 3],
+    pub modes_dac: u8, pub modes_pwm: u8, pub modes_dout: u8,
+    pub modes_din: u8, pub modes_adc: u8, pub _r3: [u8; 3],
+    pub max_dac_sample_rate_hz: u32,
+    pub max_arb_buffer_samples: u32,
+}
+const _: () = assert!(std::mem::size_of::<Capabilities>() == 32);
+
+#[repr(C, packed)] #[derive(Copy, Clone, Debug)]
+pub struct WaveBuiltinSpec {
+    pub shape: u8, pub flags: u8,
+    pub duty_x10: u16, pub amplitude: u16, pub offset: u16,
+    pub freq_mhz: u32,
+    pub phase_offset_x16: u16, pub _r1: u16,
+}
+const _: () = assert!(std::mem::size_of::<WaveBuiltinSpec>() == 16);
+
+#[repr(C, packed)] #[derive(Copy, Clone, Debug)]
+pub struct WaveArbHeader {
+    pub n_samples: u16, pub loop_count: u16,
+    pub sample_rate_hz: u32,
+}
+const _: () = assert!(std::mem::size_of::<WaveArbHeader>() == 8);
+
+#[repr(C, packed)] #[derive(Copy, Clone, Debug)]
+pub struct ChannelState {
+    pub channel_kind: u8, pub channel_index: u8, pub shape: u8, pub flags: u8,
+    pub freq_mhz: u32,
+    pub duty_x10: u16, pub amplitude: u16, pub offset: u16, pub phase_offset_x16: u16,
+    pub arb_n_samples: u16, pub arb_loops_remaining: u16,
+    pub arb_sample_rate_hz: u32,
+    pub cur_phase_q24_8: u32,
+    pub _r: u32,
+}
+const _: () = assert!(std::mem::size_of::<ChannelState>() == 32);
+```
+
+Direct memcpy / `unsafe { ptr::read(buf as *const _) }` is safe in
+both directions because:
+* both architectures are little-endian,
+* every field is naturally aligned within the struct,
+* no field requires byte-swapping.
+
+## 7. Compatibility / versioning
 
 `Capabilities.protocol_version` starts at `1`. Backwards-incompatible
 changes will bump this byte; backwards-compatible additions (new shape
-codes, new channel kinds, new `bRequest` values) do not. Hosts should
-gracefully ignore unknown shape codes returned by `GEN_GET_STATE` and
-treat them as "unknown / read-only".
+codes, new channel kinds, new `bRequest` values, new mode bits in
+`modes_*`) do not. Hosts should:
+
+* always check `caps.protocol_version >= 1` before issuing any
+  vendor SETUP request,
+* always check `caps.modes_<kind> & MODE_<kind>` before relying on a
+  mode being supported,
+* gracefully ignore unknown shape codes returned by `GEN_GET_STATE`
+  and treat them as "unknown / read-only".
+
+Reserved bytes/fields **must be zero on send** and **must be ignored
+on receive** by current-revision implementations. The firmware
+enforces "must be zero on send" by STALLing requests with non-zero
+reserved fields (see §2.5 row 6) — this prevents host code from
+silently relying on unspecified bits that a future revision may use.

@@ -31,7 +31,8 @@ Complete guide to PhyCMD documentation.
 #### Hardware/Firmware Engineers
 - **Firmware Upload**: [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md)
 - **Firmware Updates**: [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md)
-- **Protocol**: [PROTOCOL.md](technical/PROTOCOL.md)
+- **Wire Protocol**: [firmware/PROTOCOL.md](firmware/PROTOCOL.md) — byte-level spec, v1 + v2 reactive + v3 PID
+- **Function Generator User Guide**: [user-guide/FUNCTION_GENERATOR.md](user-guide/FUNCTION_GENERATOR.md) — shapes, LUT, threshold, pulse, PID with examples
 
 ---
 
@@ -63,6 +64,8 @@ Complete guide to PhyCMD documentation.
 | [ARCHITECTURE.md](technical/ARCHITECTURE.md) | System design and architecture | 25 pages |
 | [PROTOCOL.md](technical/PROTOCOL.md) | PhyCMD-64 protocol specification | 20 pages |
 | [PERFORMANCE.md](technical/PERFORMANCE.md) | Performance benchmarks and tuning | 15 pages |
+| [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md) | Front + rear panel pinout reference (all connectors) | 12 pages |
+| [PCB_BACKPLANE_PINOUT.md](technical/PCB_BACKPLANE_PINOUT.md) | I/O distribution PCB pinout, BOM, routing | 18 pages |
 | [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) | 15 pages |
 | [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md) | Required firmware changes | 10 pages |
 
@@ -178,7 +181,11 @@ All documentation includes working code examples in:
 
 **Hardware**:
 - Arduino Due → [README.md](../README.md), [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md)
-- Pin mapping → [USER_MANUAL.md](user-guide/USER_MANUAL.md), [PROTOCOL.md](technical/PROTOCOL.md)
+- Pin mapping → [USER_MANUAL.md](user-guide/USER_MANUAL.md), [PROTOCOL.md](technical/PROTOCOL.md), [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md)
+- Front / rear panel connectors → [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md)
+- I/O distribution PCB → [PCB_BACKPLANE_PINOUT.md](technical/PCB_BACKPLANE_PINOUT.md)
+- SWD/JTAG debug port → [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md) §2.3
+- CAN bus → [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md) §2.4
 - Firmware → [FIRMWARE_UPLOAD.md](firmware/FIRMWARE_UPLOAD.md), [FIRMWARE_UPDATES.md](firmware/FIRMWARE_UPDATES.md)
 
 ---

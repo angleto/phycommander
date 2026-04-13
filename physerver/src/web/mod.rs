@@ -40,6 +40,11 @@ pub struct AppState {
     /// set in iso mode; the /api/waveform endpoints return 503 in
     /// bulk mode where there is no per-microframe rendering path.
     pub waveforms: std::sync::OnceLock<Arc<phycmd_core::WaveformBank>>,
+    /// Typed control-plane client for the on-chip function generator
+    /// (vendor SETUP requests on EP0). Set in iso mode along with
+    /// the iso stats; absent in bulk mode where there is no shared
+    /// libusb dev_handle.
+    pub waveform_dev: std::sync::OnceLock<Arc<phycmd_core::transport::WaveformDevice>>,
 }
 
 impl AppState {
@@ -55,6 +60,7 @@ impl AppState {
             rt_stats: std::sync::OnceLock::new(),
             iso_stats: std::sync::OnceLock::new(),
             waveforms: std::sync::OnceLock::new(),
+            waveform_dev: std::sync::OnceLock::new(),
         }
     }
 
@@ -73,6 +79,10 @@ impl AppState {
     /// /api/waveform endpoints to the dashboard / scripts.
     pub fn set_waveforms(&self, w: Arc<phycmd_core::WaveformBank>) {
         let _ = self.waveforms.set(w);
+    }
+
+    pub fn set_waveform_dev(&self, dev: Arc<phycmd_core::transport::WaveformDevice>) {
+        let _ = self.waveform_dev.set(dev);
     }
 
     /// Apply the error_count baseline to a raw Status: subtract the
@@ -116,6 +126,20 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/waveform", get(get_waveforms))
         .route("/api/waveform/:channel", post(set_waveform))
         .route("/api/waveform/:channel", axum::routing::delete(disable_waveform))
+        // Firmware fn-gen (vendor SETUP plane). Available in iso mode only.
+        .route("/api/fngen/caps",                       get(fngen_caps))
+        .route("/api/fngen/state/:channel",             get(fngen_state))
+        .route("/api/fngen/stop/:channel",              post(fngen_stop))
+        .route("/api/fngen/dac_clock",                  get(fngen_dac_get_clock))
+        .route("/api/fngen/dac_clock",                  post(fngen_dac_set_clock))
+        .route("/api/fngen/adc_rate",                   get(fngen_adc_get_rate))
+        .route("/api/fngen/adc_rate",                   post(fngen_adc_set_rate))
+        .route("/api/fngen/play_builtin/:channel",      post(fngen_play_builtin))
+        .route("/api/fngen/play_arbitrary/:channel",    post(fngen_play_arbitrary))
+        .route("/api/fngen/play_lut/:channel",          post(fngen_play_lut))
+        .route("/api/fngen/play_threshold/:channel",    post(fngen_play_threshold))
+        .route("/api/fngen/play_pulse_trig/:channel",   post(fngen_play_pulse_trig))
+        .route("/api/fngen/play_pid/:channel",          post(fngen_play_pid))
         .route("/ws", get(websocket_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -196,6 +220,253 @@ async fn disable_waveform(
     lock.write().enabled = false;
     info!("waveform {channel} disabled");
     (StatusCode::OK, "ok").into_response()
+}
+
+// =================================================================
+//   Firmware fn-gen REST handlers (vendor SETUP plane on EP0)
+//
+//   All endpoints return 503 in bulk mode (no shared dev_handle).
+//   In iso mode they tunnel typed POSTs into libusb_control_transfer
+//   via WaveformDevice. Every JSON body mirrors the Wave*Spec /
+//   Wave*Header struct from PROTOCOL.md §6.2.
+// =================================================================
+
+fn fngen_unavailable_response() -> Response {
+    (StatusCode::SERVICE_UNAVAILABLE,
+     "function generator only available in iso mode (config: type = \"iso\")").into_response()
+}
+
+fn fngen_err(e: phycmd_core::transport::WaveformError) -> Response {
+    let msg = e.to_string();
+    let code = match e {
+        phycmd_core::transport::WaveformError::ControlTransferStalled(_) => StatusCode::BAD_REQUEST,
+        phycmd_core::transport::WaveformError::UnknownChannel(_)         => StatusCode::NOT_FOUND,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (code, msg).into_response()
+}
+
+async fn fngen_caps(State(state): State<Arc<AppState>>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.caps() { Ok(c) => Json(c).into_response(), Err(e) => fngen_err(e) }
+}
+
+async fn fngen_state(State(state): State<Arc<AppState>>,
+                     axum::extract::Path(channel): axum::extract::Path<String>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.state(&channel) { Ok(s) => Json(s).into_response(), Err(e) => fngen_err(e) }
+}
+
+async fn fngen_stop(State(state): State<Arc<AppState>>,
+                    axum::extract::Path(channel): axum::extract::Path<String>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.stop(&channel) { Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e) }
+}
+
+#[derive(Serialize)] struct U32Body { value: u32 }
+#[derive(Deserialize)] struct U32Req { value: u32 }
+
+async fn fngen_dac_get_clock(State(state): State<Arc<AppState>>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.dac_get_clock() { Ok(v) => Json(U32Body { value: v }).into_response(), Err(e) => fngen_err(e) }
+}
+async fn fngen_dac_set_clock(State(state): State<Arc<AppState>>, Json(req): Json<U32Req>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.dac_set_clock(req.value) { Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e) }
+}
+async fn fngen_adc_get_rate(State(state): State<Arc<AppState>>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.adc_get_rate() { Ok(v) => Json(U32Body { value: v }).into_response(), Err(e) => fngen_err(e) }
+}
+async fn fngen_adc_set_rate(State(state): State<Arc<AppState>>, Json(req): Json<U32Req>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    match d.adc_set_rate(req.value) { Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e) }
+}
+
+#[derive(Deserialize)]
+struct PlayBuiltinReq {
+    shape: String,                      // "sine"|"square"|"triangle"|"sawtooth"|"dc"
+    freq_hz: f64,                       // converted to mHz on the wire
+    amplitude: u16,
+    offset: u16,
+    #[serde(default = "default_duty")] duty: f32,
+}
+fn default_duty() -> f32 { 0.5 }
+
+fn shape_code(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "dc" => Some(1), "sine" => Some(2), "square" => Some(3),
+        "triangle" => Some(4), "sawtooth" => Some(5), _ => None,
+    }
+}
+
+async fn fngen_play_builtin(State(state): State<Arc<AppState>>,
+                            axum::extract::Path(channel): axum::extract::Path<String>,
+                            Json(req): Json<PlayBuiltinReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    let Some(shape) = shape_code(&req.shape) else {
+        return (StatusCode::BAD_REQUEST, format!("unknown shape {:?}", req.shape)).into_response();
+    };
+    let spec = phycmd_core::WaveBuiltinSpec {
+        shape,
+        flags: 0,
+        duty_x10: (req.duty.clamp(0.0, 1.0) * 1000.0).round() as u16,
+        amplitude: req.amplitude,
+        offset: req.offset,
+        freq_mhz: (req.freq_hz * 1000.0).round() as u32,
+        phase_offset_x16: 0, _reserved1: 0,
+    };
+    match d.play_builtin(&channel, &spec) { Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e) }
+}
+
+#[derive(Deserialize)]
+struct PlayArbitraryReq {
+    samples: Vec<i16>,
+    sample_rate_hz: u32,
+    #[serde(default)] loop_count: u16,
+}
+
+async fn fngen_play_arbitrary(State(state): State<Arc<AppState>>,
+                              axum::extract::Path(channel): axum::extract::Path<String>,
+                              Json(req): Json<PlayArbitraryReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    if req.samples.is_empty() || req.samples.len() > 1024 {
+        return (StatusCode::BAD_REQUEST, "samples must be 1..1024").into_response();
+    }
+    let header = phycmd_core::WaveArbHeader {
+        n_samples: req.samples.len() as u16,
+        loop_count: req.loop_count,
+        sample_rate_hz: req.sample_rate_hz,
+    };
+    match d.play_arbitrary(&channel, &header, &req.samples) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PlayLutReq {
+    input_src: String,        // "adc" | "din"
+    input_arg: u16,
+    entries: Vec<i16>,
+    #[serde(default)] output_mask: u16,
+}
+fn parse_input_src(s: &str) -> Option<u8> {
+    match s.to_ascii_lowercase().as_str() {
+        "adc" => Some(1), "din" => Some(2), _ => None,
+    }
+}
+
+async fn fngen_play_lut(State(state): State<Arc<AppState>>,
+                        axum::extract::Path(channel): axum::extract::Path<String>,
+                        Json(req): Json<PlayLutReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    let Some(src) = parse_input_src(&req.input_src) else {
+        return (StatusCode::BAD_REQUEST, "input_src must be \"adc\" or \"din\"").into_response();
+    };
+    if req.entries.is_empty() || req.entries.len() > 4096 {
+        return (StatusCode::BAD_REQUEST, "entries must be 1..4096").into_response();
+    }
+    let header = phycmd_core::WaveLutSpec {
+        input_src: src, _reserved0: 0,
+        input_arg: req.input_arg,
+        n_entries: req.entries.len() as u16,
+        output_mask: req.output_mask,
+        _reserved1: 0,
+    };
+    match d.play_lut(&channel, &header, &req.entries) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PlayThresholdReq {
+    input_src: String, input_arg: u16,
+    thr_high: u16, thr_low: u16,
+    val_high: u16, val_low: u16,
+}
+
+async fn fngen_play_threshold(State(state): State<Arc<AppState>>,
+                              axum::extract::Path(channel): axum::extract::Path<String>,
+                              Json(req): Json<PlayThresholdReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    let Some(src) = parse_input_src(&req.input_src) else {
+        return (StatusCode::BAD_REQUEST, "input_src must be \"adc\" or \"din\"").into_response();
+    };
+    let spec = phycmd_core::WaveThresholdSpec {
+        input_src: src, _reserved0: 0,
+        input_arg: req.input_arg,
+        thr_high: req.thr_high, thr_low: req.thr_low,
+        val_high: req.val_high, val_low: req.val_low,
+        _reserved1: 0,
+    };
+    match d.play_threshold(&channel, &spec) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PlayPulseReq {
+    din_bit: u8,
+    edge: String,                 // "rising" | "falling" | "any"
+    #[serde(default = "default_active_level")] active_level: u8,
+    duration_us: u32,
+    #[serde(default)] cooldown_us: u32,
+}
+fn default_active_level() -> u8 { 1 }
+
+async fn fngen_play_pulse_trig(State(state): State<Arc<AppState>>,
+                               axum::extract::Path(channel): axum::extract::Path<String>,
+                               Json(req): Json<PlayPulseReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    let edge = match req.edge.to_ascii_lowercase().as_str() {
+        "rising" => 1, "falling" => 2, "any" => 3,
+        _ => return (StatusCode::BAD_REQUEST, "edge must be rising|falling|any").into_response(),
+    };
+    let spec = phycmd_core::WavePulseSpec {
+        input_din_bit: req.din_bit, edge, active_level: req.active_level, _reserved0: 0,
+        duration_us: req.duration_us, cooldown_us: req.cooldown_us,
+    };
+    match d.play_pulse_trig(&channel, &spec) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e),
+    }
+}
+
+#[derive(Deserialize)]
+struct PlayPidReq {
+    input_src: String, input_arg: u16,
+    sample_rate_hz: u32,
+    setpoint: i32,
+    kp: f32,
+    #[serde(default)] ki: f32,
+    #[serde(default)] kd: f32,
+    #[serde(default = "default_pid_min")] out_min: u16,
+    #[serde(default = "default_pid_max")] out_max: u16,
+    #[serde(default = "default_pid_iclamp")] integral_clamp: i32,
+}
+fn default_pid_min() -> u16 { 0 }
+fn default_pid_max() -> u16 { 4095 }
+fn default_pid_iclamp() -> i32 { 1_000_000 }
+
+async fn fngen_play_pid(State(state): State<Arc<AppState>>,
+                        axum::extract::Path(channel): axum::extract::Path<String>,
+                        Json(req): Json<PlayPidReq>) -> Response {
+    let Some(d) = state.waveform_dev.get() else { return fngen_unavailable_response(); };
+    let Some(src) = parse_input_src(&req.input_src) else {
+        return (StatusCode::BAD_REQUEST, "input_src must be \"adc\" or \"din\"").into_response();
+    };
+    let q16 = |f: f32| (f * 65536.0).round() as i32;
+    let spec = phycmd_core::WavePidSpec {
+        input_src: src, _reserved0: 0,
+        input_arg: req.input_arg,
+        sample_rate_hz: req.sample_rate_hz,
+        setpoint: req.setpoint,
+        kp_q16_16: q16(req.kp), ki_q16_16: q16(req.ki), kd_q16_16: q16(req.kd),
+        out_min: req.out_min, out_max: req.out_max,
+        integral_clamp: req.integral_clamp,
+    };
+    match d.play_pid(&channel, &spec) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(), Err(e) => fngen_err(e),
+    }
 }
 
 /// Get current command (REST API)

@@ -327,6 +327,7 @@ async fn main() -> Result<()> {
         ).context("Failed to start IsoTransport")?;
         web_state.set_iso_stats(iso.iso_stats_arc());
         web_state.set_waveforms(iso.waveforms());
+        web_state.set_waveform_dev(iso.waveform_dev());
 
         // Block until shutdown. IsoTransport's Drop signals stop +
         // joins its I/O thread cleanly.

@@ -17,7 +17,8 @@ pub use serial::SerialTransport;
 #[cfg(feature = "usb")]
 pub use usb::UsbTransport;
 #[cfg(feature = "usb")]
-pub use usb_iso::{IsoTransport, IsoStats, IsoStatsSnapshot};
+pub use usb_iso::{IsoTransport, IsoStats, IsoStatsSnapshot,
+                  WaveformDevice, WaveformError, CapabilitiesView, ChannelStateView};
 #[cfg(feature = "usb")]
 pub use usb_loopback::UsbLoopbackTransport;
 #[cfg(feature = "usb")]

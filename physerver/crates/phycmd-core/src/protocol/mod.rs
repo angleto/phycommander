@@ -1,10 +1,18 @@
 pub mod types;
 pub mod crc;
 pub mod codec;
+pub mod wave_types;
 
 pub use types::*;
 pub use crc::crc16_ccitt;
 pub use codec::{encode_command, decode_status};
+pub use wave_types::{
+    WaveShape, ChannelKind, InputSrc, PulseEdge,
+    Capabilities, ChannelState,
+    WaveBuiltinSpec, WaveArbHeader, WaveLutSpec,
+    WaveThresholdSpec, WavePulseSpec, WavePidSpec,
+    channel_id, channel_id_from_name,
+};
 
 use thiserror::Error;
 

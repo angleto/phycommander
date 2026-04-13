@@ -282,10 +282,15 @@ static inline void dac_write_pair(uint16_t dac0, uint16_t dac1)
  *  reads inputs, and fills the 64-byte status response in tx_buf.
  * ============================================================ */
 
-void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
+/* Tracks whether the last command applied was valid. Bulk used to
+ * compute this inline and immediately fold it into the status response;
+ * with the iso path apply and build run on different EPs (and may even
+ * run at different rates), so we cache the last-command outcome here. */
+static volatile bool s_last_cmd_valid = true;
+
+void apply_command_frame(const uint8_t *rx_buf)
 {
-	const command_msg_t *cmd  = (const command_msg_t *)rx_buf;
-	status_msg_t        *stat = (status_msg_t *)tx_buf;
+	const command_msg_t *cmd = (const command_msg_t *)rx_buf;
 
 	bool cmd_valid = (cmd->header == COMMAND_HEADER) &&
 	                 (crc16_ccitt(rx_buf, CRC_OVER_CMD_BYTES) == cmd->crc);
@@ -293,22 +298,35 @@ void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
 	if (!cmd_valid) {
 		if (s_error_count < 0xFFFFu)
 			s_error_count++;
-	} else {
-		/* Apply digital outputs immediately */
-		set_dig_out_value(cmd->digital_out);
-
-		/* Apply DAC outputs */
-		if (cmd->flags & FLAG_DAC_ENABLE)
-			dac_write_pair(cmd->dac0, cmd->dac1);
-
-		/* Sequence tracking */
-		s_last_seq = cmd->seq_num;
-		if (cmd->flags & FLAG_RESET_SEQ)
-			s_last_seq = 0;
+		s_last_cmd_valid = false;
+		return;
 	}
 
-	/* Build the 64-byte status response */
+	/* Apply digital outputs immediately */
+	set_dig_out_value(cmd->digital_out);
+
+	/* Apply DAC outputs */
+	if (cmd->flags & FLAG_DAC_ENABLE)
+		dac_write_pair(cmd->dac0, cmd->dac1);
+
+	/* Sequence tracking */
+	s_last_seq = cmd->seq_num;
+	if (cmd->flags & FLAG_RESET_SEQ)
+		s_last_seq = 0;
+
+	s_last_cmd_valid = true;
+}
+
+void build_status_frame(uint8_t *tx_buf)
+{
+	status_msg_t *stat = (status_msg_t *)tx_buf;
+
+	/* Zero only the 64-byte protocol header. The iso path passes a
+	 * 512-byte buffer with [64..511] pre-filled with zeros once at
+	 * boot — re-zeroing the padding here would waste cycles every
+	 * microframe. */
 	memset(stat, 0, sizeof(*stat));
+
 	stat->header      = STATUS_HEADER;
 	stat->digital_in  = get_dig_in_value();
 	stat->digital_out = get_dig_out_echo();
@@ -319,7 +337,7 @@ void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
 
 	/* Status flags */
 	uint8_t sf = STATUS_USB_CONFIGURED;
-	if (!cmd_valid) sf |= STATUS_ERROR_FLAG;
+	if (!s_last_cmd_valid) sf |= STATUS_ERROR_FLAG;
 	stat->status_flags = sf;
 
 	stat->seq_num     = s_last_seq;
@@ -328,6 +346,14 @@ void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
 
 	/* CRC over first 24 bytes of the status frame */
 	stat->crc = crc16_ccitt(tx_buf, CRC_OVER_STAT_BYTES);
+}
+
+/* Bulk path keeps the original combined entry point — apply + build are
+ * called back-to-back from a single bulk OUT callback, just like before. */
+void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf)
+{
+	apply_command_frame(rx_buf);
+	build_status_frame(tx_buf);
 }
 
 /* ============================================================

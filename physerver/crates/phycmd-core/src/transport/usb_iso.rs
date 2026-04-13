@@ -40,6 +40,7 @@
 //! bit-errors, exposed as [`IsoStats::iso_in_crc_errors`].
 
 use crate::protocol::{decode_status, encode_command, Command, MESSAGE_SIZE};
+use crate::protocol::wave_types::*;
 use crate::staging::CommandStaging;
 use crate::stats::RtStats;
 use crate::status_bus::{StatusBus, StatusFrame};
@@ -48,6 +49,7 @@ use crate::waveforms::WaveformBank;
 use anyhow::{Context, Result};
 use libusb1_sys as ffi;
 use parking_lot::RwLock;
+use serde::Serialize;
 use std::os::raw::c_void;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -154,6 +156,15 @@ pub struct IsoStatsSnapshot {
 
 /// State reachable from the libusb callbacks via `user_data`.
 struct IsoInner {
+    /// libusb context and device handle, opened once in
+    /// `IsoTransport::new` (main thread) and shared between the iso
+    /// I/O thread (which uses EP3/EP4 for transfers) and the
+    /// `WaveformDevice` control client (which uses EP0). libusb is
+    /// thread-safe across distinct EP groups so the two paths
+    /// do not race.
+    ctx: *mut ffi::libusb_context,
+    dev_handle: *mut ffi::libusb_device_handle,
+
     /// Set by the foreground thread to ask the I/O thread to drain and
     /// exit. Callbacks check this before re-submitting transfers.
     stop: AtomicBool,
@@ -193,10 +204,31 @@ struct IsoInner {
     start: Instant,
 }
 
-// SAFETY: IsoInner contains only Arc'd, atomic, and lock-protected
-// state. No raw pointers or !Sync types live here.
+// SAFETY: IsoInner contains the libusb context and device handle as
+// raw pointers; libusb is documented as thread-safe for control vs
+// transfer operations on disjoint endpoints. No part of the pointer
+// targets is mutated from Rust safe code; the I/O thread and the
+// WaveformDevice both call libusb routines that are designed for
+// concurrent use within the same context.
 unsafe impl Send for IsoInner {}
 unsafe impl Sync for IsoInner {}
+
+impl Drop for IsoInner {
+    fn drop(&mut self) {
+        // The I/O thread has already joined (see IsoTransport::Drop),
+        // so we are the sole owner of ctx + dev_handle here. Free
+        // the libusb resources cleanly.
+        unsafe {
+            if !self.dev_handle.is_null() {
+                let _ = ffi::libusb_release_interface(self.dev_handle, INTERFACE);
+                ffi::libusb_close(self.dev_handle);
+            }
+            if !self.ctx.is_null() {
+                ffi::libusb_exit(self.ctx);
+            }
+        }
+    }
+}
 
 /// The user_data passed to libusb. Holding `dir_in: bool` separately
 /// from the shared IsoInner avoids a lookup or branch per packet.
@@ -216,6 +248,7 @@ pub struct IsoTransport {
     inner: Arc<IsoInner>,
     iso_stats: Arc<IsoStats>,
     waveforms: Arc<WaveformBank>,
+    waveform_dev: Option<Arc<WaveformDevice>>, // populated once the I/O thread has its dev_handle
     io_thread: Option<JoinHandle<()>>,
 }
 
@@ -234,7 +267,39 @@ impl IsoTransport {
         let iso_stats = Arc::new(IsoStats::default());
         let waveforms = Arc::new(WaveformBank::new());
 
+        // Open the libusb context + claim the interface once, on the
+        // main thread. Both the iso I/O thread (using EP3/EP4 for
+        // bulk transfers) and the WaveformDevice control client
+        // (using EP0 for vendor SETUP requests) share this dev_handle.
+        // libusb is documented as thread-safe across distinct EP
+        // groups; the two paths therefore do not race.
+        let (ctx, dev_handle) = unsafe {
+            let mut ctx_ptr: *mut ffi::libusb_context = ptr::null_mut();
+            let r = ffi::libusb_init(&mut ctx_ptr);
+            anyhow::ensure!(r == 0, "libusb_init failed: {r}");
+            let dh = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
+            if dh.is_null() {
+                ffi::libusb_exit(ctx_ptr);
+                anyhow::bail!(
+                    "Arduino Due not found (VID={VID:04x} PID={PID:04x}). \
+                     Is the dual-mode iso firmware flashed and the device powered?"
+                );
+            }
+            let _ = ffi::libusb_detach_kernel_driver(dh, INTERFACE);
+            let r = ffi::libusb_claim_interface(dh, INTERFACE);
+            if r != 0 {
+                ffi::libusb_close(dh);
+                ffi::libusb_exit(ctx_ptr);
+                anyhow::bail!(
+                    "claim_interface failed: {r} (is another process holding the interface?)"
+                );
+            }
+            (ctx_ptr, dh)
+        };
+
         let inner = Arc::new(IsoInner {
+            ctx,
+            dev_handle,
             stop: AtomicBool::new(false),
             latest_status: RwLock::new(crate::protocol::Status::default()),
             staging,
@@ -246,33 +311,10 @@ impl IsoTransport {
             start: Instant::now(),
         });
 
-        // The I/O thread does *all* libusb work. We open the device
-        // here in the calling thread first to surface "device not
-        // found" / "interface busy" errors synchronously, then close
-        // and let the I/O thread re-open it on its own context — this
-        // is necessary because libusb contexts and handles are not
-        // safe to share across the open/handle_events boundary in
-        // older libusb releases (1.0.21 and earlier). Re-opening from
-        // the I/O thread costs ~5 ms but happens only once at startup.
-        unsafe {
-            let mut ctx_ptr: *mut ffi::libusb_context = ptr::null_mut();
-            let r = ffi::libusb_init(&mut ctx_ptr);
-            anyhow::ensure!(r == 0, "libusb_init pre-check failed: {r}");
-            let dh = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
-            anyhow::ensure!(
-                !dh.is_null(),
-                "Arduino Due not found (VID={VID:04x} PID={PID:04x}). \
-                 Is the dual-mode iso firmware flashed and the device powered?"
-            );
-            let _ = ffi::libusb_detach_kernel_driver(dh, INTERFACE);
-            let r = ffi::libusb_claim_interface(dh, INTERFACE);
-            ffi::libusb_close(dh);
-            ffi::libusb_exit(ctx_ptr);
-            anyhow::ensure!(
-                r == 0,
-                "Pre-claim failed: {r} (is another process holding the interface?)"
-            );
-        }
+        let waveform_dev = Arc::new(WaveformDevice {
+            dev_handle,
+            _ctx_keepalive: Arc::clone(&inner),
+        });
 
         let inner_for_thread = Arc::clone(&inner);
         let io_thread = std::thread::Builder::new()
@@ -293,8 +335,17 @@ impl IsoTransport {
             inner,
             iso_stats,
             waveforms,
+            waveform_dev: Some(waveform_dev),
             io_thread: Some(io_thread),
         })
+    }
+
+    /// Typed control-plane client for the on-chip function generator.
+    /// Cheap to clone (Arc internally). All methods are blocking on
+    /// libusb EP0 control transfers and must NOT be called from the
+    /// iso I/O thread.
+    pub fn waveform_dev(&self) -> Arc<WaveformDevice> {
+        Arc::clone(self.waveform_dev.as_ref().expect("WaveformDevice exists while IsoTransport is alive"))
     }
 
     /// Shared handle to the waveform generator. The web layer mutates
@@ -340,12 +391,9 @@ impl Drop for IsoTransport {
 //   I/O thread — owns the libusb context and all transfer descriptors
 // ---------------------------------------------------------------------
 
-/// Resources allocated by the I/O thread. They're held as fields so
-/// they live exactly as long as the thread (no leaks if the thread
-/// panics with the panic-handler installed by the runtime).
+/// Per-thread transfer/buffer resources. The libusb context and
+/// dev_handle live in IsoInner now (shared with WaveformDevice).
 struct IoResources {
-    ctx: *mut ffi::libusb_context,
-    dev_handle: *mut ffi::libusb_device_handle,
     transfers_in: Vec<*mut ffi::libusb_transfer>,
     transfers_out: Vec<*mut ffi::libusb_transfer>,
     // Buffers and callback contexts kept alive via Vec; transfers
@@ -362,37 +410,18 @@ impl Drop for IoResources {
             for &t in self.transfers_in.iter().chain(self.transfers_out.iter()) {
                 ffi::libusb_free_transfer(t);
             }
-            if !self.dev_handle.is_null() {
-                let _ = ffi::libusb_release_interface(self.dev_handle, INTERFACE);
-                ffi::libusb_close(self.dev_handle);
-            }
-            if !self.ctx.is_null() {
-                ffi::libusb_exit(self.ctx);
-            }
         }
     }
 }
 
 fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
     unsafe {
-        // ---- libusb init ----
-        let mut ctx_ptr: *mut ffi::libusb_context = ptr::null_mut();
-        let r = ffi::libusb_init(&mut ctx_ptr);
-        anyhow::ensure!(r == 0, "libusb_init failed: {r}");
-
-        let dev_handle = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
-        anyhow::ensure!(
-            !dev_handle.is_null(),
-            "device disappeared between pre-check and I/O thread start"
-        );
-
-        let _ = ffi::libusb_detach_kernel_driver(dev_handle, INTERFACE);
-        let r = ffi::libusb_claim_interface(dev_handle, INTERFACE);
-        anyhow::ensure!(r == 0, "claim_interface failed in I/O thread: {r}");
+        // libusb context + dev_handle were opened by IsoTransport::new
+        // (main thread) and live in `inner`. We just borrow them here.
+        let ctx_ptr = inner.ctx;
+        let dev_handle = inner.dev_handle;
 
         let mut res = IoResources {
-            ctx: ctx_ptr,
-            dev_handle,
             transfers_in: Vec::with_capacity(NUM_TRANSFERS),
             transfers_out: Vec::with_capacity(NUM_TRANSFERS),
             _buffers_in: Vec::with_capacity(NUM_TRANSFERS),
@@ -684,3 +713,264 @@ unsafe fn handle_in_packet(
     // dashboard changes (8 kHz successful packets ≈ 8 kHz tick rate).
     inner.stats.record_ok(0, 0);
 }
+
+// =========================================================================
+//   WaveformDevice — typed control-transfer client for the firmware fn-gen
+//
+//   Shares the libusb device handle with IsoTransport so that one process
+//   can simultaneously stream PhyCMD-64 frames at 8 kHz on the iso EPs
+//   AND issue vendor SETUP requests on EP0 to (re)configure on-chip
+//   waveform generators. libusb is thread-safe across distinct EP groups
+//   so the two paths don't fight.
+//
+//   Created and owned by IsoTransport; reachable from the web layer via
+//   `IsoTransport::waveform_dev()` returning Arc<WaveformDevice>.
+// =========================================================================
+
+/// Errors returned by WaveformDevice methods. STALL on the wire becomes
+/// `ControlTransferStalled`; everything else is wrapped in `Other`.
+#[derive(Debug, thiserror::Error)]
+pub enum WaveformError {
+    #[error("USB control transfer stalled (firmware rejected the request, e.g. validation failed): bRequest=0x{0:02x}")]
+    ControlTransferStalled(u8),
+    #[error("USB control transfer error code {0}")]
+    ControlTransferFailed(i32),
+    #[error("Unexpected payload size: expected {expected}, got {got}")]
+    PayloadSize { expected: usize, got: usize },
+    #[error("Unknown channel name: {0}")]
+    UnknownChannel(String),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+/// Snapshot returned by `WaveformDevice::caps`, decoded into Rust types
+/// for ergonomic JSON serialisation by the web layer.
+#[derive(Debug, Clone, Serialize)]
+pub struct CapabilitiesView {
+    pub protocol_version: u8,
+    pub firmware_major: u16,
+    pub firmware_minor: u16,
+    pub num_dac: u8,
+    pub num_pwm: u8,
+    pub num_dout: u8,
+    pub num_din: u8,
+    pub num_adc: u8,
+    pub modes_dac: u8,
+    pub modes_pwm: u8,
+    pub modes_dout: u8,
+    pub modes_din: u8,
+    pub modes_adc: u8,
+    pub max_dac_sample_rate_hz: u32,
+    pub max_arb_buffer_samples: u32,
+}
+
+/// Snapshot returned by `WaveformDevice::state`. Mirrors `ChannelState`
+/// from PROTOCOL.md §2.3 with named fields and JSON-friendly types.
+#[derive(Debug, Clone, Serialize)]
+pub struct ChannelStateView {
+    pub channel_kind: u8,
+    pub channel_index: u8,
+    pub shape: u8,
+    pub shape_name: &'static str,
+    pub freq_mhz: u32,
+    pub duty_x10: u16,
+    pub amplitude: u16,
+    pub offset: u16,
+    pub phase_offset_x16: u16,
+    pub arb_n_samples: u16,
+    pub arb_loops_remaining: u16,
+    pub arb_sample_rate_hz: u32,
+    pub cur_phase_q24_8: u32,
+}
+
+fn shape_name(s: u8) -> &'static str {
+    match s {
+        0  => "off",       1  => "dc",        2  => "sine",      3  => "square",
+        4  => "triangle",  5  => "sawtooth",  6  => "arbitrary",
+        16 => "lut",       17 => "threshold", 18 => "pulse_trig", 19 => "pid",
+        _  => "unknown",
+    }
+}
+
+/// Typed control-plane client for the firmware function generator.
+/// Cheap to clone (Arc internally). Methods are all blocking and
+/// must NOT be called from the iso I/O thread (would deadlock with
+/// libusb_handle_events).
+pub struct WaveformDevice {
+    dev_handle: *mut ffi::libusb_device_handle,
+    /// Held only to keep the libusb context alive — calls are made
+    /// directly via dev_handle.
+    _ctx_keepalive: Arc<IsoInner>,
+}
+
+// SAFETY: libusb_device_handle is documented as thread-safe for
+// libusb_control_transfer / libusb_submit_transfer when used on
+// distinct endpoints from different threads. We exclusively use EP0
+// here while IsoTransport uses EP3/EP4. No data race.
+unsafe impl Send for WaveformDevice {}
+unsafe impl Sync for WaveformDevice {}
+
+impl WaveformDevice {
+    fn ctrl_in(&self, b_request: u8, w_index: u16, length: u16) -> Result<Vec<u8>, WaveformError> {
+        let mut buf = vec![0u8; length as usize];
+        let n = unsafe {
+            ffi::libusb_control_transfer(
+                self.dev_handle,
+                0xC0,                  // bmRequestType: vendor IN device
+                b_request,
+                0,                     // wValue
+                w_index,
+                buf.as_mut_ptr(),
+                length,
+                1000,                  // timeout ms
+            )
+        };
+        if n < 0 {
+            return Err(if n == ffi::constants::LIBUSB_ERROR_PIPE {
+                WaveformError::ControlTransferStalled(b_request)
+            } else {
+                WaveformError::ControlTransferFailed(n)
+            });
+        }
+        buf.truncate(n as usize);
+        Ok(buf)
+    }
+
+    fn ctrl_out(&self, b_request: u8, w_index: u16, data: &[u8]) -> Result<(), WaveformError> {
+        let n = unsafe {
+            ffi::libusb_control_transfer(
+                self.dev_handle,
+                0x40,                  // bmRequestType: vendor OUT device
+                b_request,
+                0,
+                w_index,
+                data.as_ptr() as *mut u8,
+                data.len() as u16,
+                1000,
+            )
+        };
+        if n < 0 {
+            return Err(if n == ffi::constants::LIBUSB_ERROR_PIPE {
+                WaveformError::ControlTransferStalled(b_request)
+            } else {
+                WaveformError::ControlTransferFailed(n)
+            });
+        }
+        if (n as usize) != data.len() {
+            return Err(WaveformError::PayloadSize {
+                expected: data.len(),
+                got: n as usize,
+            });
+        }
+        Ok(())
+    }
+
+    pub fn caps(&self) -> Result<CapabilitiesView, WaveformError> {
+        let raw = self.ctrl_in(VREQ_GEN_GET_CAPS, 0, 32)?;
+        if raw.len() < 32 { return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() }); }
+        // SAFETY: Capabilities is repr(C, packed) and exactly 32 bytes; layout matches the wire.
+        let c: Capabilities = unsafe { std::ptr::read_unaligned(raw.as_ptr() as *const _) };
+        Ok(CapabilitiesView {
+            protocol_version: c.protocol_version,
+            firmware_major:   c.firmware_major,
+            firmware_minor:   c.firmware_minor,
+            num_dac: c.num_dac, num_pwm: c.num_pwm, num_dout: c.num_dout,
+            num_din: c.num_din, num_adc: c.num_adc,
+            modes_dac: c.modes_dac, modes_pwm: c.modes_pwm, modes_dout: c.modes_dout,
+            modes_din: c.modes_din, modes_adc: c.modes_adc,
+            max_dac_sample_rate_hz: c.max_dac_sample_rate_hz,
+            max_arb_buffer_samples: c.max_arb_buffer_samples,
+        })
+    }
+
+    pub fn state(&self, channel: &str) -> Result<ChannelStateView, WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let raw = self.ctrl_in(VREQ_GEN_GET_STATE, id, 32)?;
+        if raw.len() < 32 { return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() }); }
+        let s: ChannelState = unsafe { std::ptr::read_unaligned(raw.as_ptr() as *const _) };
+        Ok(ChannelStateView {
+            channel_kind: s.channel_kind,
+            channel_index: s.channel_index,
+            shape: s.shape,
+            shape_name: shape_name(s.shape),
+            freq_mhz: s.freq_mhz,
+            duty_x10: s.duty_x10,
+            amplitude: s.amplitude,
+            offset: s.offset,
+            phase_offset_x16: s.phase_offset_x16,
+            arb_n_samples: s.arb_n_samples,
+            arb_loops_remaining: s.arb_loops_remaining,
+            arb_sample_rate_hz: s.arb_sample_rate_hz,
+            cur_phase_q24_8: s.cur_phase_q24_8,
+        })
+    }
+
+    pub fn stop(&self, channel: &str) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        self.ctrl_out(VREQ_GEN_STOP, id, &[])
+    }
+
+    pub fn dac_get_clock(&self) -> Result<u32, WaveformError> {
+        let raw = self.ctrl_in(VREQ_DAC_GET_CLOCK, 0, 4)?;
+        Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
+    }
+    pub fn dac_set_clock(&self, hz: u32) -> Result<(), WaveformError> {
+        self.ctrl_out(VREQ_DAC_SET_CLOCK, 0, &hz.to_le_bytes())
+    }
+    pub fn adc_get_rate(&self) -> Result<u32, WaveformError> {
+        let raw = self.ctrl_in(VREQ_ADC_GET_RATE, 0, 4)?;
+        Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
+    }
+    pub fn adc_set_rate(&self, hz: u32) -> Result<(), WaveformError> {
+        self.ctrl_out(VREQ_ADC_SET_RATE, 0, &hz.to_le_bytes())
+    }
+
+    pub fn play_builtin(&self, channel: &str, spec: &WaveBuiltinSpec) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WaveBuiltinSpec>()) };
+        self.ctrl_out(VREQ_GEN_PLAY_BUILTIN, id, bytes)
+    }
+
+    pub fn play_arbitrary(&self, channel: &str, header: &WaveArbHeader, samples: &[i16]) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let mut payload = Vec::with_capacity(8 + samples.len() * 2);
+        payload.extend_from_slice(unsafe { std::slice::from_raw_parts(header as *const _ as *const u8, 8) });
+        for s in samples { payload.extend_from_slice(&s.to_le_bytes()); }
+        self.ctrl_out(VREQ_GEN_PLAY_ARBITRARY, id, &payload)
+    }
+
+    pub fn play_lut(&self, channel: &str, header: &WaveLutSpec, entries: &[i16]) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let mut payload = Vec::with_capacity(12 + entries.len() * 2);
+        payload.extend_from_slice(unsafe { std::slice::from_raw_parts(header as *const _ as *const u8, 12) });
+        for e in entries { payload.extend_from_slice(&e.to_le_bytes()); }
+        self.ctrl_out(VREQ_GEN_PLAY_LUT, id, &payload)
+    }
+
+    pub fn play_threshold(&self, channel: &str, spec: &WaveThresholdSpec) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WaveThresholdSpec>()) };
+        self.ctrl_out(VREQ_GEN_PLAY_THRESHOLD, id, bytes)
+    }
+
+    pub fn play_pulse_trig(&self, channel: &str, spec: &WavePulseSpec) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WavePulseSpec>()) };
+        self.ctrl_out(VREQ_GEN_PLAY_PULSE_TRIG, id, bytes)
+    }
+
+    pub fn play_pid(&self, channel: &str, spec: &WavePidSpec) -> Result<(), WaveformError> {
+        let id = channel_id_from_name(channel)
+            .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
+        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WavePidSpec>()) };
+        self.ctrl_out(VREQ_GEN_PLAY_PID, id, bytes)
+    }
+}
+

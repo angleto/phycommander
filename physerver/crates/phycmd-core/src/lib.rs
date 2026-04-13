@@ -28,6 +28,11 @@ pub mod waveforms;
 
 // Common re-exports to keep downstream users' imports short.
 pub use protocol::{Command, Status, CommandFlags, StatusFlags, MESSAGE_SIZE};
+pub use protocol::{WaveShape, ChannelKind, InputSrc, PulseEdge,
+                   Capabilities, ChannelState,
+                   WaveBuiltinSpec, WaveArbHeader, WaveLutSpec,
+                   WaveThresholdSpec, WavePulseSpec, WavePidSpec,
+                   channel_id, channel_id_from_name};
 pub use transport::{Transport, TransportStats, TransportType, SerialTransport, PipelinedTransport};
 pub use staging::{CommandStaging, WriteMode, StagingError};
 pub use status_bus::{StatusBus, StatusFrame};

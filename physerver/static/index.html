@@ -750,6 +750,9 @@
 <script>
 // ========== State ==========
 let ws=null, msgCount=0, lastRateTs=performance.now(), lastRateCount=0, scopePaused=false;
+// When scope is paused, freeze the "now" anchor used by drawScope so
+// the visible window stays at whatever the user saw when they clicked.
+let scopePausedAt = null;
 let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enable:true,pwm_enable:false,reset_seq:false,watchdog_disable:false}, seq_num:0 };
 
 // Scope data ring buffer
@@ -815,7 +818,12 @@ for(let i=16;i<32;i++){
     cb.onchange=()=>{if(cb.checked&&!scopeDigitalCh.includes(idx))scopeDigitalCh.push(idx);else scopeDigitalCh=scopeDigitalCh.filter(x=>x!==idx)};
     l.appendChild(cb);l.appendChild(document.createTextNode(String(i-16)));scopeDOutEl.appendChild(l);
 }
-document.getElementById('scopePause').onclick=function(){scopePaused=!scopePaused;this.classList.toggle('active',scopePaused);this.textContent=scopePaused?'Resume':'Pause';};
+document.getElementById('scopePause').onclick=function(){
+    scopePaused = !scopePaused;
+    scopePausedAt = scopePaused ? performance.now() : null;
+    this.classList.toggle('active', scopePaused);
+    this.textContent = scopePaused ? 'Resume' : 'Pause';
+};
 
 // All/None per gruppo. Mappa gruppo → range di indici nella lista canali.
 // Analog channel index space: 0-7=ADC, 8-9=DAC, 10-11=PWM
@@ -1004,7 +1012,10 @@ let lastMeasUpdate=0;
 function drawScope(){
     requestAnimationFrame(drawScope);
     const windowMs=+document.getElementById('scopeWindow').value;
-    const now=performance.now();
+    // When paused, keep the window anchored at the exact moment the
+    // user clicked so the visible trace stays put instead of scrolling
+    // off the left edge. Any further samples are discarded by pushScope.
+    const now = scopePaused ? scopePausedAt : performance.now();
     const tMin=now-windowMs;
 
     // Find start index

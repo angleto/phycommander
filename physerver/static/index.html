@@ -78,6 +78,7 @@
             <div class="status-dot" id="statusDot"></div>
             <span class="status-text" id="statusText">Disconnected</span>
             <div class="status-badges" id="tempBadges"></div>
+            <div class="status-badges" id="rtBadges"></div>
         </div>
         <div class="status-stats">
             <div class="stat-mini"><div class="v" id="rateValue">-</div><div class="l">Hz</div></div>
@@ -135,6 +136,12 @@
 
         <!-- ADC -->
         <div class="panel"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
+
+        <!-- RT scheduler stats (collapsible, closed by default) -->
+        <details class="panel wide" id="rtStatsPanel">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">RT Scheduler Stats</summary>
+            <div id="rtStatsDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
+        </details>
 
         <!-- Sysinfo (bottom, collapsible, closed by default) -->
         <details class="panel wide">
@@ -359,6 +366,91 @@ function renderSysinfo(d){
 }
 async function pollSysinfo(){try{const r=await fetch('/api/sysinfo');if(r.ok)renderSysinfo(await r.json());}catch(e){}}
 
+// ========== RT Stats (server-side jitter, missed ticks, latency) ==========
+let lastRtSnap = null; // for delta calculation between polls
+
+function renderRtStats(d) {
+    // Status bar badges (always-visible RT health)
+    const badges = document.getElementById('rtBadges');
+    if (badges && d.tick_count > 0) {
+        const successPct = (d.tick_ok / d.tick_count * 100).toFixed(3);
+        const jitMean = d.mean_abs_jitter_us.toFixed(1);
+        const cls = d.missed_ticks === 0 ? '' : (d.missed_ticks * 100 / d.tick_count) > 1 ? 'crit' : 'warn';
+        badges.innerHTML = `<span class="badge temp ${cls}">RT ${jitMean}us / ${successPct}%</span>` +
+                           `<span class="badge info">missed ${d.missed_ticks}</span>`;
+    }
+
+    // Detailed panel
+    const el = document.getElementById('rtStatsDisplay');
+    if (!el) return;
+    if (!d || d.tick_count === 0) {
+        el.innerHTML = '<div class="sysinfo-unavailable">Scheduler not running yet</div>';
+        return;
+    }
+
+    const total = d.jitter_histogram.reduce((a, b) => a + b, 0);
+    const labels = ['<0us','0-10','10-25','25-50','50-100','100-200','200-500','500-1000','>=1000'];
+    const histColors = ['#9966ff','#4bc0c0','#4bc0c0','#7bc67e','#ffce56','#ff9f40','#ff6384','#c62828','#c62828'];
+
+    let histHtml = '';
+    for (let i = 0; i < 9; i++) {
+        const n = d.jitter_histogram[i];
+        const pct = total ? (n/total*100) : 0;
+        const w = Math.max(pct, 0.5);
+        histHtml += `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-family:monospace;margin:2px 0">
+            <span style="width:80px;color:#666">${labels[i]}us</span>
+            <span style="width:80px;text-align:right">${n.toLocaleString()}</span>
+            <span style="width:60px;text-align:right;color:#999">${pct.toFixed(3)}%</span>
+            <div style="flex:1;background:#eee;height:14px;border-radius:2px;overflow:hidden">
+                <div style="width:${w.toFixed(2)}%;background:${histColors[i]};height:100%"></div>
+            </div>
+        </div>`;
+    }
+
+    // Compute delta since last poll for "live" effective rate
+    let liveHz = '';
+    const now = performance.now();
+    if (lastRtSnap && (now - lastRtSnap.t) > 500) {
+        const dT = (now - lastRtSnap.t) / 1000;
+        const dN = d.tick_ok - lastRtSnap.tick_ok;
+        liveHz = ` <small style="color:#888">(${(dN/dT).toFixed(1)} Hz live)</small>`;
+    }
+    lastRtSnap = { t: now, tick_ok: d.tick_ok };
+
+    el.innerHTML = `
+        <div class="sysinfo-grid">
+            <div class="sysinfo-section">
+                <h3>Counters</h3>
+                <div class="sysinfo-row"><span class="label">tick_count</span><span class="value">${d.tick_count.toLocaleString()}</span></div>
+                <div class="sysinfo-row"><span class="label">tick_ok</span><span class="value">${d.tick_ok.toLocaleString()}${liveHz}</span></div>
+                <div class="sysinfo-row"><span class="label">missed_ticks</span><span class="value" style="color:${d.missed_ticks>0?'#e65100':'#4CAF50'}">${d.missed_ticks.toLocaleString()}</span></div>
+                <div class="sysinfo-row"><span class="label">transport_errors</span><span class="value" style="color:${d.transport_errors>0?'#c62828':'#4CAF50'}">${d.transport_errors.toLocaleString()}</span></div>
+                <div class="sysinfo-row"><span class="label">success_ratio</span><span class="value">${(d.success_ratio*100).toFixed(4)}%</span></div>
+            </div>
+            <div class="sysinfo-section">
+                <h3>Latency (USB round-trip)</h3>
+                <div class="sysinfo-row"><span class="label">mean</span><span class="value">${d.mean_latency_us.toFixed(1)} us</span></div>
+                <div class="sysinfo-row"><span class="label">max</span><span class="value">${d.latency_max_us.toLocaleString()} us</span></div>
+            </div>
+            <div class="sysinfo-section">
+                <h3>Jitter (server tick deadline)</h3>
+                <div class="sysinfo-row"><span class="label">mean abs</span><span class="value">${d.mean_abs_jitter_us.toFixed(1)} us</span></div>
+                <div class="sysinfo-row"><span class="label">min</span><span class="value">${d.jitter_min_us} us</span></div>
+                <div class="sysinfo-row"><span class="label">max</span><span class="value">${d.jitter_max_us.toLocaleString()} us</span></div>
+            </div>
+        </div>
+        <h3 style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#888;margin:14px 0 6px 0;font-weight:600">Jitter histogram</h3>
+        ${histHtml}
+    `;
+}
+
+async function pollRtStats() {
+    try {
+        const r = await fetch('/api/rt_stats');
+        if (r.ok) renderRtStats(await r.json());
+    } catch(e) {}
+}
+
 // ========== Error reset ==========
 document.getElementById('errorsBox').onclick = async () => {
     try {
@@ -370,7 +462,9 @@ document.getElementById('errorsBox').onclick = async () => {
 };
 
 // ========== Boot ==========
-connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000); requestAnimationFrame(drawScope);
+connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
+pollRtStats(); setInterval(pollRtStats, 2000);
+requestAnimationFrame(drawScope);
 </script>
 </body>
 </html>

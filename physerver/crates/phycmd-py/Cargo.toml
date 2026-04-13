@@ -22,3 +22,8 @@ pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
 parking_lot = "0.12"
 anyhow = "1.0"
 tokio = { version = "1.35", features = ["sync", "rt"], default-features = false }
+# libusb-1.0 raw bindings used by the WaveformDev class to talk to the
+# on-chip function generator via EP0 control transfers. Same version
+# pinned in phycmd-core to keep the workspace on a single libusb.
+libusb1-sys = "0.7"
+libc = "0.2"

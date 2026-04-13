@@ -419,10 +419,13 @@ fn frame_to_pydict<'py>(
 /// name declared in Cargo.toml (`phycmd_ext`) so pyo3 generates
 /// `PyInit_phycmd_ext`. The user-facing `phycmd` Python package
 /// imports from `.phycmd_ext` — see `python/phycmd/__init__.py`.
+mod waveform;
+
 #[pymodule]
 fn phycmd_ext(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPhyCommander>()?;
     m.add_class::<PyWriteMode>()?;
+    waveform::register(m)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())
 }

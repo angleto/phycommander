@@ -43,6 +43,7 @@ use crate::protocol::{decode_status, encode_command, Command, MESSAGE_SIZE};
 use crate::staging::CommandStaging;
 use crate::stats::RtStats;
 use crate::status_bus::{StatusBus, StatusFrame};
+use crate::waveforms::WaveformBank;
 
 use anyhow::{Context, Result};
 use libusb1_sys as ffi;
@@ -176,6 +177,11 @@ struct IsoInner {
     /// Iso-specific counters, exposed via `IsoTransport::iso_stats()`.
     iso_stats: Arc<IsoStats>,
 
+    /// Optional waveform generator. When any of its channels is
+    /// `enabled`, the iso OUT callback computes per-microframe
+    /// commands instead of broadcasting a single staging snapshot.
+    waveforms: Arc<WaveformBank>,
+
     /// Monotonic packet counter (used as `cmd_seq` in published
     /// `StatusFrame`s — it is not the wire seq_num, which is only
     /// 8-bit and only incremented on apply).
@@ -209,6 +215,7 @@ struct CallbackCtx {
 pub struct IsoTransport {
     inner: Arc<IsoInner>,
     iso_stats: Arc<IsoStats>,
+    waveforms: Arc<WaveformBank>,
     io_thread: Option<JoinHandle<()>>,
 }
 
@@ -225,6 +232,7 @@ impl IsoTransport {
         stats: Arc<RtStats>,
     ) -> Result<Self> {
         let iso_stats = Arc::new(IsoStats::default());
+        let waveforms = Arc::new(WaveformBank::new());
 
         let inner = Arc::new(IsoInner {
             stop: AtomicBool::new(false),
@@ -233,6 +241,7 @@ impl IsoTransport {
             bus,
             stats,
             iso_stats: Arc::clone(&iso_stats),
+            waveforms: Arc::clone(&waveforms),
             seq_counter: AtomicU64::new(0),
             start: Instant::now(),
         });
@@ -283,8 +292,16 @@ impl IsoTransport {
         Ok(Self {
             inner,
             iso_stats,
+            waveforms,
             io_thread: Some(io_thread),
         })
+    }
+
+    /// Shared handle to the waveform generator. The web layer mutates
+    /// the per-channel specs through this; the iso OUT callback reads
+    /// them on every microframe (cheap parking_lot RwLock read).
+    pub fn waveforms(&self) -> Arc<WaveformBank> {
+        Arc::clone(&self.waveforms)
     }
 
     /// Snapshot of iso-specific counters.
@@ -543,19 +560,55 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
             inner.stats.record_transport_error();
         }
 
-        // Refresh OUT buffer from staging once per transfer (every
-        // PKTS_PER_TRANSFER microframes = 1 ms). Filling per-packet
-        // would not help — the firmware applies whatever it last got.
-        let (cmd, gen) = inner.staging.take_snapshot();
-        let encoded = encode_command(&cmd);
+        // Refresh OUT buffer for the next transfer. Two paths:
+        //
+        //   * No waveform active → encode the staging snapshot once
+        //     and broadcast it to all 8 packets (cheapest case, what
+        //     the bulk-mode RtScheduler effectively does).
+        //
+        //   * Any waveform active → take the staging snapshot for the
+        //     non-waveform fields, then re-encode 8 commands with the
+        //     waveform-driven channels overridden per-microframe.
+        //     This is where 5–8 kHz arbitrary-shape outputs come from.
+        let (base_cmd, gen) = inner.staging.take_snapshot();
         let buf_len = (xfer.length as usize).min(PKTS_PER_TRANSFER * ISO_PKT_SIZE);
         let buf = std::slice::from_raw_parts_mut(xfer.buffer, buf_len);
-        for p in 0..PKTS_PER_TRANSFER {
-            let off = p * ISO_PKT_SIZE;
-            if off + MESSAGE_SIZE <= buf.len() {
+
+        // Read each waveform once per callback (cheap RwLock read,
+        // values copied out so per-packet evaluation needs no lock).
+        let dac0_w = *inner.waveforms.dac0.read();
+        let dac1_w = *inner.waveforms.dac1.read();
+        let pwm0_w = *inner.waveforms.pwm0.read();
+        let pwm1_w = *inner.waveforms.pwm1.read();
+        let any_active =
+            dac0_w.enabled || dac1_w.enabled || pwm0_w.enabled || pwm1_w.enabled;
+
+        if !any_active {
+            let encoded = encode_command(&base_cmd);
+            for p in 0..PKTS_PER_TRANSFER {
+                let off = p * ISO_PKT_SIZE;
+                if off + MESSAGE_SIZE <= buf.len() {
+                    buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
+                    // padding [off+64..off+256] left zeroed at boot.
+                }
+            }
+        } else {
+            // Reserve PKTS_PER_TRANSFER consecutive packet indices for
+            // this transfer; that is the time base for the per-packet
+            // waveform sample and stays consistent across reconnects.
+            let t0 = inner.waveforms.next_packet_idx(PKTS_PER_TRANSFER as u64);
+            const SR_HZ: f32 = (PKTS_PER_TRANSFER * 1000) as f32; // 8000 Hz on HS
+            for p in 0..PKTS_PER_TRANSFER {
+                let off = p * ISO_PKT_SIZE;
+                if off + MESSAGE_SIZE > buf.len() { break; }
+                let mut cmd = base_cmd.clone();
+                let t = t0 + p as u64;
+                if dac0_w.enabled { cmd.dac[0] = dac0_w.sample(t, SR_HZ); }
+                if dac1_w.enabled { cmd.dac[1] = dac1_w.sample(t, SR_HZ); }
+                if pwm0_w.enabled { cmd.pwm[0] = pwm0_w.sample(t, SR_HZ); }
+                if pwm1_w.enabled { cmd.pwm[1] = pwm1_w.sample(t, SR_HZ); }
+                let encoded = encode_command(&cmd);
                 buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
-                // padding bytes were zero at boot and we never write
-                // anything in [off+64..off+256] so they stay zero.
             }
         }
         inner.iso_stats.commands_taken.fetch_add(1, Ordering::Relaxed);

@@ -36,6 +36,10 @@ pub struct AppState {
     /// only when running in iso mode; absent in bulk mode. Folded
     /// into the /api/rt_stats response when present.
     pub iso_stats: std::sync::OnceLock<Arc<phycmd_core::transport::IsoStats>>,
+    /// Handle to the waveform generator inside IsoTransport. Only
+    /// set in iso mode; the /api/waveform endpoints return 503 in
+    /// bulk mode where there is no per-microframe rendering path.
+    pub waveforms: std::sync::OnceLock<Arc<phycmd_core::WaveformBank>>,
 }
 
 impl AppState {
@@ -50,6 +54,7 @@ impl AppState {
             error_baseline_initialized: std::sync::atomic::AtomicBool::new(false),
             rt_stats: std::sync::OnceLock::new(),
             iso_stats: std::sync::OnceLock::new(),
+            waveforms: std::sync::OnceLock::new(),
         }
     }
 
@@ -62,6 +67,12 @@ impl AppState {
     /// iso mode). Folded into /api/rt_stats when present.
     pub fn set_iso_stats(&self, stats: Arc<phycmd_core::transport::IsoStats>) {
         let _ = self.iso_stats.set(stats);
+    }
+
+    /// Register the iso transport's WaveformBank, exposing the
+    /// /api/waveform endpoints to the dashboard / scripts.
+    pub fn set_waveforms(&self, w: Arc<phycmd_core::WaveformBank>) {
+        let _ = self.waveforms.set(w);
     }
 
     /// Apply the error_count baseline to a raw Status: subtract the
@@ -102,6 +113,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/sysinfo", get(get_sysinfo))
         .route("/api/rt_stats", get(get_rt_stats))
         .route("/api/reset_errors", post(reset_errors))
+        .route("/api/waveform", get(get_waveforms))
+        .route("/api/waveform/:channel", post(set_waveform))
+        .route("/api/waveform/:channel", axum::routing::delete(disable_waveform))
         .route("/ws", get(websocket_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -132,6 +146,56 @@ async fn reset_errors(State(state): State<Arc<AppState>>) -> Response {
     info!("error_count baseline reset to raw={}", current_raw);
     (StatusCode::OK, format!("Errors reset (raw counter was {})", current_raw))
         .into_response()
+}
+
+/// GET /api/waveform — return all 4 channel specs (or 503 in bulk mode).
+async fn get_waveforms(State(state): State<Arc<AppState>>) -> Response {
+    let Some(w) = state.waveforms.get() else {
+        return (StatusCode::SERVICE_UNAVAILABLE,
+                "waveform generator only available in iso mode").into_response();
+    };
+    Json(w.snapshot()).into_response()
+}
+
+/// POST /api/waveform/{channel} — enable / update the spec for a channel.
+/// Body is a JSON [`phycmd_core::WaveformSpec`] (`max_value` ignored, set
+/// by the server based on channel kind).
+async fn set_waveform(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(channel): axum::extract::Path<String>,
+    Json(spec): Json<phycmd_core::WaveformSpec>,
+) -> Response {
+    let Some(w) = state.waveforms.get() else {
+        return (StatusCode::SERVICE_UNAVAILABLE,
+                "waveform generator only available in iso mode").into_response();
+    };
+    match w.set(&channel, spec) {
+        Ok(()) => {
+            info!("waveform {channel} set: shape={:?} freq={} amp={} off={} enabled={}",
+                  spec.shape, spec.freq_hz, spec.amplitude, spec.offset, spec.enabled);
+            (StatusCode::OK, "ok").into_response()
+        }
+        Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
+    }
+}
+
+/// DELETE /api/waveform/{channel} — disable the channel's waveform,
+/// returning control of that DAC/PWM to staging snapshots.
+async fn disable_waveform(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(channel): axum::extract::Path<String>,
+) -> Response {
+    let Some(w) = state.waveforms.get() else {
+        return (StatusCode::SERVICE_UNAVAILABLE,
+                "waveform generator only available in iso mode").into_response();
+    };
+    let lock = match w.channel(&channel) {
+        Some(l) => l,
+        None => return (StatusCode::BAD_REQUEST, "unknown channel").into_response(),
+    };
+    lock.write().enabled = false;
+    info!("waveform {channel} disabled");
+    (StatusCode::OK, "ok").into_response()
 }
 
 /// Get current command (REST API)

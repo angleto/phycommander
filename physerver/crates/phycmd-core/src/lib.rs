@@ -24,6 +24,7 @@ pub mod status_bus;
 pub mod stats;
 pub mod config;
 pub mod scheduler;
+pub mod waveforms;
 
 // Common re-exports to keep downstream users' imports short.
 pub use protocol::{Command, Status, CommandFlags, StatusFlags, MESSAGE_SIZE};
@@ -33,6 +34,7 @@ pub use status_bus::{StatusBus, StatusFrame};
 pub use stats::{RtStats, RtStatsSnapshot, JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
 pub use config::{RtConfig, RtConfigError};
 pub use scheduler::{RtScheduler, RtSchedulerStopHandle};
+pub use waveforms::{WaveformBank, WaveformBankSnapshot, WaveformShape, WaveformSpec};
 
 #[cfg(feature = "usb")]
 pub use transport::UsbTransport;

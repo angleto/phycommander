@@ -326,6 +326,7 @@ async fn main() -> Result<()> {
             Arc::clone(&stats),
         ).context("Failed to start IsoTransport")?;
         web_state.set_iso_stats(iso.iso_stats_arc());
+        web_state.set_waveforms(iso.waveforms());
 
         // Block until shutdown. IsoTransport's Drop signals stop +
         // joins its I/O thread cleanly.

@@ -119,6 +119,28 @@
         .wave-ch .wave-stop:hover { background:#fff4f4; }
         .wave-ch .wave-pending { font-size:10px; color:#e65100; font-style:italic; }
 
+        /* On-chip function generator panel */
+        .fngen-ch { background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:8px; margin-bottom:6px; font-size:11px; }
+        .fngen-ch .fngen-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
+        .fngen-ch .fngen-name { font-family:monospace; font-weight:bold; color:#333; min-width:48px; }
+        .fngen-ch .fngen-state { font-size:10px; font-family:monospace; color:#666; padding:1px 6px; border-radius:8px; background:#f0f0f0; }
+        .fngen-ch .fngen-state.active { background:#e8f5e9; color:#2e7d32; }
+        .fngen-ch select, .fngen-ch input[type="number"], .fngen-ch input[type="text"] {
+            font-size:11px; padding:1px 4px; border:1px solid #ccc; border-radius:3px;
+        }
+        .fngen-ch input[type="number"] { width:72px; text-align:right; font-family:monospace; }
+        .fngen-row { display:flex; gap:6px; align-items:center; margin:3px 0; flex-wrap:wrap; }
+        .fngen-row label { color:#666; font-size:10px; min-width:42px; }
+        .fngen-btn { background:#667eea; color:white; border:none; padding:2px 10px; border-radius:3px; cursor:pointer; font-size:11px; }
+        .fngen-btn:hover { background:#5566c8; }
+        .fngen-btn.stop { background:#fff; border:1px solid #c62828; color:#c62828; }
+        .fngen-btn.stop:hover { background:#fff4f4; }
+        .fngen-mode-pane { padding:4px 0; border-top:1px dashed #ddd; margin-top:4px; }
+        .fngen-mode-pane.hidden { display:none; }
+        .fngen-global { margin-top:10px; padding:6px 8px; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; }
+        .fngen-global h3 { font-size:10px; text-transform:uppercase; color:#888; margin-bottom:6px; letter-spacing:.4px; }
+        .fngen-sep { display:inline-block; width:14px; }
+
         /* Sysinfo */
         .sysinfo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
         .sysinfo-section h3 { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#888; margin-bottom:3px; font-weight:600; }
@@ -147,6 +169,8 @@
         .pinout-conn.vser { border-left-color:#f39c12; }
         .pinout-conn.vdbg { border-left-color:#5b8def; }
         .pinout-conn.vcan { border-left-color:#d64545; }
+        .pinout-conn.vpwr { border-left-color:#d4a04a; }
+        .pinout-conn.vbtn { border-left-color:#8e44ad; }
         .pinout-tag { display:inline-block; padding:1px 7px; border-radius:9px; font-size:9px; font-weight:700; font-family:monospace; color:#fff; letter-spacing:.3px; }
         .pinout-tag.v3v3 { background:#3498db; }
         .pinout-tag.v5v  { background:#27ae60; }
@@ -155,6 +179,8 @@
         .pinout-tag.vser { background:#f39c12; }
         .pinout-tag.vdbg { background:#5b8def; }
         .pinout-tag.vcan { background:#d64545; }
+        .pinout-tag.vpwr { background:#d4a04a; }
+        .pinout-tag.vbtn { background:#8e44ad; }
         .pinout-table { width:100%; border-collapse:collapse; font-family:'SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; }
         .pinout-table th { text-align:left; padding:2px 8px; color:#888; font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid #ddd; background:#f5f5f5; }
         .pinout-table td { padding:2px 8px; border-bottom:1px dotted #eee; vertical-align:top; }
@@ -280,11 +306,33 @@
         <!-- ADC -->
         <div class="panel" id="panelAdc" data-title="ADC Inputs"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
 
-        <!-- Waveform generator (iso mode only) -->
-        <div class="panel" id="panelWaveform" data-title="Waveform Generator">
-            <h2>Waveform Generator <small style="font-weight:normal;color:#999;font-size:10px;">(iso mode)</small></h2>
+        <!-- Waveform generator (host-rendered, iso mode only, ≤8 kHz) -->
+        <div class="panel" id="panelWaveform" data-title="Waveform Generator (host)">
+            <h2>Waveform Generator <small style="font-weight:normal;color:#999;font-size:10px;">(host-rendered, ≤8 kHz)</small></h2>
             <div id="waveformUnavailable" class="sysinfo-unavailable" style="display:none;">Available only when physerver runs in iso mode (config: <code>type = "iso"</code>).</div>
             <div id="waveformChannels"></div>
+        </div>
+
+        <!-- On-chip function generator (firmware-driven, 1 MSPS DAC + reactive) -->
+        <div class="panel" id="panelFngen" data-title="On-chip Function Generator">
+            <h2>On-chip Function Generator <small style="font-weight:normal;color:#999;font-size:10px;">(firmware, up to 1 MSPS + reactive)</small></h2>
+            <div id="fngenUnavailable" class="sysinfo-unavailable" style="display:none;">Available only with the v2+v3 firmware in iso mode.</div>
+            <div id="fngenPanel" style="display:none;">
+                <div id="fngenCaps" style="font-size:10px;color:#666;margin:6px 0 8px 0;font-family:monospace;"></div>
+                <div id="fngenChannels"></div>
+                <div class="fngen-global">
+                    <h3>Global timing</h3>
+                    <div class="fngen-row">
+                        <label>DAC clock Hz</label>
+                        <input type="number" id="fngenDacClock" min="1" max="1000000" step="1000" value="1000000">
+                        <button id="fngenDacClockApply" class="fngen-btn">apply</button>
+                        <span class="fngen-sep"></span>
+                        <label>ADC rate Hz</label>
+                        <input type="number" id="fngenAdcRate" min="1" max="1000000" step="1000" value="100000">
+                        <button id="fngenAdcRateApply" class="fngen-btn">apply</button>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- RT scheduler stats (collapsible, closed by default) -->
@@ -314,14 +362,60 @@
                     <span class="pinout-tag vser">RS-232</span>
                     <span class="pinout-tag vdbg">SWD/JTAG</span>
                     <span class="pinout-tag vcan">CAN</span>
+                    <span class="pinout-tag vpwr">+12V</span>
+                    <span class="pinout-tag vbtn">Buttons</span>
                 </div>
 
                 <!-- =========== FRONT PANEL =========== -->
                 <details class="pinout-group" open>
-                    <summary>Front panel — 9 connectors, 147 pins</summary>
+                    <summary>Front panel — 9 D-Sub (3×3 grid) + 3 buttons + 5 banana jacks</summary>
+
+                    <div class="pinout-ascii">  ┌─ FRONT (user view) ───────────────────────────────┐
+  │                                                    │
+  │  ┌─┐  [DB25-1]  [DB15-1]  [DB9-1]   ┌─┐  ┌─┐      │
+  │  │J│  [DB25-2]  [DB15-2]  [DB9-2]   │B│  │J│      │
+  │  │L│  [DB25-3]  [DB15-3]  [DB9-3]   │U│  │K│      │
+  │  └─┘                                │T│  └─┘      │
+  │                                     │N│           │
+  │                                     └─┘           │
+  └────────────────────────────────────────────────────┘
+
+  JL  = 2 banana jacks, left column (+12V/GND)
+  JK  = 3 banana jacks, right column (+12V/GND/GND)
+  BTN = 3 illuminated pushbuttons, top-to-bottom:
+        [Arduino Reset + FW-alive LED]
+        [PC Reset + boot-status LED]
+        [Power ON/OFF + power-good LED]
+  3×3 D-Sub grid: DB25 col1, DB15 col2, DB9 col3</div>
+
+                    <details class="pinout-conn vbtn">
+                        <summary><span class="pinout-tag vbtn">BTN</span><strong>Front buttons + LEDs</strong> — 3 illuminated pushbuttons (right side)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pos</th><th>Function</th><th>Wiring</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">Top</td><td class="sig">Arduino Due Reset</td><td class="note">Button → SAM3X NRSTB (active-low, 10 kΩ pull-up + 100 nF debounce). LED driven by firmware heartbeat GPIO (propose: DOUT15 or dedicated PIO)</td></tr>
+                                <tr><td class="pin">Mid</td><td class="sig">PC Reset</td><td class="note">Button → motherboard reset header (front-panel FPRST). LED tied to PWR_OK / +3.3V_SB from PSU (lit = host booted)</td></tr>
+                                <tr><td class="pin">Bot</td><td class="sig">Main Power ON/OFF</td><td class="note">Button → motherboard PWRBTN header (ATX soft-power). LED tied to +12V rail (lit = PSU on)</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vpwr">
+                        <summary><span class="pinout-tag vpwr">+12V</span><strong>Front banana jacks</strong> — 5 jacks, 12V power output from host PSU</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pos</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">L-top</td><td class="sig">+12V</td><td class="note">from host PSU +12V rail (verify with multimeter)</td></tr>
+                                <tr><td class="pin">L-bot</td><td class="sig">GND</td><td class="note">return for L-top</td></tr>
+                                <tr><td class="pin">R-top</td><td class="sig">+12V</td><td class="note">second +12V tap (same rail, parallel)</td></tr>
+                                <tr><td class="pin">R-mid</td><td class="sig">GND</td><td class="note">return</td></tr>
+                                <tr><td class="pin">R-bot</td><td class="sig">GND</td><td class="note">extra reference for scope/DMM probing</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
 
                     <details class="pinout-conn v3v3">
-                        <summary><span class="pinout-tag v3v3">3.3V</span><strong>DB25 #1</strong> — SENSING (16 DIN + 8 ADC + AGND)</summary>
+                        <summary><span class="pinout-tag v3v3">3.3V</span><strong>DB25 #1</strong> — SENSING (16 DIN + 8 ADC + AGND) · grid pos col1-row1</summary>
                         <table class="pinout-table">
                             <thead><tr><th>Pin</th><th>Signal</th><th>Source</th></tr></thead>
                             <tbody>
@@ -1176,6 +1270,279 @@ async function pollWaveformAvailability() {
     }
 }
 
+// ========== On-chip Function Generator ==========
+// Drives /api/fngen/* endpoints. Each row has a mode selector and
+// dynamically shows the parameters for the selected mode.
+const FNGEN_DAC_MODES = ['off','dc','sine','square','triangle','sawtooth','arbitrary','lut','threshold','pid'];
+const FNGEN_DOUT_MODES = ['off','lut','threshold','pulse_trig'];
+const FNGEN_DAC_CHANNELS  = ['dac0','dac1'];
+const FNGEN_DOUT_CHANNELS = Array.from({length:16}, (_, i) => 'dout'+i);
+let fngenAvailable = false;
+
+function fngenBuildPanel() {
+    const host = document.getElementById('fngenChannels');
+    host.innerHTML = '';
+    for (const ch of FNGEN_DAC_CHANNELS)  host.appendChild(fngenBuildRow(ch, FNGEN_DAC_MODES,  4095));
+    // Compact DOUT picker: a single row that lets the user choose which DOUT bit + mode.
+    const doutPicker = document.createElement('div');
+    doutPicker.className = 'fngen-ch';
+    doutPicker.innerHTML = `
+        <div class="fngen-head">
+            <span class="fngen-name">DOUT</span>
+            <select id="fngenDoutPick">${FNGEN_DOUT_CHANNELS.map(c=>'<option>'+c+'</option>').join('')}</select>
+            <select id="fngenDoutMode">${FNGEN_DOUT_MODES.map(m=>'<option>'+m+'</option>').join('')}</select>
+            <button class="fngen-btn" id="fngenDoutApply">apply</button>
+            <button class="fngen-btn stop" id="fngenDoutStop">stop</button>
+            <span class="fngen-state" id="fngenDoutState">—</span>
+        </div>
+        <div id="fngenDoutPane" class="fngen-mode-pane"></div>`;
+    host.appendChild(doutPicker);
+    fngenWireDoutPicker();
+}
+
+function fngenBuildRow(channel, modes, maxVal) {
+    const row = document.createElement('div');
+    row.className = 'fngen-ch';
+    row.id = 'fngenrow-' + channel;
+    const modeOpts = modes.map(m => `<option value="${m}">${m}</option>`).join('');
+    row.innerHTML = `
+        <div class="fngen-head">
+            <span class="fngen-name">${channel}</span>
+            <select data-k="mode">${modeOpts}</select>
+            <button class="fngen-btn" data-act="apply">apply</button>
+            <button class="fngen-btn stop" data-act="stop">stop</button>
+            <span class="fngen-state" data-k="state">—</span>
+        </div>
+        <div class="fngen-mode-pane" data-k="pane"></div>`;
+    row.dataset.maxval = maxVal;
+    row.querySelector('select[data-k="mode"]').onchange = () => fngenRenderPane(row);
+    row.querySelector('button[data-act="apply"]').onclick = () => fngenApply(channel, row);
+    row.querySelector('button[data-act="stop"]').onclick  = () => fngenStop(channel);
+    fngenRenderPane(row);
+    return row;
+}
+
+function fngenWireDoutPicker() {
+    const pickEl = document.getElementById('fngenDoutPick');
+    const modeEl = document.getElementById('fngenDoutMode');
+    const paneEl = document.getElementById('fngenDoutPane');
+    const applyBtn = document.getElementById('fngenDoutApply');
+    const stopBtn = document.getElementById('fngenDoutStop');
+    function render() {
+        const mode = modeEl.value;
+        paneEl.innerHTML = fngenPaneHtml(mode, 1, 'dout');     // 1-bit output for DOUT
+    }
+    pickEl.onchange = () => fngenRefreshDoutState();
+    modeEl.onchange = render;
+    applyBtn.onclick = () => fngenApply(pickEl.value, paneEl.parentElement, modeEl.value);
+    stopBtn.onclick  = () => fngenStop(pickEl.value);
+    render();
+}
+
+async function fngenRefreshDoutState() {
+    const ch = document.getElementById('fngenDoutPick').value;
+    try {
+        const r = await fetch('/api/fngen/state/' + ch);
+        if (!r.ok) return;
+        const s = await r.json();
+        const el = document.getElementById('fngenDoutState');
+        el.textContent = s.shape_name;
+        el.classList.toggle('active', s.shape !== 0);
+    } catch (e) {}
+}
+
+function fngenRenderPane(row) {
+    const mode = row.querySelector('select[data-k="mode"]').value;
+    const pane = row.querySelector('[data-k="pane"]');
+    const maxVal = parseInt(row.dataset.maxval, 10);
+    pane.innerHTML = fngenPaneHtml(mode, maxVal, 'dac');
+}
+
+function fngenPaneHtml(mode, maxVal, kind) {
+    const halfMax = Math.floor(maxVal / 2);
+    const ampDef = Math.floor(maxVal * 0.8);
+    if (mode === 'off') return '';
+    if (mode === 'dc') return `
+        <div class="fngen-row">
+            <label>offset</label><input type="number" data-k="offset" min="0" max="${maxVal}" value="${halfMax}">
+        </div>`;
+    if (['sine','square','triangle','sawtooth'].includes(mode)) return `
+        <div class="fngen-row">
+            <label>freq Hz</label><input type="number" data-k="freq_hz" min="0.1" max="500000" step="0.1" value="1000">
+            <label>amp</label><input type="number" data-k="amplitude" min="0" max="${maxVal}" value="${ampDef}">
+            <label>off</label><input type="number" data-k="offset" min="0" max="${maxVal}" value="${halfMax}">
+            ${mode === 'square' ? '<label>duty</label><input type="number" data-k="duty" min="0" max="1" step="0.05" value="0.5">' : ''}
+        </div>`;
+    if (mode === 'arbitrary') return `
+        <div class="fngen-row">
+            <label>samples</label><input type="text" data-k="samples" value="0,1024,2048,3072,4095,3072,2048,1024" style="width:240px;" title="comma-separated int16 samples (max 1024)">
+            <label>rate Hz</label><input type="number" data-k="sample_rate_hz" min="1" max="1000000" value="100000">
+            <label>loops</label><input type="number" data-k="loop_count" min="0" max="65535" value="0" title="0 = infinite">
+        </div>`;
+    if (mode === 'lut') return `
+        <div class="fngen-row">
+            <label>input</label>
+            <select data-k="input_src"><option value="adc">adc</option><option value="din">din mask</option></select>
+            <label>arg</label><input type="number" data-k="input_arg" min="0" max="65535" value="0" title="ADC ch index, or DIN bitmask">
+            <label>entries</label><input type="text" data-k="entries" value="0,4095" style="width:240px;" title="comma-separated, length determines bit-width of input">
+            ${kind === 'dout' ? '<label>mask</label><input type="number" data-k="output_mask" min="0" max="65535" value="65535">' : ''}
+        </div>`;
+    if (mode === 'threshold') return `
+        <div class="fngen-row">
+            <label>input</label>
+            <select data-k="input_src"><option value="adc">adc</option><option value="din">din mask</option></select>
+            <label>arg</label><input type="number" data-k="input_arg" min="0" max="65535" value="0">
+            <label>thr↑</label><input type="number" data-k="thr_high" min="0" max="4095" value="2100">
+            <label>thr↓</label><input type="number" data-k="thr_low"  min="0" max="4095" value="2000">
+            <label>val↑</label><input type="number" data-k="val_high" min="0" max="${maxVal}" value="${maxVal}">
+            <label>val↓</label><input type="number" data-k="val_low"  min="0" max="${maxVal}" value="0">
+        </div>`;
+    if (mode === 'pulse_trig') return `
+        <div class="fngen-row">
+            <label>din bit</label><input type="number" data-k="din_bit" min="0" max="15" value="0">
+            <label>edge</label>
+            <select data-k="edge"><option>rising</option><option>falling</option><option>any</option></select>
+            <label>level</label><input type="number" data-k="active_level" min="0" max="1" value="1">
+            <label>dur µs</label><input type="number" data-k="duration_us" min="1" max="1000000" value="100000">
+            <label>cool µs</label><input type="number" data-k="cooldown_us" min="0" max="1000000" value="0">
+        </div>`;
+    if (mode === 'pid') return `
+        <div class="fngen-row">
+            <label>input</label>
+            <select data-k="input_src"><option value="adc">adc</option></select>
+            <label>arg</label><input type="number" data-k="input_arg" min="0" max="7" value="0">
+            <label>setpoint</label><input type="number" data-k="setpoint" min="0" max="4095" value="2048">
+            <label>Kp</label><input type="number" data-k="kp" step="0.001" value="0.5">
+            <label>Ki</label><input type="number" data-k="ki" step="0.001" value="0.001">
+            <label>Kd</label><input type="number" data-k="kd" step="0.001" value="0">
+            <label>rate</label><input type="number" data-k="sample_rate_hz" min="1" max="100000" value="1000">
+        </div>`;
+    return '<div style="color:#999;font-size:10px;">(no parameters for this mode)</div>';
+}
+
+function fngenCollect(row) {
+    const o = {};
+    row.querySelectorAll('[data-k]').forEach(el => {
+        const k = el.dataset.k;
+        if (!el.value) return;
+        if (el.type === 'number') o[k] = parseFloat(el.value);
+        else o[k] = el.value;
+    });
+    return o;
+}
+
+async function fngenApply(channel, row, modeOverride) {
+    const mode = modeOverride || row.querySelector('select[data-k="mode"]').value;
+    if (mode === 'off') { fngenStop(channel); return; }
+    const data = fngenCollect(row);
+    delete data.mode;
+    let url, body;
+    try {
+        if (['dc','sine','square','triangle','sawtooth'].includes(mode)) {
+            url = '/api/fngen/play_builtin/' + channel;
+            body = { shape: mode, freq_hz: data.freq_hz || 0, amplitude: data.amplitude || 0,
+                     offset: data.offset || 0, duty: data.duty != null ? data.duty : 0.5 };
+        } else if (mode === 'arbitrary') {
+            url = '/api/fngen/play_arbitrary/' + channel;
+            const samples = (data.samples || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            if (!samples.length) throw new Error('no samples parsed');
+            body = { samples, sample_rate_hz: data.sample_rate_hz || 100000, loop_count: data.loop_count || 0 };
+        } else if (mode === 'lut') {
+            url = '/api/fngen/play_lut/' + channel;
+            const entries = (data.entries || '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n));
+            body = { input_src: data.input_src || 'adc', input_arg: data.input_arg || 0,
+                     entries, output_mask: data.output_mask || 0 };
+        } else if (mode === 'threshold') {
+            url = '/api/fngen/play_threshold/' + channel;
+            body = { input_src: data.input_src || 'adc', input_arg: data.input_arg || 0,
+                     thr_high: data.thr_high, thr_low: data.thr_low,
+                     val_high: data.val_high, val_low: data.val_low };
+        } else if (mode === 'pulse_trig') {
+            url = '/api/fngen/play_pulse_trig/' + channel;
+            body = { din_bit: data.din_bit, edge: data.edge || 'rising',
+                     active_level: data.active_level != null ? data.active_level : 1,
+                     duration_us: data.duration_us, cooldown_us: data.cooldown_us || 0 };
+        } else if (mode === 'pid') {
+            url = '/api/fngen/play_pid/' + channel;
+            body = { input_src: 'adc', input_arg: data.input_arg || 0,
+                     sample_rate_hz: data.sample_rate_hz || 1000, setpoint: data.setpoint || 2048,
+                     kp: data.kp, ki: data.ki, kd: data.kd };
+        } else { throw new Error('unknown mode ' + mode); }
+        const r = await fetch(url, {
+            method: 'POST', headers: {'content-type':'application/json'},
+            body: JSON.stringify(body),
+        });
+        if (!r.ok) {
+            const txt = await r.text();
+            alert('fngen apply failed: ' + r.status + ' ' + txt);
+        }
+    } catch (e) { alert('fngen apply error: ' + e.message); }
+}
+
+async function fngenStop(channel) {
+    try {
+        await fetch('/api/fngen/stop/' + channel, { method: 'POST' });
+    } catch (e) { console.error(e); }
+}
+
+async function fngenPollState() {
+    if (!fngenAvailable) return;
+    for (const ch of FNGEN_DAC_CHANNELS) {
+        try {
+            const r = await fetch('/api/fngen/state/' + ch);
+            if (!r.ok) continue;
+            const s = await r.json();
+            const row = document.getElementById('fngenrow-' + ch);
+            if (!row) continue;
+            const el = row.querySelector('[data-k="state"]');
+            el.textContent = `${s.shape_name}  freq=${(s.freq_mhz/1000).toFixed(1)}Hz  cur_phase=0x${s.cur_phase_q24_8.toString(16).padStart(8,'0')}`;
+            el.classList.toggle('active', s.shape !== 0);
+        } catch (e) {}
+    }
+    fngenRefreshDoutState();
+}
+
+async function fngenPollAvailability() {
+    try {
+        const r = await fetch('/api/fngen/caps');
+        fngenAvailable = r.ok;
+        if (fngenAvailable) {
+            const c = await r.json();
+            const fmtMode = (m) => {
+                const names = ['MAN','BLT','ARB','LUT','THR','PUL','PID','RUL'];
+                return names.filter((_,i) => m & (1<<i)).join('+') || '-';
+            };
+            document.getElementById('fngenCaps').textContent =
+                `proto v${c.protocol_version}  fw ${c.firmware_major}.${c.firmware_minor}  ` +
+                `DAC:${fmtMode(c.modes_dac)}  DOUT:${fmtMode(c.modes_dout)}  ` +
+                `max_dac=${(c.max_dac_sample_rate_hz/1000).toFixed(0)}kSPS  arb_max=${c.max_arb_buffer_samples}`;
+            const dc = await fetch('/api/fngen/dac_clock'); if (dc.ok) document.getElementById('fngenDacClock').value = (await dc.json()).value;
+            const ar = await fetch('/api/fngen/adc_rate');  if (ar.ok) document.getElementById('fngenAdcRate').value  = (await ar.json()).value;
+        }
+        document.getElementById('fngenUnavailable').style.display = fngenAvailable ? 'none' : 'block';
+        document.getElementById('fngenPanel').style.display       = fngenAvailable ? 'block' : 'none';
+    } catch (e) {
+        fngenAvailable = false;
+        document.getElementById('fngenUnavailable').style.display = 'block';
+        document.getElementById('fngenPanel').style.display       = 'none';
+    }
+}
+
+function fngenInitGlobals() {
+    document.getElementById('fngenDacClockApply').onclick = async () => {
+        const v = parseInt(document.getElementById('fngenDacClock').value, 10);
+        const r = await fetch('/api/fngen/dac_clock', { method:'POST',
+            headers:{'content-type':'application/json'}, body: JSON.stringify({value:v}) });
+        if (!r.ok) alert('dac_clock set failed: ' + (await r.text()));
+    };
+    document.getElementById('fngenAdcRateApply').onclick = async () => {
+        const v = parseInt(document.getElementById('fngenAdcRate').value, 10);
+        const r = await fetch('/api/fngen/adc_rate', { method:'POST',
+            headers:{'content-type':'application/json'}, body: JSON.stringify({value:v}) });
+        if (!r.ok) alert('adc_rate set failed: ' + (await r.text()));
+    };
+}
+
 // ========== Layout (drag-and-drop, hide, persistence) ==========
 // localStorage keys
 const LAYOUT_ORDER_KEY = 'phycmd.layout.order';
@@ -1333,6 +1700,8 @@ function initLayout() {
 connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
 pollRtStats(); setInterval(pollRtStats, 2000);
 buildWaveformPanel(); pollWaveformAvailability(); setInterval(pollWaveformAvailability, 5000);
+fngenBuildPanel(); fngenInitGlobals(); fngenPollAvailability(); setInterval(fngenPollAvailability, 5000);
+setInterval(fngenPollState, 1000);
 requestAnimationFrame(drawScope);
 initLayout();
 

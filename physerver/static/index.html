@@ -120,7 +120,14 @@
         .wave-ch .wave-pending { font-size:10px; color:#e65100; font-style:italic; }
 
         /* On-chip function generator panel — card layout */
-        .fngen-caps { font-size:10px; color:#666; margin:4px 0 12px 0; padding:6px 10px; background:#f5f5f5; border-radius:4px; font-family:monospace; border-left:3px solid #667eea; }
+        .fngen-caps { font-size:10px; color:#666; margin:4px 0 8px 0; padding:6px 10px; background:#f5f5f5; border-radius:4px; font-family:monospace; border-left:3px solid #667eea; }
+        /* Compact "what is every channel doing" summary at the top */
+        .fngen-summary { display:grid; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); gap:6px; margin-bottom:12px; }
+        .fngen-summary-item { background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:6px 10px; font-family:monospace; font-size:11px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+        .fngen-summary-item .sumname { font-weight:bold; color:#333; }
+        .fngen-summary-item .summode { color:#999; font-size:10px; text-transform:uppercase; letter-spacing:.3px; }
+        .fngen-summary-item.active { border-color:#4CAF50; background:#f0faf0; }
+        .fngen-summary-item.active .summode { color:#2e7d32; font-weight:600; }
         .fngen-channels { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; }
         .fngen-ch { background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px 12px; font-size:12px; display:flex; flex-direction:column; gap:8px; }
         .fngen-ch.active { border-color:#667eea; box-shadow:0 0 0 1px #667eea40; }
@@ -326,6 +333,7 @@
             <div id="fngenUnavailable" class="sysinfo-unavailable" style="display:none;">Available only with the v2+v3 firmware in iso mode.</div>
             <div id="fngenPanel" style="display:none;">
                 <div id="fngenCaps" class="fngen-caps"></div>
+                <div id="fngenSummary" class="fngen-summary"></div>
                 <div id="fngenChannels" class="fngen-channels"></div>
                 <div class="fngen-global">
                     <h3>Global timing</h3>
@@ -346,15 +354,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- Legacy host-rendered Waveform Generator, collapsed by default -->
-        <details class="panel" id="panelWaveform" data-title="Waveform Generator (legacy host-rendered)">
-            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">Waveform Generator <small style="font-weight:normal;color:#999;font-size:10px;text-transform:none;">(legacy host-rendered, ≤8 kHz — prefer the On-chip panel above)</small></summary>
-            <div style="margin-top:10px;">
-                <div id="waveformUnavailable" class="sysinfo-unavailable" style="display:none;">Available only when physerver runs in iso mode (config: <code>type = "iso"</code>).</div>
-                <div id="waveformChannels"></div>
-            </div>
-        </details>
 
         <!-- RT scheduler stats (collapsible, closed by default) -->
         <details class="panel wide" id="rtStatsPanel" data-title="RT Scheduler Stats">
@@ -395,14 +394,14 @@
   │                                                    │
   │  ┌─┐  [DB25-1]  [DB15-1]  [DB9-1]   ┌─┐  ┌─┐      │
   │  │J│  [DB25-2]  [DB15-2]  [DB9-2]   │B│  │J│      │
-  │  │L│  [DB25-3]  [DB15-3]  [DB9-3]   │U│  │K│      │
+  │  │L│  [DB25-3]  [DB15-3]  [DB9-3]   │U│  │R│      │
   │  └─┘                                │T│  └─┘      │
   │                                     │N│           │
   │                                     └─┘           │
   └────────────────────────────────────────────────────┘
 
-  JL  = 2 banana jacks, left column (+12V/GND)
-  JK  = 3 banana jacks, right column (+12V/GND/GND)
+  JL  = 2 banana jacks, left  (+12V top / GND bot)
+  JR  = 2 banana jacks, right (+12V top / GND bot)
   BTN = 3 illuminated pushbuttons, top-to-bottom:
         [Arduino Reset + FW-alive LED]
         [PC Reset + boot-status LED]
@@ -422,15 +421,14 @@
                     </details>
 
                     <details class="pinout-conn vpwr">
-                        <summary><span class="pinout-tag vpwr">+12V</span><strong>Front banana jacks</strong> — 5 jacks, 12V power output from host PSU</summary>
+                        <summary><span class="pinout-tag vpwr">+12V</span><strong>Front banana jacks</strong> — 4 jacks (2 left + 2 right), +12V distribution from host PSU</summary>
                         <table class="pinout-table">
                             <thead><tr><th>Pos</th><th>Signal</th><th>Note</th></tr></thead>
                             <tbody>
                                 <tr><td class="pin">L-top</td><td class="sig">+12V</td><td class="note">from host PSU +12V rail (verify with multimeter)</td></tr>
-                                <tr><td class="pin">L-bot</td><td class="sig">GND</td><td class="note">return for L-top</td></tr>
+                                <tr><td class="pin">L-bot</td><td class="sig">GND</td><td class="note">return for L-top (paired jack)</td></tr>
                                 <tr><td class="pin">R-top</td><td class="sig">+12V</td><td class="note">second +12V tap (same rail, parallel)</td></tr>
-                                <tr><td class="pin">R-mid</td><td class="sig">GND</td><td class="note">return</td></tr>
-                                <tr><td class="pin">R-bot</td><td class="sig">GND</td><td class="note">extra reference for scope/DMM probing</td></tr>
+                                <tr><td class="pin">R-bot</td><td class="sig">GND</td><td class="note">return for R-top (paired jack)</td></tr>
                             </tbody>
                         </table>
                     </details>
@@ -891,12 +889,46 @@ function updateStatus(s){
 function fmtUp(ms){const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);return(h<24)?h+'h '+(m%60)+'m':Math.floor(h/24)+'d '+(h%24)+'h';}
 
 // ========== Scope ring buffer ==========
+// Synthesise the expected DAC output when the firmware fn-gen is
+// driving that channel. For MANUAL mode the firmware applies the
+// cmd.dac value from the streaming frame, so we show cmd.dac. For
+// GENERATOR modes the firmware drives the DAC from its own PDC;
+// host can't read back the instantaneous analog value, so we
+// compute what the built-in shape generator would emit based on
+// the last-polled ChannelState.
+function fngenSynthDac(chIdx, nowMs) {
+    const ch = 'dac' + chIdx;
+    const st = fngenLastState[ch];
+    if (!st || st.shape === 0) return cmd.dac[chIdx];        // MANUAL
+    const freq_hz = st.freq_mhz / 1000;
+    const t  = (nowMs - (fngenPhaseOrigin[ch] || nowMs)) * 1e-3;
+    const phase = (t * freq_hz) % 1;
+    const amp = st.amplitude, off = st.offset;
+    let unit = 0;
+    switch (st.shape_name) {
+        case 'dc':       unit = 0; break;
+        case 'sine':     unit = Math.sin(2 * Math.PI * phase); break;
+        case 'square':   unit = phase < (st.duty_x10 / 1000) ? 1 : -1; break;
+        case 'triangle': unit = phase < 0.25 ? phase * 4 : (phase < 0.75 ? 2 - phase * 4 : phase * 4 - 4); break;
+        case 'sawtooth': unit = phase * 2 - 1; break;
+        case 'arbitrary':  // we don't have samples on the host — show offset
+        case 'lut':
+        case 'threshold':
+        case 'pid':
+            return off;                     // flat at offset; not synthesisable
+        default: return off;
+    }
+    const v = off + amp * 0.5 * unit;
+    return Math.max(0, Math.min(4095, v | 0));
+}
+
 function pushScope(s){
     if(scopePaused)return;
     const now=performance.now();
     scopeBuf.ts.push(now);
     for(let i=0;i<8;i++)scopeBuf.adc[i].push(s.adc[i]);
-    scopeBuf.dac[0].push(cmd.dac[0]); scopeBuf.dac[1].push(cmd.dac[1]);
+    scopeBuf.dac[0].push(fngenSynthDac(0, now));
+    scopeBuf.dac[1].push(fngenSynthDac(1, now));
     scopeBuf.pwm[0].push(cmd.pwm[0]); scopeBuf.pwm[1].push(cmd.pwm[1]);
     scopeBuf.din.push(s.digital_in); scopeBuf.dout.push(s.digital_out);
     // Trim
@@ -1299,6 +1331,15 @@ const FNGEN_DOUT_MODES = ['off','lut','threshold','pulse_trig'];
 const FNGEN_DAC_CHANNELS  = ['dac0','dac1'];
 const FNGEN_DOUT_CHANNELS = Array.from({length:16}, (_, i) => 'dout'+i);
 let fngenAvailable = false;
+// Per-channel last-known state from the device (populated by
+// fngenPollState). Used by the oscilloscope to synthesise the
+// expected DAC waveform and by the DAC/PWM slider panel to decide
+// whether to disable its slider. Keys: "dac0", "dac1", "dout0".."dout15".
+const fngenLastState = {};
+// Monotonic clock anchor: when a DAC channel is in GENERATOR mode we
+// animate its scope trace from phase=0 at this time origin (rebased
+// each time the channel's mode changes so the sine doesn't jump).
+const fngenPhaseOrigin = { dac0: performance.now(), dac1: performance.now() };
 
 function fngenBuildPanel() {
     const host = document.getElementById('fngenChannels');
@@ -1378,18 +1419,6 @@ function fngenWireDoutPicker() {
     applyBtn.onclick = () => fngenApply(pickEl.value, paneEl.parentElement, modeEl.value);
     stopBtn.onclick  = () => fngenStop(pickEl.value);
     render();
-}
-
-async function fngenRefreshDoutState() {
-    const ch = document.getElementById('fngenDoutPick').value;
-    try {
-        const r = await fetch('/api/fngen/state/' + ch);
-        if (!r.ok) return;
-        const s = await r.json();
-        const el = document.getElementById('fngenDoutState');
-        el.textContent = s.shape_name;
-        el.classList.toggle('active', s.shape !== 0);
-    } catch (e) {}
 }
 
 function fngenRenderPane(row) {
@@ -1608,26 +1637,131 @@ async function fngenStop(channel) {
     } catch (e) { console.error(e); }
 }
 
+// Poll current state from device, sync:
+//   * per-channel card: state badge, active class
+//   * per-channel form fields: if user hasn't edited, reflect device values
+//   * fngenLastState cache: used by the oscilloscope for synthesised traces
+//   * summary bar: compact "what is each channel doing" view
+//   * DAC manual sliders: disabled when generator is active
 async function fngenPollState() {
     if (!fngenAvailable) return;
+    const summary = [];
     for (const ch of FNGEN_DAC_CHANNELS) {
         try {
             const r = await fetch('/api/fngen/state/' + ch);
             if (!r.ok) continue;
             const s = await r.json();
-            const row = document.getElementById('fngenrow-' + ch);
-            if (!row) continue;
-            const el = row.querySelector('[data-k="state"]');
-            const active = s.shape !== 0;
-            const hz = s.freq_mhz / 1000;
-            const hzFmt = hz >= 1000 ? (hz/1000).toFixed(2) + ' kHz' : hz.toFixed(1) + ' Hz';
-            el.textContent = active ? `${s.shape_name} @ ${hzFmt}` : 'manual (off)';
-            el.classList.toggle('active', active);
-            row.classList.toggle('active', active);
+            // Rebase phase origin on mode changes so the scope trace
+            // doesn't jump to a random phase when the user hits Apply.
+            const prev = fngenLastState[ch];
+            if (!prev || prev.shape !== s.shape || prev.freq_mhz !== s.freq_mhz) {
+                fngenPhaseOrigin[ch] = performance.now();
+            }
+            fngenLastState[ch] = s;
+            summary.push(fngenSummaryItem(ch, s));
+            fngenSyncRowFromState(ch, s);
         } catch (e) {}
     }
-    fngenRefreshDoutState();
+    // DOUT (one picker; consult current dout bit)
+    try {
+        const pickEl = document.getElementById('fngenDoutPick');
+        if (pickEl) {
+            const ch = pickEl.value;
+            const r = await fetch('/api/fngen/state/' + ch);
+            if (r.ok) {
+                const s = await r.json();
+                fngenLastState[ch] = s;
+                summary.push(fngenSummaryItem(ch, s));
+                const el = document.getElementById('fngenDoutState');
+                if (el) {
+                    el.textContent = s.shape_name;
+                    el.classList.toggle('active', s.shape !== 0);
+                }
+            }
+        }
+    } catch (e) {}
+
+    // Summary strip at top of the panel.
+    const sumEl = document.getElementById('fngenSummary');
+    if (sumEl) sumEl.innerHTML = summary.join('');
+
+    // Disable DAC manual sliders when generator is driving that DAC.
+    for (let i = 0; i < 2; i++) {
+        const s = fngenLastState['dac' + i];
+        const slider = document.getElementById('dac' + i + 'S');
+        const vLabel = document.getElementById('dac' + i + 'V');
+        if (slider && vLabel) {
+            const locked = !!(s && s.shape !== 0);
+            slider.disabled = locked;
+            slider.style.opacity = locked ? '0.35' : '';
+            vLabel.textContent = locked ? `(gen: ${s.shape_name})` : String(slider.value);
+            slider.title = locked ? 'DAC' + i + ' is driven by the on-chip generator. Stop the generator to use this slider.' : '';
+        }
+    }
 }
+
+// Compact summary pill shown at top of the fn-gen panel.
+function fngenSummaryItem(ch, s) {
+    const active = s.shape !== 0;
+    const cls = active ? 'fngen-summary-item active' : 'fngen-summary-item';
+    let detail = 'manual';
+    if (active) {
+        if (['sine','square','triangle','sawtooth','dc'].includes(s.shape_name)) {
+            const hz = s.freq_mhz / 1000;
+            const hzF = hz >= 1000 ? (hz/1000).toFixed(2) + ' kHz' : hz.toFixed(1) + ' Hz';
+            detail = s.shape_name === 'dc' ? `dc @ ${s.offset}` : `${s.shape_name} ${hzF}`;
+        } else {
+            detail = s.shape_name;
+        }
+    }
+    return `<div class="${cls}"><span class="sumname">${ch.toUpperCase()}</span><span class="summode">${detail}</span></div>`;
+}
+
+// Sync one channel's card form fields from the device state. We don't
+// stomp on fields the user is currently editing (document.activeElement
+// excluded), so you can type without the poll fighting you.
+function fngenSyncRowFromState(ch, s) {
+    const row = document.getElementById('fngenrow-' + ch);
+    if (!row) return;
+    const active = s.shape !== 0;
+    const el = row.querySelector('[data-k="state"]');
+    if (el) {
+        const hz = s.freq_mhz / 1000;
+        const hzF = hz >= 1000 ? (hz/1000).toFixed(2) + ' kHz' : hz.toFixed(1) + ' Hz';
+        el.textContent = active
+            ? (['sine','square','triangle','sawtooth'].includes(s.shape_name)
+                ? `${s.shape_name} @ ${hzF}` : s.shape_name)
+            : 'manual (off)';
+        el.classList.toggle('active', active);
+    }
+    row.classList.toggle('active', active);
+
+    // If the displayed mode in the selector doesn't match what the
+    // device reports, update it and re-render the pane. (Triggers on
+    // first page load and when another client changes state externally.)
+    const modeSel = row.querySelector('select[data-k="mode"]');
+    if (modeSel && modeSel !== document.activeElement) {
+        const deviceMode = s.shape_name || 'off';
+        if (modeSel.value !== deviceMode) {
+            modeSel.value = deviceMode;
+            fngenRenderPane(row);
+        }
+    }
+    // Populate params that are introspectable from ChannelState.
+    const setIfNotFocused = (key, value) => {
+        const el = row.querySelector(`[data-k="${key}"]`);
+        if (el && el !== document.activeElement) el.value = value;
+    };
+    if (active) {
+        if (s.freq_mhz)   setIfNotFocused('freq_hz', (s.freq_mhz / 1000).toFixed(1));
+        if (s.amplitude)  setIfNotFocused('amplitude', s.amplitude);
+        if (s.offset)     setIfNotFocused('offset', s.offset);
+        if (s.duty_x10 != null) setIfNotFocused('duty', (s.duty_x10 / 1000).toFixed(2));
+    }
+}
+
+// Back-compat wrapper; called from a few places.
+async function fngenRefreshDoutState() { /* merged into fngenPollState */ }
 
 async function fngenPollAvailability() {
     try {
@@ -1648,6 +1782,11 @@ async function fngenPollAvailability() {
         }
         document.getElementById('fngenUnavailable').style.display = fngenAvailable ? 'none' : 'block';
         document.getElementById('fngenPanel').style.display       = fngenAvailable ? 'block' : 'none';
+        // As soon as we know the device is reachable, pull the
+        // per-channel state so the UI reflects whatever the firmware
+        // is already doing (not the form defaults). This is what the
+        // user sees on page refresh.
+        if (fngenAvailable) fngenPollState();
     } catch (e) {
         fngenAvailable = false;
         document.getElementById('fngenUnavailable').style.display = 'block';
@@ -1826,7 +1965,6 @@ function initLayout() {
 // ========== Boot ==========
 connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
 pollRtStats(); setInterval(pollRtStats, 2000);
-buildWaveformPanel(); pollWaveformAvailability(); setInterval(pollWaveformAvailability, 5000);
 fngenBuildPanel(); fngenInitGlobals(); fngenPollAvailability(); setInterval(fngenPollAvailability, 5000);
 setInterval(fngenPollState, 1000);
 requestAnimationFrame(drawScope);

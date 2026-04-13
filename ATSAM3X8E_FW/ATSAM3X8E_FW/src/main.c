@@ -116,6 +116,7 @@ void SysTick_Handler(void);
 void SysTick_Handler(void)
 {
 	s_uptime_ms++;
+	waveform_systick_1ms();    /* drives PULSE_TRIG cooldown / pulse end */
 }
 
 /* ============================================================
@@ -167,7 +168,8 @@ static void init_dig_out_ports(void)
 	a[15] = (Pio*)((uint32_t)PIOA + (PIO_DELTA * (PHYCMD_DIGITAL_OUTPUT_15 >> 5)));
 }
 
-static inline uint16_t get_dig_in_value(void)
+uint16_t get_dig_in_value(void);   /* externally linkable: also called from waveform.c */
+uint16_t get_dig_in_value(void)
 {
 	uint16_t v = 0;
 	for (int i = 0; i < 16; i++) {
@@ -184,6 +186,35 @@ static inline uint16_t get_dig_in_value(void)
 		v |= ((s_dig_in_ports[i]->PIO_PDSR >> (pins[i] & 0x1F)) & 1u) << i;
 	}
 	return v;
+}
+
+/* Apply a partial DOUT update from waveform.c reactive modes. Only
+ * the bits in `mask` are touched; the rest keep whatever the
+ * streaming Command frame last wrote them. The pin index table is
+ * defined as a function-local in set_dig_out_value() below — we
+ * duplicate it here rather than promoting it to a file-static so
+ * that any future renumbering stays mechanically obvious by
+ * sitting next to its consumer. */
+void reactive_dout_write(uint16_t mask, uint16_t bits);
+void reactive_dout_write(uint16_t mask, uint16_t bits)
+{
+	static const uint32_t pins[] = {
+		PHYCMD_DIGITAL_OUTPUT_0,  PHYCMD_DIGITAL_OUTPUT_1,
+		PHYCMD_DIGITAL_OUTPUT_2,  PHYCMD_DIGITAL_OUTPUT_3,
+		PHYCMD_DIGITAL_OUTPUT_4,  PHYCMD_DIGITAL_OUTPUT_5,
+		PHYCMD_DIGITAL_OUTPUT_6,  PHYCMD_DIGITAL_OUTPUT_7,
+		PHYCMD_DIGITAL_OUTPUT_8,  PHYCMD_DIGITAL_OUTPUT_9,
+		PHYCMD_DIGITAL_OUTPUT_10, PHYCMD_DIGITAL_OUTPUT_11,
+		PHYCMD_DIGITAL_OUTPUT_12, PHYCMD_DIGITAL_OUTPUT_13,
+		PHYCMD_DIGITAL_OUTPUT_14, PHYCMD_DIGITAL_OUTPUT_15,
+	};
+	for (uint8_t i = 0; i < 16; i++) {
+		if (!(mask & (1u << i))) continue;
+		Pio *p = s_dig_out_ports[i];
+		uint32_t pin_mask = 1u << (pins[i] & 0x1F);
+		if (bits & (1u << i)) p->PIO_SODR = pin_mask;
+		else                  p->PIO_CODR = pin_mask;
+	}
 }
 
 static inline void set_dig_out_value(uint16_t v)
@@ -395,9 +426,24 @@ int main(void)
 	/* Start USB device stack */
 	udc_start();
 
-	/* Idle spin — all protocol work happens in the UOTGHS ISR
-	 * via vendor_bulk_out_cb → process_command_frame. */
+	/* Idle spin — open-loop protocol work happens in the UOTGHS ISR
+	 * via vendor_bulk_out_cb → process_command_frame, and on the
+	 * iso path via vendor_iso_out_cb. The reactive paths are also
+	 * mostly ISR-driven (DACC_Handler ENDTX for waveform refill,
+	 * SysTick for pulse cooldowns), with one remaining job here:
+	 *
+	 * polling DIN at high rate so reactive LUT (DIN-mask source) and
+	 * PULSE_TRIG see edges within ~1 µs. We don't use PIO change
+	 * interrupts in v1 — the polled path is simpler, doesn't risk
+	 * priority-inverting the UOTGHS / DACC ISRs, and at the SAM3X's
+	 * 84 MHz with no other CPU work happening between IRQs we get
+	 * sub-microsecond latency anyway. */
+	uint16_t prev_din = get_dig_in_value();
 	for (;;) {
-		/* No WFI: see Bug 3 in the investigation report. */
+		uint16_t now_din = get_dig_in_value();
+		if (now_din != prev_din) {
+			waveform_on_din_change(now_din, prev_din);
+			prev_din = now_din;
+		}
 	}
 }

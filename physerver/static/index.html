@@ -959,6 +959,19 @@ function chLabel(ch){return ch<8?'ADC'+ch:ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
 function chMax(ch){return ch<10?4095:65535;}
 
 // Render one analog-style trace plot. Returns true if anything was drawn.
+// Returns true iff DAC channel ch (0 or 1) is driven by a built-in
+// generator whose analytic shape we can compute directly from the
+// cached ChannelState (sine / square / triangle / sawtooth).
+// Arbitrary / LUT / threshold / PID / DC are not synth-renderable —
+// we either have no runtime data (arb, lut, pid whose output depends
+// on ADC) or the synth is a single flat level (dc) that still fits
+// the normal buffer-based path.
+function fngenCanSynthTrace(dacIdx) {
+    const st = fngenLastState['dac' + dacIdx];
+    if (!st || st.shape === 0) return false;
+    return ['sine','square','triangle','sawtooth'].includes(st.shape_name);
+}
+
 function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
     const ctx=cv.getContext('2d');
     const W=cv.clientWidth, H=cv.clientHeight;
@@ -970,15 +983,36 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
     for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
     ctx.lineWidth=1.2;
     channels.forEach((ch)=>{
-        const arr=chArr(ch);
         const max=chMax(ch);
         ctx.strokeStyle=COLORS[ch%COLORS.length];
         ctx.beginPath();
-        let first=true;
-        for(let i=start;i<scopeBuf.ts.length;i++){
-            const x=(scopeBuf.ts[i]-tMin)/windowMs*W;
-            const y=H-(arr[i]/max)*H;
-            if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+        // For DAC channels in built-in generator mode, render the
+        // waveform analytically at canvas-pixel resolution. WebSocket
+        // streaming is throttled to ~250 Hz so a sampled trace would
+        // undersample any signal > ~50 Hz and look random. The synth
+        // path evaluates fngenSynthDac at N equally-spaced time points
+        // across the window, giving a smooth deterministic trace
+        // regardless of the underlying stream rate.
+        const isDac = ch === 8 || ch === 9;
+        if (isDac && fngenCanSynthTrace(ch - 8)) {
+            const dacIdx = ch - 8;
+            const nSamples = Math.max(2, Math.min(W | 0, 4096));
+            for (let px = 0; px < nSamples; px++) {
+                const t = tMin + (px / (nSamples - 1)) * windowMs;
+                const v = fngenSynthDac(dacIdx, t);
+                const x = (px / (nSamples - 1)) * W;
+                const y = H - (v / max) * H;
+                if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+        } else {
+            // Default: walk the captured stream buffer.
+            const arr = chArr(ch);
+            let first = true;
+            for (let i = start; i < scopeBuf.ts.length; i++) {
+                const x = (scopeBuf.ts[i] - tMin) / windowMs * W;
+                const y = H - (arr[i] / max) * H;
+                if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
+            }
         }
         ctx.stroke();
     });

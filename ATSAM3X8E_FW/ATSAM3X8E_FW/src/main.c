@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#include "waveform.h"
+
 /* ============================================================
  *  Protocol constants (must match physerver/src/protocol/)
  * ============================================================ */
@@ -305,9 +307,19 @@ void apply_command_frame(const uint8_t *rx_buf)
 	/* Apply digital outputs immediately */
 	set_dig_out_value(cmd->digital_out);
 
-	/* Apply DAC outputs */
-	if (cmd->flags & FLAG_DAC_ENABLE)
-		dac_write_pair(cmd->dac0, cmd->dac1);
+	/* Apply DAC outputs — but only on channels currently in MANUAL.
+	 * A channel in GENERATOR mode is being driven by the on-chip
+	 * TC + DACC PDC chain in waveform.c; writing to its CDR here
+	 * would race with the PDC and cause glitches. */
+	if (cmd->flags & FLAG_DAC_ENABLE) {
+		uint16_t v0 = cmd->dac0, v1 = cmd->dac1;
+		if (v0 > DAC_MAX) v0 = DAC_MAX;
+		if (v1 > DAC_MAX) v1 = DAC_MAX;
+		bool gen0 = waveform_dac_is_generating(0);
+		bool gen1 = waveform_dac_is_generating(1);
+		if (!gen0) dacc_write_conversion_data(DACC, v0);
+		if (!gen1) DACC->DACC_CDR = v1 | 0x1000u;   /* tag → CH1 */
+	}
 
 	/* Sequence tracking */
 	s_last_seq = cmd->seq_num;
@@ -378,6 +390,7 @@ int main(void)
 	init_dig_out_ports();
 	adc_setup();
 	dac_setup();
+	waveform_init();   /* must come after dac_setup — sets up TC0/PDC for DACC */
 
 	/* Start USB device stack */
 	udc_start();

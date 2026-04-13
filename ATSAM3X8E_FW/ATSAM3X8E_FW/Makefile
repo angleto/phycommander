@@ -76,6 +76,7 @@ INCLUDES := \
 SRCS := \
   src/main.c \
   src/udi_vendor.c \
+  src/waveform.c \
   src/ASF/common/services/clock/sam3x/sysclk.c \
   src/ASF/common/services/delay/sam/cycle_counter.c \
   src/ASF/common/services/fifo/fifo.c \

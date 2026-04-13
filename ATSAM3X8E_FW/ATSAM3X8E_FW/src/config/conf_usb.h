@@ -1,12 +1,18 @@
 /**
  * \file
  *
- * \brief USB configuration file for PhyCommander Vendor Class (bulk).
+ * \brief USB configuration file for PhyCommander Vendor Class
+ *        (bulk + isochronous, dual-mode).
  *
  * This replaces the original ASF UDI_CDC configuration. The firmware
- * exposes a single vendor-specific interface with two bulk endpoints:
- *   - EP 1 IN  (0x81)  device -> host (64 B FS / 512 B HS)
- *   - EP 2 OUT (0x02)  host   -> device (64 B FS / 512 B HS)
+ * exposes a single vendor-specific interface with FOUR endpoints:
+ *   - EP 1 IN  bulk (0x81)  device -> host (64 B FS / 512 B HS)
+ *   - EP 2 OUT bulk (0x02)  host   -> device (64 B FS / 512 B HS)
+ *   - EP 3 IN  iso  (0x83)  device -> host (512 B HS, bInterval=1)
+ *   - EP 4 OUT iso  (0x04)  host   -> device (512 B HS, bInterval=1)
+ *
+ * Bulk EPs preserve the original behaviour. Iso EPs were added for
+ * 5–8 kHz hard-RT loops (each microframe = 125 µs guaranteed slot).
  *
  * The host side (physerver/src/transport/usb.rs) talks directly to
  * these endpoints via libusb. No CDC/ACM kernel driver is involved.
@@ -40,11 +46,12 @@
  *
  *   USB_DEVICE_EP_CTRL_SIZE  = control EP0 max packet size
  *   USB_DEVICE_MAX_EP        = number of non-control endpoints used
- *                               (we use EP 1 IN + EP 2 OUT -> 2)
+ *                               (EP 1 IN bulk + EP 2 OUT bulk +
+ *                                EP 3 IN iso  + EP 4 OUT iso  -> 4)
  */
 #define  USB_DEVICE_EP_CTRL_SIZE          64
 #define  USB_DEVICE_NB_INTERFACE          1
-#define  USB_DEVICE_MAX_EP                2
+#define  USB_DEVICE_MAX_EP                4
 
 /**
  * USB Device Callbacks definitions (Optional, unused here)

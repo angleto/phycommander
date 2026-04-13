@@ -29,6 +29,12 @@
  * the 64-byte status response.  Called from ISR context. */
 extern void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf);
 
+/* Defined in main.c — split halves of process_command_frame() used by
+ * the iso path, where command and status flow through separate EPs and
+ * are not bound to a single bulk callback. */
+extern void apply_command_frame(const uint8_t *rx_buf);
+extern void build_status_frame(uint8_t *tx_buf);
+
 /* -------------------------------------------------------------------------
  *   Device descriptor
  * ------------------------------------------------------------------------- */
@@ -68,14 +74,20 @@ UDC_DESC_STORAGE usb_dev_qual_desc_t udc_device_qual = {
 #endif
 
 /* -------------------------------------------------------------------------
- *   Configuration descriptor (interface + 2 bulk endpoints)
+ *   Configuration descriptor (interface + 2 bulk + 2 iso endpoints)
  *
- *   Layout:
- *     [9] usb_conf_desc_t
- *     [9] usb_iface_desc_t
- *     [7] usb_ep_desc_t (EP IN, 0x81)
- *     [7] usb_ep_desc_t (EP OUT, 0x02)
- *   Total = 32 bytes
+ *   Layout (62 bytes total):
+ *     [9]  usb_conf_desc_t
+ *     [9]  usb_iface_desc_t
+ *     [7]  usb_ep_desc_t (EP IN  bulk, 0x81)
+ *     [7]  usb_ep_desc_t (EP OUT bulk, 0x02)
+ *     [7]  usb_ep_desc_t (EP IN  iso,  0x83)
+ *     [7]  usb_ep_desc_t (EP OUT iso,  0x04)
+ *
+ *   Iso EPs share the same interface (alt setting 0). Hosts that only
+ *   want bulk just submit on EP1/EP2 and ignore the iso EPs entirely;
+ *   the iso EPs only consume bandwidth when the host actively schedules
+ *   transfers on them.
  * ------------------------------------------------------------------------- */
 
 COMPILER_PACK_SET(1)
@@ -84,14 +96,18 @@ typedef struct {
 	usb_iface_desc_t  iface;
 	usb_ep_desc_t     ep_in;
 	usb_ep_desc_t     ep_out;
+	usb_ep_desc_t     ep_iso_in;
+	usb_ep_desc_t     ep_iso_out;
 } udi_vendor_desc_t;
 COMPILER_PACK_RESET()
 
 /**
- * \brief Build one configuration descriptor at compile time for a given
- * bulk endpoint size. Called twice: once for FS (64) and once for HS (512).
+ * \brief Build one configuration descriptor at compile time.
+ *
+ * \param bulk_size  Bulk EP wMaxPacketSize (64 for FS, 512 for HS).
+ * \param iso_size   Iso  EP wMaxPacketSize (64 for FS, 512 for HS).
  */
-#define UDI_VENDOR_DESC_INIT(ep_size)                                    \
+#define UDI_VENDOR_DESC_INIT(bulk_size, iso_size)                        \
 {                                                                        \
 	.conf = {                                                        \
 		.bLength             = sizeof(usb_conf_desc_t),          \
@@ -109,7 +125,7 @@ COMPILER_PACK_RESET()
 		.bDescriptorType    = USB_DT_INTERFACE,                  \
 		.bInterfaceNumber   = UDI_VENDOR_IFACE_NUMBER,           \
 		.bAlternateSetting  = 0,                                 \
-		.bNumEndpoints      = 2,                                 \
+		.bNumEndpoints      = 4,                                 \
 		.bInterfaceClass    = 0xFF,                              \
 		.bInterfaceSubClass = 0x00,                              \
 		.bInterfaceProtocol = 0x00,                              \
@@ -120,7 +136,7 @@ COMPILER_PACK_RESET()
 		.bDescriptorType  = USB_DT_ENDPOINT,                     \
 		.bEndpointAddress = UDI_VENDOR_EP_IN,                    \
 		.bmAttributes     = USB_EP_TYPE_BULK,                    \
-		.wMaxPacketSize   = LE16(ep_size),                       \
+		.wMaxPacketSize   = LE16(bulk_size),                     \
 		.bInterval        = 0,                                   \
 	},                                                               \
 	.ep_out = {                                                      \
@@ -128,19 +144,35 @@ COMPILER_PACK_RESET()
 		.bDescriptorType  = USB_DT_ENDPOINT,                     \
 		.bEndpointAddress = UDI_VENDOR_EP_OUT,                   \
 		.bmAttributes     = USB_EP_TYPE_BULK,                    \
-		.wMaxPacketSize   = LE16(ep_size),                       \
+		.wMaxPacketSize   = LE16(bulk_size),                     \
 		.bInterval        = 0,                                   \
+	},                                                               \
+	.ep_iso_in = {                                                   \
+		.bLength          = sizeof(usb_ep_desc_t),               \
+		.bDescriptorType  = USB_DT_ENDPOINT,                     \
+		.bEndpointAddress = UDI_VENDOR_EP_ISO_IN,                \
+		.bmAttributes     = USB_EP_TYPE_ISOCHRONOUS,             \
+		.wMaxPacketSize   = LE16(iso_size),                      \
+		.bInterval        = UDI_VENDOR_EP_ISO_INTERVAL,          \
+	},                                                               \
+	.ep_iso_out = {                                                  \
+		.bLength          = sizeof(usb_ep_desc_t),               \
+		.bDescriptorType  = USB_DT_ENDPOINT,                     \
+		.bEndpointAddress = UDI_VENDOR_EP_ISO_OUT,               \
+		.bmAttributes     = USB_EP_TYPE_ISOCHRONOUS,             \
+		.wMaxPacketSize   = LE16(iso_size),                      \
+		.bInterval        = UDI_VENDOR_EP_ISO_INTERVAL,          \
 	},                                                               \
 }
 
 COMPILER_WORD_ALIGNED
 UDC_DESC_STORAGE udi_vendor_desc_t udc_desc_fs =
-	UDI_VENDOR_DESC_INIT(UDI_VENDOR_EP_SIZE_FS);
+	UDI_VENDOR_DESC_INIT(UDI_VENDOR_EP_SIZE_FS, UDI_VENDOR_EP_SIZE_ISO_FS);
 
 #ifdef USB_DEVICE_HS_SUPPORT
 COMPILER_WORD_ALIGNED
 UDC_DESC_STORAGE udi_vendor_desc_t udc_desc_hs =
-	UDI_VENDOR_DESC_INIT(UDI_VENDOR_EP_SIZE_HS);
+	UDI_VENDOR_DESC_INIT(UDI_VENDOR_EP_SIZE_HS, UDI_VENDOR_EP_SIZE_ISO_HS);
 #endif
 
 /* -------------------------------------------------------------------------
@@ -258,6 +290,95 @@ static void vendor_bulk_out_cb(udd_ep_status_t status,
 }
 
 /* -------------------------------------------------------------------------
+ *   Isochronous endpoint handlers (Phase 1: dual-mode coexisting with bulk)
+ *
+ *   The host submits a stream of iso transfers on EP 0x83 (IN) and 0x04
+ *   (OUT). Each transfer is wMaxPacketSize=512 B, scheduled every
+ *   microframe (125 µs in HS = 8 kHz capacity).
+ *
+ *   Wire layout per iso packet (both directions):
+ *     [0..63]    PhyCMD-64 frame (CRC-validated by protocol layer)
+ *     [64..511]  zero-padding (TX side fills with zeros at boot, RX side
+ *                ignores). Reserved for future protocol expansion.
+ *
+ *   Loss handling (iso has no NAK/retry at USB level):
+ *     - OUT lost  : firmware just sees no callback for that microframe
+ *                   and the previous setpoints stay applied (control-hold
+ *                   semantics, standard for motion-control iso links).
+ *     - IN lost   : host counts gaps in seq_num and reports them as
+ *                   iso_in_lost in the RT stats.
+ *
+ *   Both EPs are independent of the bulk path: they never touch
+ *   s_tx_buf[]/s_in_busy. The bulk loop continues to work in parallel.
+ * ------------------------------------------------------------------------- */
+
+static COMPILER_WORD_ALIGNED uint8_t s_iso_rx_buf[UDI_VENDOR_EP_SIZE_ISO_HS];
+static COMPILER_WORD_ALIGNED uint8_t s_iso_tx_buf[UDI_VENDOR_EP_SIZE_ISO_HS];
+
+/* Diagnostic counters incremented on iso EP errors. Only readable via
+ * the bulk path or via a future debug control request. */
+static uint32_t s_iso_out_errors;
+static uint32_t s_iso_in_errors;
+
+static void vendor_iso_in_cb(udd_ep_status_t status,
+                             iram_size_t n,
+                             udd_ep_id_t ep);
+
+static void vendor_iso_out_cb(udd_ep_status_t status,
+                              iram_size_t n,
+                              udd_ep_id_t ep);
+
+static void vendor_iso_in_cb(udd_ep_status_t status,
+                             iram_size_t n,
+                             udd_ep_id_t ep)
+{
+	(void)n; (void)ep;
+
+	if (status == UDD_EP_TRANSFER_ABORT) {
+		/* Interface disabled — UDC freed the EP, do not re-arm. */
+		return;
+	}
+
+	if (status != UDD_EP_TRANSFER_OK) {
+		s_iso_in_errors++;
+		/* fall through and re-arm — iso link is best-effort */
+	}
+
+	/* Refresh the first 64 bytes with the current status snapshot.
+	 * The padding [64..511] was zero-initialised at boot and never
+	 * written to, so we don't need to memset every time. */
+	build_status_frame(s_iso_tx_buf);
+
+	(void)udd_ep_run(UDI_VENDOR_EP_ISO_IN, false,
+	                 s_iso_tx_buf, sizeof(s_iso_tx_buf),
+	                 vendor_iso_in_cb);
+}
+
+static void vendor_iso_out_cb(udd_ep_status_t status,
+                              iram_size_t n,
+                              udd_ep_id_t ep)
+{
+	(void)ep;
+
+	if (status == UDD_EP_TRANSFER_ABORT) {
+		return;
+	}
+
+	if (status != UDD_EP_TRANSFER_OK) {
+		s_iso_out_errors++;
+	} else if (n >= 64) {
+		/* Process only the first 64 bytes; the rest is reserved
+		 * padding ignored by this firmware revision. */
+		apply_command_frame(s_iso_rx_buf);
+	}
+
+	/* Re-arm for the next microframe. */
+	(void)udd_ep_run(UDI_VENDOR_EP_ISO_OUT, false,
+	                 s_iso_rx_buf, sizeof(s_iso_rx_buf),
+	                 vendor_iso_out_cb);
+}
+
+/* -------------------------------------------------------------------------
  *   UDI API (called by UDC)
  * ------------------------------------------------------------------------- */
 
@@ -275,13 +396,37 @@ static bool udi_vendor_enable(void)
 	s_in_busy        = false;
 	s_dropped_frames = 0;
 
-	/* Arm the first BULK-OUT transfer. After this the data path is
-	 * self-sustaining through vendor_bulk_out_cb(). */
+	s_iso_in_errors  = 0;
+	s_iso_out_errors = 0;
+
+	/* Iso TX padding bytes [64..511] must be zero on the wire.
+	 * The first 64 will be overwritten by build_status_frame() on every
+	 * iso IN, but the padding is set once here and never touched again. */
+	for (size_t i = 0; i < sizeof(s_iso_tx_buf); i++) s_iso_tx_buf[i] = 0;
+
+	/* Arm the first BULK-OUT transfer. After this the bulk data path
+	 * is self-sustaining through vendor_bulk_out_cb(). */
 	if (!udd_ep_run(UDI_VENDOR_EP_OUT, true,
 	                s_rx_buf, sizeof(s_rx_buf),
 	                vendor_bulk_out_cb)) {
 		return false;
 	}
+
+	/* Arm the iso EPs. These are best-effort: if the host never
+	 * schedules iso transfers (i.e. it only uses bulk), udd_ep_run()
+	 * still returns true but no callbacks will fire. If allocation
+	 * fails (e.g. DPRAM exhausted), bulk continues unharmed.
+	 * Pre-fill iso TX with the current status so the first IN packet
+	 * after enumeration is meaningful, not all zeros. */
+	build_status_frame(s_iso_tx_buf);
+
+	(void)udd_ep_run(UDI_VENDOR_EP_ISO_IN, false,
+	                 s_iso_tx_buf, sizeof(s_iso_tx_buf),
+	                 vendor_iso_in_cb);
+	(void)udd_ep_run(UDI_VENDOR_EP_ISO_OUT, false,
+	                 s_iso_rx_buf, sizeof(s_iso_rx_buf),
+	                 vendor_iso_out_cb);
+
 	return true;
 }
 

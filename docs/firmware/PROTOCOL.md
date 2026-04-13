@@ -139,6 +139,10 @@ STALL as "this firmware revision does not support that request".
 |     `0x19` | IN  | `DAC_GET_CLOCK`           | 0        | 0      | `u32 clock_hz` (4 B)  | Read current shared DAC sample clock. |
 |     `0x20` | OUT | `ADC_SET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B)  | Set ADC sampling rate in Hz. Range 1 – 1_000_000. Independent of DAC clock. |
 |     `0x21` | IN  | `ADC_GET_RATE`            | 0        | 0      | `u32 rate_hz` (4 B)  | Read current ADC rate. |
+|     `0x30` | OUT | `GEN_PLAY_LUT`            | channel  | 0      | `WaveLutSpec` (12 B) + `int16_t entries[N]` | Reactive look-up: `output = LUT[input]`, where input is a 12-bit value derived from an ADC channel or a mask of DIN bits. Reaction time: ~1 µs (DIN PIO ISR) or ~5 µs (ADC EOC ISR). N up to 4096 (12-bit input). |
+|     `0x31` | OUT | `GEN_PLAY_THRESHOLD`      | channel  | 0      | `WaveThresholdSpec` (16 B) | Reactive comparator with optional hysteresis. Output toggles between `val_high` and `val_low` based on `input` vs `thr_high` / `thr_low`. |
+|     `0x32` | OUT | `GEN_PLAY_PULSE_TRIG`     | channel  | 0      | `WavePulseSpec` (12 B) | Reactive monostable: on edge of `input_din_bit`, drive `output` `active_level` for `duration_us`, then return to idle. |
+|     `0x38` | OUT | `GEN_PLAY_PID` *(v3)*     | channel  | 0      | `WavePidSpec` (32 B)  | Reactive PID closed-loop: `output = clamp(Kp·err + Ki·∫err + Kd·d(err)/dt)` where `err = setpoint − adc[input_ch]`. |
 
 There is **no** explicit `SET_MANUAL` request: a channel's mode is
 *implicit* in what was last requested for it. After power-on (or after
@@ -212,6 +216,7 @@ returns 0 in v1 firmware, and the host must surface that as
 
 ```c
 typedef enum : uint8_t {
+    /* Open-loop (output = f(time))                              */
     SHAPE_OFF       = 0,   // channel is "manual": streaming Command frame drives it
     SHAPE_DC        = 1,   // generator-driven, constant level at `offset`
     SHAPE_SINE      = 2,
@@ -219,6 +224,17 @@ typedef enum : uint8_t {
     SHAPE_TRIANGLE  = 4,
     SHAPE_SAWTOOTH  = 5,
     SHAPE_ARBITRARY = 6,   // generator-driven from an uploaded buffer
+
+    /* Reactive (output = f(inputs)) — see §3.2                  */
+    SHAPE_LUT        = 16, // output = LUT[input], pre-computed table
+    SHAPE_THRESHOLD  = 17, // output = (input ⋛ threshold) ? hi : lo
+    SHAPE_PULSE_TRIG = 18, // output = monostable triggered by DIN edge
+    SHAPE_PID        = 19, // output = PID(input, setpoint)   [v3]
+
+    /* 7..15 reserved for future open-loop shapes (e.g. ramp,
+     * AM-modulated, sweep). 20..31 reserved for future reactive
+     * modes (RULE_CHAIN, etc.). Hosts must treat unknown shape
+     * codes returned by GEN_GET_STATE as opaque — see §7. */
 } wave_shape_t;
 
 typedef enum : uint8_t {
@@ -246,6 +262,71 @@ struct __attribute__((packed)) WaveArbHeader {    // 8 bytes header
     /* offset  2 */ uint16_t loop_count;   // 0 = infinite; otherwise plays N times then SHAPE_OFF
     /* offset  4 */ uint32_t sample_rate_hz; // playback rate, must be ≤ max_dac_sample_rate_hz
     // followed by int16_t samples[n_samples]
+};
+
+/* ---------- Reactive-mode payloads ---------- */
+
+/* Input-source descriptor used by all reactive modes that read a
+ * device input. Shared between LUT / THRESHOLD / PID. */
+typedef enum : uint8_t {
+    INPUT_SRC_NONE     = 0,
+    INPUT_SRC_ADC      = 1,    // input = adc[arg & 7], 12-bit
+    INPUT_SRC_DIN_MASK = 2,    // input = bits-of-DIN selected by `arg` bitmask,
+                               //   packed LSB-first. e.g. arg=0b0000_0000_0000_0111
+                               //   maps DIN0..DIN2 to bits 0..2 of the LUT index.
+} input_src_t;
+
+struct __attribute__((packed)) WaveLutSpec {        // 12 bytes header + entries
+    /* offset  0 */ uint8_t  input_src;         // input_src_t
+    /* offset  1 */ uint8_t  reserved0;
+    /* offset  2 */ uint16_t input_arg;         // ADC channel (low 3 bits) or DIN bitmask
+    /* offset  4 */ uint16_t n_entries;         // 1..4096; index width = ceil(log2(n_entries))
+    /* offset  6 */ uint16_t output_mask;       // for DOUT outputs: bits to drive (=0xFFFF for "all 16")
+                                                //   for DAC outputs: ignored (always 12-bit value used)
+    /* offset  8 */ uint32_t reserved1;         // must be 0
+    /* int16_t entries[n_entries] follows. For DAC outputs each entry is a
+     * 0..4095 value; for DOUT outputs each entry is a 16-bit mask AND'd
+     * with `output_mask` before driving the GPIO. */
+};
+
+struct __attribute__((packed)) WaveThresholdSpec {  // 16 bytes
+    /* offset  0 */ uint8_t  input_src;         // input_src_t (typ. INPUT_SRC_ADC)
+    /* offset  1 */ uint8_t  reserved0;
+    /* offset  2 */ uint16_t input_arg;
+    /* offset  4 */ uint16_t thr_high;          // upper threshold (raw input units)
+    /* offset  6 */ uint16_t thr_low;           // lower threshold (≤ thr_high; equal = no hysteresis)
+    /* offset  8 */ uint16_t val_high;          // output value when input > thr_high
+    /* offset 10 */ uint16_t val_low;           // output value when input < thr_low
+    /* offset 12 */ uint32_t reserved1;
+};
+
+typedef enum : uint8_t {
+    PULSE_EDGE_RISING  = 1,
+    PULSE_EDGE_FALLING = 2,
+    PULSE_EDGE_ANY     = 3,
+} pulse_edge_t;
+
+struct __attribute__((packed)) WavePulseSpec {      // 12 bytes
+    /* offset  0 */ uint8_t  input_din_bit;     // 0..15: which DIN bit triggers
+    /* offset  1 */ uint8_t  edge;              // pulse_edge_t
+    /* offset  2 */ uint8_t  active_level;      // 0 or 1: output level during pulse
+    /* offset  3 */ uint8_t  reserved0;
+    /* offset  4 */ uint32_t duration_us;       // 1..1_000_000 µs
+    /* offset  8 */ uint32_t cooldown_us;       // 0..1_000_000 µs; re-triggers within cooldown ignored
+};
+
+struct __attribute__((packed)) WavePidSpec {        // 32 bytes (v3, slot reserved)
+    /* offset  0 */ uint8_t  input_src;         // typ. INPUT_SRC_ADC
+    /* offset  1 */ uint8_t  reserved0;
+    /* offset  2 */ uint16_t input_arg;
+    /* offset  4 */ uint32_t sample_rate_hz;    // PID loop frequency (≤ ADC rate)
+    /* offset  8 */ int32_t  setpoint;          // raw input units (signed for offset)
+    /* offset 12 */ int32_t  kp_q16_16;         // gains in Q16.16 fixed-point
+    /* offset 16 */ int32_t  ki_q16_16;
+    /* offset 20 */ int32_t  kd_q16_16;
+    /* offset 24 */ uint16_t out_min;           // output clamp (DAC units 0..4095)
+    /* offset 26 */ uint16_t out_max;
+    /* offset 28 */ int32_t  integral_clamp;    // anti-windup limit on integral term
 };
 
 struct __attribute__((packed)) ChannelState {     // 32 bytes
@@ -373,6 +454,41 @@ microframe rate).
 Channels are completely independent: DAC0 playing a 100 kHz sine
 coexists with DAC1 in manual coexists with DOUT0..DOUT15 in manual.
 The host can freely mix actions across the inventory.
+
+### 3.2 Reactive modes — closed-loop on the device
+
+The reactive shapes (`SHAPE_LUT`, `SHAPE_THRESHOLD`, `SHAPE_PULSE_TRIG`,
+`SHAPE_PID`) compute their output on the SAM3X side from one of the
+device inputs (an ADC channel or a DIN bit mask). They run **inside
+ISRs** rather than off the DAC PDC, so:
+
+| Reactive mode    | Triggered by         | Reaction time | Per-instance state         |
+| ---------------- | -------------------- | ------------- | -------------------------- |
+| `SHAPE_LUT`      | ADC EOC / DIN PIO    | ~1 µs (DIN) / ~5 µs (ADC) | 12-byte spec + LUT entries (≤ 8 KB)        |
+| `SHAPE_THRESHOLD`| ADC EOC              | ~5 µs         | 16-byte spec + 1 byte hysteresis state     |
+| `SHAPE_PULSE_TRIG`| DIN PIO + dedicated TC compare | ~1 µs trigger; pulse width sub-µs accurate | 12-byte spec + 1 TC channel  |
+| `SHAPE_PID`      | TC trigger at sample_rate_hz | 1 sample period | 32-byte spec + 12 bytes integrator state |
+
+**Resource limits enforced by the firmware** (advertised through new
+`Capabilities` fields, see §2.2 v2 update):
+
+| Reactive mode      | Concurrent instances | Reason                               |
+| ------------------ | -------------------- | ------------------------------------ |
+| `SHAPE_LUT`        | 3 simultaneously     | Pre-allocated 24 KB SRAM (3 × 8 KB)  |
+| `SHAPE_THRESHOLD`  | All output channels  | < 20 bytes/ch state                  |
+| `SHAPE_PULSE_TRIG` | 4 simultaneously     | Each needs a TC channel (TC1_CH0..2 + TC2_CH0) |
+| `SHAPE_PID` *(v3)* | 2 (one per DAC)      | Each needs a dedicated TC sample tick |
+
+### 3.3 The `apply_command_frame` mode-aware filter
+
+Once any channel is in a non-`SHAPE_OFF` state (open-loop or reactive),
+the firmware ignores the corresponding field in the streaming
+`Command` frame. This is the **same rule** for both open-loop and
+reactive modes — the host doesn't need to know which kind of
+generator is active to keep streaming PhyCMD-64 frames safely. The
+"silent ignore" is implemented as a single check
+(`if (channel.shape != SHAPE_OFF) skip`) and adds 2 cycles per channel
+to the apply path, negligible.
 
 ---
 
@@ -581,12 +697,30 @@ fails immediately.
 #define VREQ_DAC_GET_CLOCK        0x19
 #define VREQ_ADC_SET_RATE         0x20
 #define VREQ_ADC_GET_RATE         0x21
+/* Reactive (closed-loop) modes added in v2 */
+#define VREQ_GEN_PLAY_LUT         0x30
+#define VREQ_GEN_PLAY_THRESHOLD   0x31
+#define VREQ_GEN_PLAY_PULSE_TRIG  0x32
+#define VREQ_GEN_PLAY_PID         0x38   /* v3 — slot reserved */
 
 /* Wave shape ---------------------------------------------------- */
 typedef enum : uint8_t {
+    /* Open-loop                                       */
     SHAPE_OFF = 0, SHAPE_DC, SHAPE_SINE, SHAPE_SQUARE,
     SHAPE_TRIANGLE, SHAPE_SAWTOOTH, SHAPE_ARBITRARY,
+    /* Reactive (closed-loop), gap from 7..15 reserved */
+    SHAPE_LUT = 16, SHAPE_THRESHOLD, SHAPE_PULSE_TRIG, SHAPE_PID,
 } wave_shape_t;
+
+/* Input source for reactive modes ------------------------------- */
+typedef enum : uint8_t {
+    INPUT_SRC_NONE = 0, INPUT_SRC_ADC = 1, INPUT_SRC_DIN_MASK = 2,
+} input_src_t;
+
+/* Pulse edge selector ------------------------------------------- */
+typedef enum : uint8_t {
+    PULSE_EDGE_RISING = 1, PULSE_EDGE_FALLING = 2, PULSE_EDGE_ANY = 3,
+} pulse_edge_t;
 
 /* Channel kind -------------------------------------------------- */
 typedef enum : uint8_t {
@@ -642,6 +776,38 @@ struct __attribute__((packed)) WaveArbHeader {
     /* int16_t samples[n_samples] follows */
 };
 _Static_assert(sizeof(struct WaveArbHeader) == 8, "WaveArbHeader size");
+
+/* Reactive-mode payloads (v2) */
+struct __attribute__((packed)) WaveLutSpec {        /* 12 B header + entries */
+    uint8_t  input_src; uint8_t reserved0;
+    uint16_t input_arg, n_entries, output_mask;
+    uint32_t reserved1;
+    /* int16_t entries[n_entries] follows */
+};
+_Static_assert(sizeof(struct WaveLutSpec) == 12, "WaveLutSpec size");
+
+struct __attribute__((packed)) WaveThresholdSpec {  /* 16 B */
+    uint8_t  input_src; uint8_t reserved0;
+    uint16_t input_arg, thr_high, thr_low, val_high, val_low;
+    uint32_t reserved1;
+};
+_Static_assert(sizeof(struct WaveThresholdSpec) == 16, "WaveThresholdSpec size");
+
+struct __attribute__((packed)) WavePulseSpec {      /* 12 B */
+    uint8_t  input_din_bit, edge, active_level, reserved0;
+    uint32_t duration_us, cooldown_us;
+};
+_Static_assert(sizeof(struct WavePulseSpec) == 12, "WavePulseSpec size");
+
+struct __attribute__((packed)) WavePidSpec {        /* 32 B (v3) */
+    uint8_t  input_src; uint8_t reserved0;
+    uint16_t input_arg;
+    uint32_t sample_rate_hz;
+    int32_t  setpoint, kp_q16_16, ki_q16_16, kd_q16_16;
+    uint16_t out_min, out_max;
+    int32_t  integral_clamp;
+};
+_Static_assert(sizeof(struct WavePidSpec) == 32, "WavePidSpec size");
 
 struct __attribute__((packed)) ChannelState {
     uint8_t  channel_kind, channel_index, shape, flags;

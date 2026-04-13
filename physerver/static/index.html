@@ -119,27 +119,39 @@
         .wave-ch .wave-stop:hover { background:#fff4f4; }
         .wave-ch .wave-pending { font-size:10px; color:#e65100; font-style:italic; }
 
-        /* On-chip function generator panel */
-        .fngen-ch { background:#fff; border:1px solid #e0e0e0; border-radius:4px; padding:8px; margin-bottom:6px; font-size:11px; }
-        .fngen-ch .fngen-head { display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap; }
-        .fngen-ch .fngen-name { font-family:monospace; font-weight:bold; color:#333; min-width:48px; }
-        .fngen-ch .fngen-state { font-size:10px; font-family:monospace; color:#666; padding:1px 6px; border-radius:8px; background:#f0f0f0; }
-        .fngen-ch .fngen-state.active { background:#e8f5e9; color:#2e7d32; }
-        .fngen-ch select, .fngen-ch input[type="number"], .fngen-ch input[type="text"] {
-            font-size:11px; padding:1px 4px; border:1px solid #ccc; border-radius:3px;
+        /* On-chip function generator panel — card layout */
+        .fngen-caps { font-size:10px; color:#666; margin:4px 0 12px 0; padding:6px 10px; background:#f5f5f5; border-radius:4px; font-family:monospace; border-left:3px solid #667eea; }
+        .fngen-channels { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px; }
+        .fngen-ch { background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:10px 12px; font-size:12px; display:flex; flex-direction:column; gap:8px; }
+        .fngen-ch.active { border-color:#667eea; box-shadow:0 0 0 1px #667eea40; }
+        .fngen-head { display:flex; align-items:center; gap:10px; justify-content:space-between; padding-bottom:6px; border-bottom:1px solid #e8e8e8; }
+        .fngen-title { display:flex; align-items:center; gap:10px; }
+        .fngen-name { font-family:monospace; font-weight:700; font-size:13px; color:#333; min-width:42px; }
+        .fngen-ch select.fngen-mode { font-size:12px; padding:3px 6px; border:1px solid #ccc; border-radius:3px; background:#fff; font-weight:600; min-width:100px; }
+        .fngen-state { font-size:10px; font-family:'SFMono-Regular',Consolas,Menlo,monospace; color:#888; padding:2px 8px; border-radius:10px; background:#f5f5f5; white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+        .fngen-state.active { background:#e8f5e9; color:#2e7d32; }
+        .fngen-params { display:grid; grid-template-columns:max-content 1fr; gap:6px 12px; align-items:center; }
+        .fngen-params label { color:#555; font-size:11px; font-weight:500; white-space:nowrap; }
+        .fngen-params input[type="number"], .fngen-params input[type="text"], .fngen-params select {
+            font-size:11px; padding:3px 6px; border:1px solid #d0d0d0; border-radius:3px; background:#fff;
+            width:100%; box-sizing:border-box; font-family:monospace; text-align:right;
         }
-        .fngen-ch input[type="number"] { width:72px; text-align:right; font-family:monospace; }
-        .fngen-row { display:flex; gap:6px; align-items:center; margin:3px 0; flex-wrap:wrap; }
-        .fngen-row label { color:#666; font-size:10px; min-width:42px; }
-        .fngen-btn { background:#667eea; color:white; border:none; padding:2px 10px; border-radius:3px; cursor:pointer; font-size:11px; }
+        .fngen-params input[type="text"] { text-align:left; }
+        .fngen-params select { text-align:left; font-family:inherit; }
+        .fngen-params .fngen-hint { color:#999; font-size:10px; font-style:italic; grid-column:1 / -1; margin-top:-2px; }
+        .fngen-actions { display:flex; gap:8px; justify-content:flex-end; padding-top:4px; border-top:1px solid #f0f0f0; }
+        .fngen-btn { background:#667eea; color:white; border:none; padding:5px 16px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; letter-spacing:.3px; }
         .fngen-btn:hover { background:#5566c8; }
-        .fngen-btn.stop { background:#fff; border:1px solid #c62828; color:#c62828; }
-        .fngen-btn.stop:hover { background:#fff4f4; }
-        .fngen-mode-pane { padding:4px 0; border-top:1px dashed #ddd; margin-top:4px; }
-        .fngen-mode-pane.hidden { display:none; }
-        .fngen-global { margin-top:10px; padding:6px 8px; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:4px; }
-        .fngen-global h3 { font-size:10px; text-transform:uppercase; color:#888; margin-bottom:6px; letter-spacing:.4px; }
-        .fngen-sep { display:inline-block; width:14px; }
+        .fngen-btn.stop { background:#fff; border:1px solid #c62828; color:#c62828; padding:4px 15px; }
+        .fngen-btn.stop:hover { background:#ffebee; }
+        .fngen-dout-pick { display:flex; gap:8px; align-items:center; }
+        .fngen-dout-pick select { padding:3px 6px; font-size:12px; border:1px solid #ccc; border-radius:3px; }
+        .fngen-global { margin-top:14px; padding:10px 12px; background:#f9f9f9; border:1px solid #e0e0e0; border-radius:6px; }
+        .fngen-global h3 { font-size:10px; text-transform:uppercase; color:#888; margin-bottom:8px; letter-spacing:.5px; font-weight:600; }
+        .fngen-global-row { display:flex; gap:20px; align-items:center; flex-wrap:wrap; }
+        .fngen-global-row .fngen-global-item { display:flex; gap:6px; align-items:center; }
+        .fngen-global-row label { font-size:11px; color:#555; font-weight:500; }
+        .fngen-global-row input { width:100px; font-size:11px; padding:3px 6px; border:1px solid #d0d0d0; border-radius:3px; font-family:monospace; text-align:right; }
 
         /* Sysinfo */
         .sysinfo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
@@ -306,34 +318,41 @@
         <!-- ADC -->
         <div class="panel" id="panelAdc" data-title="ADC Inputs"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
 
-        <!-- Waveform generator (host-rendered, iso mode only, ≤8 kHz) -->
-        <div class="panel" id="panelWaveform" data-title="Waveform Generator (host)">
-            <h2>Waveform Generator <small style="font-weight:normal;color:#999;font-size:10px;">(host-rendered, ≤8 kHz)</small></h2>
-            <div id="waveformUnavailable" class="sysinfo-unavailable" style="display:none;">Available only when physerver runs in iso mode (config: <code>type = "iso"</code>).</div>
-            <div id="waveformChannels"></div>
-        </div>
-
-        <!-- On-chip function generator (firmware-driven, 1 MSPS DAC + reactive) -->
-        <div class="panel" id="panelFngen" data-title="On-chip Function Generator">
+        <!-- On-chip function generator (firmware-driven, 1 MSPS DAC + reactive). PRIMARY. -->
+        <div class="panel wide" id="panelFngen" data-title="On-chip Function Generator">
             <h2>On-chip Function Generator <small style="font-weight:normal;color:#999;font-size:10px;">(firmware, up to 1 MSPS + reactive)</small></h2>
             <div id="fngenUnavailable" class="sysinfo-unavailable" style="display:none;">Available only with the v2+v3 firmware in iso mode.</div>
             <div id="fngenPanel" style="display:none;">
-                <div id="fngenCaps" style="font-size:10px;color:#666;margin:6px 0 8px 0;font-family:monospace;"></div>
-                <div id="fngenChannels"></div>
+                <div id="fngenCaps" class="fngen-caps"></div>
+                <div id="fngenChannels" class="fngen-channels"></div>
                 <div class="fngen-global">
                     <h3>Global timing</h3>
-                    <div class="fngen-row">
-                        <label>DAC clock Hz</label>
-                        <input type="number" id="fngenDacClock" min="1" max="1000000" step="1000" value="1000000">
-                        <button id="fngenDacClockApply" class="fngen-btn">apply</button>
-                        <span class="fngen-sep"></span>
-                        <label>ADC rate Hz</label>
-                        <input type="number" id="fngenAdcRate" min="1" max="1000000" step="1000" value="100000">
-                        <button id="fngenAdcRateApply" class="fngen-btn">apply</button>
+                    <div class="fngen-global-row">
+                        <div class="fngen-global-item">
+                            <label>DAC clock</label>
+                            <input type="number" id="fngenDacClock" min="1" max="1000000" step="1000" value="1000000">
+                            <label style="color:#888;">Hz</label>
+                            <button id="fngenDacClockApply" class="fngen-btn">apply</button>
+                        </div>
+                        <div class="fngen-global-item">
+                            <label>ADC rate</label>
+                            <input type="number" id="fngenAdcRate" min="1" max="1000000" step="1000" value="100000">
+                            <label style="color:#888;">Hz</label>
+                            <button id="fngenAdcRateApply" class="fngen-btn">apply</button>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
+
+        <!-- Legacy host-rendered Waveform Generator, collapsed by default -->
+        <details class="panel" id="panelWaveform" data-title="Waveform Generator (legacy host-rendered)">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">Waveform Generator <small style="font-weight:normal;color:#999;font-size:10px;text-transform:none;">(legacy host-rendered, ≤8 kHz — prefer the On-chip panel above)</small></summary>
+            <div style="margin-top:10px;">
+                <div id="waveformUnavailable" class="sysinfo-unavailable" style="display:none;">Available only when physerver runs in iso mode (config: <code>type = "iso"</code>).</div>
+                <div id="waveformChannels"></div>
+            </div>
+        </details>
 
         <!-- RT scheduler stats (collapsible, closed by default) -->
         <details class="panel wide" id="rtStatsPanel" data-title="RT Scheduler Stats">
@@ -1282,21 +1301,28 @@ let fngenAvailable = false;
 function fngenBuildPanel() {
     const host = document.getElementById('fngenChannels');
     host.innerHTML = '';
-    for (const ch of FNGEN_DAC_CHANNELS)  host.appendChild(fngenBuildRow(ch, FNGEN_DAC_MODES,  4095));
-    // Compact DOUT picker: a single row that lets the user choose which DOUT bit + mode.
-    const doutPicker = document.createElement('div');
-    doutPicker.className = 'fngen-ch';
-    doutPicker.innerHTML = `
+    for (const ch of FNGEN_DAC_CHANNELS) host.appendChild(fngenBuildRow(ch, FNGEN_DAC_MODES, 4095));
+    // Compact DOUT picker card: channel + mode selector + params + actions
+    const card = document.createElement('div');
+    card.className = 'fngen-ch';
+    card.id = 'fngenrow-dout';
+    card.innerHTML = `
         <div class="fngen-head">
-            <span class="fngen-name">DOUT</span>
-            <select id="fngenDoutPick">${FNGEN_DOUT_CHANNELS.map(c=>'<option>'+c+'</option>').join('')}</select>
-            <select id="fngenDoutMode">${FNGEN_DOUT_MODES.map(m=>'<option>'+m+'</option>').join('')}</select>
-            <button class="fngen-btn" id="fngenDoutApply">apply</button>
-            <button class="fngen-btn stop" id="fngenDoutStop">stop</button>
+            <div class="fngen-title">
+                <span class="fngen-name">DOUT</span>
+                <div class="fngen-dout-pick">
+                    <select id="fngenDoutPick" title="which DOUT bit to control">${FNGEN_DOUT_CHANNELS.map(c=>'<option>'+c+'</option>').join('')}</select>
+                    <select id="fngenDoutMode" class="fngen-mode">${FNGEN_DOUT_MODES.map(m=>'<option>'+m+'</option>').join('')}</select>
+                </div>
+            </div>
             <span class="fngen-state" id="fngenDoutState">—</span>
         </div>
-        <div id="fngenDoutPane" class="fngen-mode-pane"></div>`;
-    host.appendChild(doutPicker);
+        <div id="fngenDoutPane" class="fngen-params"></div>
+        <div class="fngen-actions">
+            <button class="fngen-btn stop" id="fngenDoutStop">stop</button>
+            <button class="fngen-btn" id="fngenDoutApply">apply</button>
+        </div>`;
+    host.appendChild(card);
     fngenWireDoutPicker();
 }
 
@@ -1304,22 +1330,35 @@ function fngenBuildRow(channel, modes, maxVal) {
     const row = document.createElement('div');
     row.className = 'fngen-ch';
     row.id = 'fngenrow-' + channel;
-    const modeOpts = modes.map(m => `<option value="${m}">${m}</option>`).join('');
+    const modeOpts = modes.map(m => `<option value="${m}">${fngenModeLabel(m)}</option>`).join('');
     row.innerHTML = `
         <div class="fngen-head">
-            <span class="fngen-name">${channel}</span>
-            <select data-k="mode">${modeOpts}</select>
-            <button class="fngen-btn" data-act="apply">apply</button>
-            <button class="fngen-btn stop" data-act="stop">stop</button>
+            <div class="fngen-title">
+                <span class="fngen-name">${channel.toUpperCase()}</span>
+                <select data-k="mode" class="fngen-mode">${modeOpts}</select>
+            </div>
             <span class="fngen-state" data-k="state">—</span>
         </div>
-        <div class="fngen-mode-pane" data-k="pane"></div>`;
+        <div class="fngen-params" data-k="pane"></div>
+        <div class="fngen-actions">
+            <button class="fngen-btn stop" data-act="stop">stop</button>
+            <button class="fngen-btn" data-act="apply">apply</button>
+        </div>`;
     row.dataset.maxval = maxVal;
     row.querySelector('select[data-k="mode"]').onchange = () => fngenRenderPane(row);
     row.querySelector('button[data-act="apply"]').onclick = () => fngenApply(channel, row);
     row.querySelector('button[data-act="stop"]').onclick  = () => fngenStop(channel);
     fngenRenderPane(row);
     return row;
+}
+
+function fngenModeLabel(m) {
+    return ({
+        off:'Off (manual)', dc:'DC level', sine:'Sine wave', square:'Square wave',
+        triangle:'Triangle wave', sawtooth:'Sawtooth wave', arbitrary:'Arbitrary (upload)',
+        lut:'LUT (reactive)', threshold:'Threshold (reactive)',
+        pulse_trig:'Pulse trigger', pid:'PID (closed-loop)',
+    })[m] || m;
 }
 
 function fngenWireDoutPicker() {
@@ -1358,66 +1397,61 @@ function fngenRenderPane(row) {
     pane.innerHTML = fngenPaneHtml(mode, maxVal, 'dac');
 }
 
+// Build an HTML form pane for the given mode. Produces a flat
+// sequence of <label> + <input> pairs consumed by the parent
+// .fngen-params 2-column CSS grid. All labels align on one column,
+// all inputs on the other — no more jagged rows.
 function fngenPaneHtml(mode, maxVal, kind) {
     const halfMax = Math.floor(maxVal / 2);
-    const ampDef = Math.floor(maxVal * 0.8);
-    if (mode === 'off') return '';
-    if (mode === 'dc') return `
-        <div class="fngen-row">
-            <label>offset</label><input type="number" data-k="offset" min="0" max="${maxVal}" value="${halfMax}">
-        </div>`;
-    if (['sine','square','triangle','sawtooth'].includes(mode)) return `
-        <div class="fngen-row">
-            <label>freq Hz</label><input type="number" data-k="freq_hz" min="0.1" max="500000" step="0.1" value="1000">
-            <label>amp</label><input type="number" data-k="amplitude" min="0" max="${maxVal}" value="${ampDef}">
-            <label>off</label><input type="number" data-k="offset" min="0" max="${maxVal}" value="${halfMax}">
-            ${mode === 'square' ? '<label>duty</label><input type="number" data-k="duty" min="0" max="1" step="0.05" value="0.5">' : ''}
-        </div>`;
-    if (mode === 'arbitrary') return `
-        <div class="fngen-row">
-            <label>samples</label><input type="text" data-k="samples" value="0,1024,2048,3072,4095,3072,2048,1024" style="width:240px;" title="comma-separated int16 samples (max 1024)">
-            <label>rate Hz</label><input type="number" data-k="sample_rate_hz" min="1" max="1000000" value="100000">
-            <label>loops</label><input type="number" data-k="loop_count" min="0" max="65535" value="0" title="0 = infinite">
-        </div>`;
-    if (mode === 'lut') return `
-        <div class="fngen-row">
-            <label>input</label>
-            <select data-k="input_src"><option value="adc">adc</option><option value="din">din mask</option></select>
-            <label>arg</label><input type="number" data-k="input_arg" min="0" max="65535" value="0" title="ADC ch index, or DIN bitmask">
-            <label>entries</label><input type="text" data-k="entries" value="0,4095" style="width:240px;" title="comma-separated, length determines bit-width of input">
-            ${kind === 'dout' ? '<label>mask</label><input type="number" data-k="output_mask" min="0" max="65535" value="65535">' : ''}
-        </div>`;
-    if (mode === 'threshold') return `
-        <div class="fngen-row">
-            <label>input</label>
-            <select data-k="input_src"><option value="adc">adc</option><option value="din">din mask</option></select>
-            <label>arg</label><input type="number" data-k="input_arg" min="0" max="65535" value="0">
-            <label>thr↑</label><input type="number" data-k="thr_high" min="0" max="4095" value="2100">
-            <label>thr↓</label><input type="number" data-k="thr_low"  min="0" max="4095" value="2000">
-            <label>val↑</label><input type="number" data-k="val_high" min="0" max="${maxVal}" value="${maxVal}">
-            <label>val↓</label><input type="number" data-k="val_low"  min="0" max="${maxVal}" value="0">
-        </div>`;
-    if (mode === 'pulse_trig') return `
-        <div class="fngen-row">
-            <label>din bit</label><input type="number" data-k="din_bit" min="0" max="15" value="0">
-            <label>edge</label>
-            <select data-k="edge"><option>rising</option><option>falling</option><option>any</option></select>
-            <label>level</label><input type="number" data-k="active_level" min="0" max="1" value="1">
-            <label>dur µs</label><input type="number" data-k="duration_us" min="1" max="1000000" value="100000">
-            <label>cool µs</label><input type="number" data-k="cooldown_us" min="0" max="1000000" value="0">
-        </div>`;
-    if (mode === 'pid') return `
-        <div class="fngen-row">
-            <label>input</label>
-            <select data-k="input_src"><option value="adc">adc</option></select>
-            <label>arg</label><input type="number" data-k="input_arg" min="0" max="7" value="0">
-            <label>setpoint</label><input type="number" data-k="setpoint" min="0" max="4095" value="2048">
-            <label>Kp</label><input type="number" data-k="kp" step="0.001" value="0.5">
-            <label>Ki</label><input type="number" data-k="ki" step="0.001" value="0.001">
-            <label>Kd</label><input type="number" data-k="kd" step="0.001" value="0">
-            <label>rate</label><input type="number" data-k="sample_rate_hz" min="1" max="100000" value="1000">
-        </div>`;
-    return '<div style="color:#999;font-size:10px;">(no parameters for this mode)</div>';
+    const ampDef  = Math.floor(maxVal * 0.8);
+    const rows = [];
+    const L = (label, html) => rows.push(`<label>${label}</label>${html}`);
+    const N = (k, min, max, step, val, title) => `<input type="number" data-k="${k}" min="${min}" max="${max}" step="${step}" value="${val}"${title?' title="'+title+'"':''}>`;
+    const T = (k, val, title) => `<input type="text" data-k="${k}" value="${val}"${title?' title="'+title+'"':''}>`;
+    const S = (k, opts) => `<select data-k="${k}">${opts.map(o=>(typeof o==='string'?`<option>${o}</option>`:`<option value="${o.v}">${o.l}</option>`)).join('')}</select>`;
+    const HINT = (text) => rows.push(`<div class="fngen-hint">${text}</div>`);
+
+    if (mode === 'off') {
+        HINT('Channel is in manual mode — driven by streaming PhyCMD-64 frames.');
+    } else if (mode === 'dc') {
+        L('Level', N('offset', 0, maxVal, 1, halfMax));
+    } else if (['sine','square','triangle','sawtooth'].includes(mode)) {
+        L('Frequency (Hz)', N('freq_hz', 0.1, 500000, 0.1, 1000));
+        L('Amplitude',      N('amplitude', 0, maxVal, 1, ampDef, 'peak-to-peak swing'));
+        L('Offset',         N('offset', 0, maxVal, 1, halfMax, 'mid-point of the wave'));
+        if (mode === 'square') L('Duty cycle', N('duty', 0, 1, 0.01, 0.5, '0.0-1.0 = 0-100 percent'));
+    } else if (mode === 'arbitrary') {
+        L('Samples (CSV)', T('samples', '0,1024,2048,3072,4095,3072,2048,1024', 'comma-separated int16 DAC codes, max 1024'));
+        L('Sample rate (Hz)', N('sample_rate_hz', 1, 1000000, 1, 100000));
+        L('Loop count', N('loop_count', 0, 65535, 1, 0, '0 = infinite loop'));
+    } else if (mode === 'lut') {
+        L('Input source',   S('input_src', [{v:'adc',l:'ADC channel'}, {v:'din',l:'DIN bit-mask'}]));
+        L('Input arg',      N('input_arg', 0, 65535, 1, 0, 'ADC channel 0-7, or DIN bitmask'));
+        L('Entries (CSV)',  T('entries', '0,1365,2730,4095', 'output values — length sets input resolution'));
+        if (kind === 'dout') L('Output mask', N('output_mask', 0, 65535, 1, 65535, 'which DOUT bits the LUT drives'));
+    } else if (mode === 'threshold') {
+        L('Input source',   S('input_src', [{v:'adc',l:'ADC channel'}, {v:'din',l:'DIN bit-mask'}]));
+        L('Input arg',      N('input_arg', 0, 65535, 1, 0));
+        L('Threshold high', N('thr_high', 0, 4095, 1, 2100, 'input over thr_high triggers val_high'));
+        L('Threshold low',  N('thr_low',  0, 4095, 1, 2000, 'input under thr_low triggers val_low'));
+        L('Output high',    N('val_high', 0, maxVal, 1, maxVal));
+        L('Output low',     N('val_low',  0, maxVal, 1, 0));
+    } else if (mode === 'pulse_trig') {
+        L('Input DIN bit',  N('din_bit', 0, 15, 1, 0));
+        L('Edge',           S('edge', ['rising', 'falling', 'any']));
+        L('Active level',   N('active_level', 0, 1, 1, 1));
+        L('Duration (µs)',  N('duration_us', 1, 1000000, 1, 100000));
+        L('Cooldown (µs)',  N('cooldown_us', 0, 1000000, 1, 0, 're-triggers within cooldown are ignored'));
+    } else if (mode === 'pid') {
+        L('Input ADC ch',   N('input_arg', 0, 7, 1, 0));
+        L('Setpoint',       N('setpoint', 0, 4095, 1, 2048));
+        L('Kp',             N('kp', -1000, 1000, 0.001, 0.5));
+        L('Ki',             N('ki', -1000, 1000, 0.001, 0.001));
+        L('Kd',             N('kd', -1000, 1000, 0.001, 0));
+        L('Loop rate (Hz)', N('sample_rate_hz', 1, 100000, 1, 1000, 'actual rate bounded by ADC rate'));
+        HINT('Tip: set ADC rate ≥ loop rate. Tuning: Ziegler–Nichols sketch in FUNCTION_GENERATOR.md §3.4.');
+    }
+    return rows.join('');
 }
 
 function fngenCollect(row) {
@@ -1495,8 +1529,12 @@ async function fngenPollState() {
             const row = document.getElementById('fngenrow-' + ch);
             if (!row) continue;
             const el = row.querySelector('[data-k="state"]');
-            el.textContent = `${s.shape_name}  freq=${(s.freq_mhz/1000).toFixed(1)}Hz  cur_phase=0x${s.cur_phase_q24_8.toString(16).padStart(8,'0')}`;
-            el.classList.toggle('active', s.shape !== 0);
+            const active = s.shape !== 0;
+            const hz = s.freq_mhz / 1000;
+            const hzFmt = hz >= 1000 ? (hz/1000).toFixed(2) + ' kHz' : hz.toFixed(1) + ' Hz';
+            el.textContent = active ? `${s.shape_name} @ ${hzFmt}` : 'manual (off)';
+            el.classList.toggle('active', active);
+            row.classList.toggle('active', active);
         } catch (e) {}
     }
     fngenRefreshDoutState();

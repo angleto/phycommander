@@ -27,9 +27,29 @@
 
         /* Grid */
         .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-bottom:14px; }
-        .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; }
-        .panel h2 { font-size:13px; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #667eea; padding-bottom:6px; }
+        .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; position:relative; }
+        .panel h2 { font-size:13px; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #667eea; padding-bottom:6px; padding-right:48px; }
         .panel.wide { grid-column:1/-1; }
+        .panel.hidden { display:none; }
+        .panel.dragging { opacity:.4; }
+        .panel.drag-over { outline:2px dashed #667eea; outline-offset:-3px; }
+        .panel.drag-over::before { content:''; position:absolute; inset:0; background:rgba(102,126,234,.06); pointer-events:none; border-radius:8px; }
+
+        /* Per-panel actions (drag handle + hide) */
+        .panel-actions { position:absolute; top:8px; right:8px; display:flex; gap:2px; z-index:5; }
+        .panel-actions button { background:transparent; border:none; color:#aaa; font-size:13px; line-height:1; padding:2px 5px; border-radius:3px; opacity:.45; transition:opacity .1s, color .1s, background .1s; }
+        .panel-actions button:hover { opacity:1; background:rgba(0,0,0,.05); }
+        .panel-drag-handle { cursor:grab; font-weight:bold; }
+        .panel-drag-handle:active { cursor:grabbing; }
+        .panel-hide-btn:hover { color:#c62828 !important; }
+        /* For <details> panels, give summary a bit of right padding too */
+        details.panel summary { padding-right:48px !important; }
+
+        /* Layout bar */
+        .layout-bar { display:flex; gap:10px; align-items:center; margin-bottom:10px; padding:4px 6px; }
+        .layout-hint { color:#888; font-size:11px; flex:1; }
+        .layout-bar button, .layout-bar select { font-size:11px; padding:3px 8px; border:1px solid #ccc; border-radius:3px; background:#fff; cursor:pointer; color:#555; }
+        .layout-bar button:hover, .layout-bar select:hover { background:#f0f0f0; border-color:#999; }
 
         /* GPIO */
         .gpio-grid { display:grid; grid-template-columns:repeat(8,1fr); gap:4px; }
@@ -58,7 +78,31 @@
         .scope-toolbar button.active { background:#667eea; color:white; border-color:#667eea; }
         .scope-ch-list { display:flex; gap:6px; flex-wrap:wrap; }
         .scope-ch-list label { font-size:10px; font-family:monospace; cursor:pointer; display:flex; align-items:center; gap:2px; }
-        canvas.scope { width:100%; height:200px; display:block; background:#1a1a2e; border-radius:4px; }
+        canvas.scope { width:100%; height:240px; display:block; background:#0d0d1a; border-radius:4px; }
+        .scope-frame { position:relative; background:#0d0d1a; border-radius:4px; padding:22px 4px 4px 4px; transition:padding .15s; }
+        .scope-frame canvas.scope { background:transparent; transition:height .15s; }
+        .scope-title { position:absolute; top:4px; left:8px; color:#888; font-size:10px; text-transform:uppercase; letter-spacing:.5px; pointer-events:none; }
+        .scope-maxbtn { position:absolute; top:3px; right:4px; z-index:10; background:rgba(255,255,255,.08); color:#ccc; border:1px solid rgba(255,255,255,.15); border-radius:3px; cursor:pointer; padding:1px 7px; font-size:13px; line-height:1; }
+        .scope-maxbtn:hover { background:rgba(255,255,255,.18); }
+        .scope-frame.scope-max { position:fixed; top:0; left:0; right:0; bottom:0; z-index:1000; padding:32px 12px 12px 12px; margin:0; }
+        .scope-frame.scope-max canvas.scope { height:calc(100vh - 200px); }
+        .scope-frame.scope-max .scope-meas { max-height:160px; overflow:auto; }
+        /* Collapsed state: no channels selected in this frame's group */
+        .scope-frame.scope-empty { padding:18px 4px 2px 4px; }
+        .scope-frame.scope-empty canvas.scope { height:24px; opacity:.25; }
+        .scope-frame.scope-empty .scope-meas { display:none; }
+        .scope-frame.scope-empty .scope-title::after { content:" — no channels"; color:#555; }
+        .scope-meas { color:#d8d8e0; font-family:'SFMono-Regular',Consolas,Menlo,monospace; font-size:11px; padding:6px 6px 2px 6px; }
+        .scope-meas table { width:100%; border-collapse:collapse; }
+        .scope-meas th { color:#777; text-align:right; font-weight:normal; padding:1px 6px; border-bottom:1px solid #333; font-size:10px; text-transform:uppercase; letter-spacing:.4px; }
+        .scope-meas th:first-child { text-align:left; }
+        .scope-meas td { text-align:right; padding:1px 6px; }
+        .scope-meas td:first-child { text-align:left; font-weight:bold; }
+        .scope-allbtn { font-size:10px; padding:1px 6px; border:1px solid #ccc; background:#fff; border-radius:3px; cursor:pointer; color:#666; }
+        .scope-allbtn:hover { background:#f0f0f0; border-color:#999; }
+        /* Reused by Measurements toggle */
+        .flag-toggle { display:flex; align-items:center; gap:4px; cursor:pointer; }
+        .flag-toggle input { cursor:pointer; }
 
         /* Sysinfo */
         .sysinfo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
@@ -89,44 +133,82 @@
         </div>
     </div>
 
+    <div class="layout-bar">
+        <span class="layout-hint">⋮⋮ Drag panels by the handle in the top-right corner. × to hide.</span>
+        <button id="layoutResetBtn" title="Restore default order, show all hidden panels">Reset layout</button>
+        <select id="layoutShowHidden" style="display:none;"><option value="">Show hidden ▾</option></select>
+    </div>
+
     <div class="grid">
         <!-- Oscilloscope -->
-        <div class="panel wide">
+        <div class="panel wide" id="scopePanel" data-title="Oscilloscope">
             <h2>Oscilloscope</h2>
             <div class="scope-toolbar">
                 <span>Window:</span>
                 <select id="scopeWindow"><option value="200">200ms</option><option value="1000" selected>1s</option><option value="5000">5s</option><option value="10000">10s</option></select>
                 <button id="scopePause">Pause</button>
+                <label class="flag-toggle" style="margin-left:12px;font-size:11px"><input type="checkbox" id="scopeMeasOn" checked>Measurements</label>
             </div>
             <div class="scope-toolbar">
                 <span>Analog In:</span>
+                <button class="scope-allbtn" data-grp="adc" data-action="all">all</button>
+                <button class="scope-allbtn" data-grp="adc" data-action="none">none</button>
                 <div class="scope-ch-list" id="scopeAdcCh"></div>
                 <span style="margin-left:6px;color:#aaa;">|</span>
                 <span style="margin-left:6px;">Out:</span>
+                <button class="scope-allbtn" data-grp="dac" data-action="all">all</button>
+                <button class="scope-allbtn" data-grp="dac" data-action="none">none</button>
                 <div class="scope-ch-list" id="scopeDacCh"></div>
                 <span style="margin-left:6px;color:#aaa;">|</span>
                 <span style="margin-left:6px;">Pwm:</span>
+                <button class="scope-allbtn" data-grp="pwm" data-action="all">all</button>
+                <button class="scope-allbtn" data-grp="pwm" data-action="none">none</button>
                 <div class="scope-ch-list" id="scopePwmCh"></div>
             </div>
             <div class="scope-toolbar">
                 <span>Digital In:</span>
+                <button class="scope-allbtn" data-grp="din" data-action="all">all</button>
+                <button class="scope-allbtn" data-grp="din" data-action="none">none</button>
                 <div class="scope-ch-list" id="scopeDigitalInCh"></div>
             </div>
             <div class="scope-toolbar">
                 <span>Digital Out:</span>
+                <button class="scope-allbtn" data-grp="dout" data-action="all">all</button>
+                <button class="scope-allbtn" data-grp="dout" data-action="none">none</button>
                 <div class="scope-ch-list" id="scopeDigitalOutCh"></div>
             </div>
-            <canvas class="scope" id="scopeAnalog" height="200"></canvas>
-            <canvas class="scope" id="scopeDigital" height="120" style="margin-top:6px;height:120px;"></canvas>
+
+            <!-- Analog scope (ADC + DAC, 0-4095) + measurements table -->
+            <div class="scope-frame" id="scopeAnalogFrame">
+                <button class="scope-maxbtn" data-target="scopeAnalogFrame">⤢</button>
+                <div class="scope-title">Analog (ADC / DAC, 12-bit)</div>
+                <canvas class="scope" id="scopeAnalog" height="240"></canvas>
+                <div class="scope-meas" id="scopeAnalogMeas"></div>
+            </div>
+
+            <!-- PWM scope (separate, 16-bit scale) + measurements table -->
+            <div class="scope-frame" id="scopePwmFrame" style="margin-top:8px;">
+                <button class="scope-maxbtn" data-target="scopePwmFrame">⤢</button>
+                <div class="scope-title">PWM (16-bit)</div>
+                <canvas class="scope" id="scopePwm" height="160"></canvas>
+                <div class="scope-meas" id="scopePwmMeas"></div>
+            </div>
+
+            <!-- Digital scope -->
+            <div class="scope-frame" id="scopeDigitalFrame" style="margin-top:8px;">
+                <button class="scope-maxbtn" data-target="scopeDigitalFrame">⤢</button>
+                <div class="scope-title">Digital</div>
+                <canvas class="scope" id="scopeDigital" height="160"></canvas>
+            </div>
         </div>
 
         <!-- Digital Outputs -->
-        <div class="panel"><h2>Digital Outputs</h2><div class="gpio-grid" id="gpioOutputs"></div></div>
+        <div class="panel" id="panelDigitalOut" data-title="Digital Outputs"><h2>Digital Outputs</h2><div class="gpio-grid" id="gpioOutputs"></div></div>
         <!-- Digital Inputs -->
-        <div class="panel"><h2>Digital Inputs</h2><div class="gpio-grid" id="gpioInputs"></div></div>
+        <div class="panel" id="panelDigitalIn" data-title="Digital Inputs"><h2>Digital Inputs</h2><div class="gpio-grid" id="gpioInputs"></div></div>
 
         <!-- DAC + PWM -->
-        <div class="panel">
+        <div class="panel" id="panelDacPwm" data-title="DAC / PWM Outputs">
             <h2>DAC / PWM Outputs</h2>
             <div class="control-group"><label>DAC 0 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
             <div class="control-group"><label>DAC 1 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
@@ -135,16 +217,16 @@
         </div>
 
         <!-- ADC -->
-        <div class="panel"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
+        <div class="panel" id="panelAdc" data-title="ADC Inputs"><h2>ADC Inputs</h2><div class="adc-grid" id="adcDisplay"></div></div>
 
         <!-- RT scheduler stats (collapsible, closed by default) -->
-        <details class="panel wide" id="rtStatsPanel">
+        <details class="panel wide" id="rtStatsPanel" data-title="RT Scheduler Stats">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">RT Scheduler Stats</summary>
             <div id="rtStatsDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
         </details>
 
         <!-- Sysinfo (bottom, collapsible, closed by default) -->
-        <details class="panel wide">
+        <details class="panel wide" id="panelSysinfo" data-title="System Telemetry">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">System Telemetry</summary>
             <div id="sysinfoDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
         </details>
@@ -221,6 +303,50 @@ for(let i=16;i<32;i++){
 }
 document.getElementById('scopePause').onclick=function(){scopePaused=!scopePaused;this.classList.toggle('active',scopePaused);this.textContent=scopePaused?'Resume':'Pause';};
 
+// All/None per gruppo. Mappa gruppo → range di indici nella lista canali.
+// Analog channel index space: 0-7=ADC, 8-9=DAC, 10-11=PWM
+// Digital channel index space: 0-15=DIN, 16-31=DOUT
+const GROUP_RANGES = { adc:[0,8], dac:[8,10], pwm:[10,12], din:[0,16], dout:[16,32] };
+const ANALOG_GROUPS = new Set(['adc','dac','pwm']);
+document.querySelectorAll('.scope-allbtn').forEach(btn=>{
+    btn.onclick = () => {
+        const grp = btn.dataset.grp, action = btn.dataset.action;
+        const [lo,hi] = GROUP_RANGES[grp];
+        const arr = ANALOG_GROUPS.has(grp) ? scopeAnalogCh : scopeDigitalCh;
+        // Drop existing in this range
+        const filtered = arr.filter(x => x < lo || x >= hi);
+        arr.length = 0;
+        for (const v of filtered) arr.push(v);
+        if (action === 'all') {
+            for (let i = lo; i < hi; i++) arr.push(i);
+        }
+        // Sync checkboxes
+        const containerId = grp==='adc'?'scopeAdcCh':grp==='dac'?'scopeDacCh':grp==='pwm'?'scopePwmCh':grp==='din'?'scopeDigitalInCh':'scopeDigitalOutCh';
+        document.querySelectorAll('#'+containerId+' input[type=checkbox]').forEach((cb,i) => { cb.checked = (action === 'all'); });
+    };
+});
+
+// Maximize buttons (frames)
+document.querySelectorAll('.scope-maxbtn').forEach(btn=>{
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        const target = document.getElementById(btn.dataset.target);
+        const isMax = target.classList.toggle('scope-max');
+        btn.textContent = isMax ? '⤡' : '⤢';
+        // Force canvas resize on next RAF
+    };
+});
+
+// Measurements toggle
+let measOn = true;
+document.getElementById('scopeMeasOn').onchange = function(){
+    measOn = this.checked;
+    if (!measOn) {
+        document.getElementById('scopeAnalogMeas').innerHTML = '';
+        document.getElementById('scopePwmMeas').innerHTML = '';
+    }
+};
+
 // ========== GPIO ==========
 function updateGpioOut(){gpioOut.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(cmd.digital_out&(1<<i))!==0));}
 function updateGpioIn(v){gpioIn.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(v&(1<<i))!==0));}
@@ -265,7 +391,65 @@ function pushScope(s){
 }
 
 // ========== Scope rendering ==========
-const cvA=document.getElementById('scopeAnalog'), cvD=document.getElementById('scopeDigital');
+const cvA=document.getElementById('scopeAnalog'), cvP=document.getElementById('scopePwm'), cvD=document.getElementById('scopeDigital');
+const frameA=document.getElementById('scopeAnalogFrame'), frameP=document.getElementById('scopePwmFrame'), frameD=document.getElementById('scopeDigitalFrame');
+
+// Helpers: split scopeAnalogCh into ADC+DAC (0-9) vs PWM (10-11).
+function chArr(ch){return ch<8?scopeBuf.adc[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10];}
+function chLabel(ch){return ch<8?'ADC'+ch:ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
+function chMax(ch){return ch<10?4095:65535;}
+
+// Render one analog-style trace plot. Returns true if anything was drawn.
+function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
+    const ctx=cv.getContext('2d');
+    const W=cv.clientWidth, H=cv.clientHeight;
+    if(cv.width!==W*2){cv.width=W*2;cv.height=H*2;}
+    ctx.setTransform(2,0,0,2,0,0);
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle='#333';ctx.lineWidth=.5;
+    for(let y=0;y<H;y+=H/4){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+    for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+    ctx.lineWidth=1.2;
+    channels.forEach((ch)=>{
+        const arr=chArr(ch);
+        const max=chMax(ch);
+        ctx.strokeStyle=COLORS[ch%COLORS.length];
+        ctx.beginPath();
+        let first=true;
+        for(let i=start;i<scopeBuf.ts.length;i++){
+            const x=(scopeBuf.ts[i]-tMin)/windowMs*W;
+            const y=H-(arr[i]/max)*H;
+            if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
+        }
+        ctx.stroke();
+    });
+    ctx.font='10px monospace'; ctx.fillStyle='#888';
+    ctx.fillText(fullScaleLabel,2,12); ctx.fillText('0',2,H-4);
+}
+
+// Compute Cur/Min/Max/Mean/Pk-Pk over [start,end) on a numeric array.
+function computeMeas(arr,start,end){
+    if(start>=end||end>arr.length) return null;
+    let mn=Infinity,mx=-Infinity,sum=0,n=0;
+    for(let i=start;i<end;i++){const v=arr[i];if(v<mn)mn=v;if(v>mx)mx=v;sum+=v;n++;}
+    return {cur:arr[end-1],min:mn,max:mx,mean:sum/n,pkpk:mx-mn};
+}
+
+function renderMeasTable(container, channels, start){
+    if(!measOn||!channels.length){container.innerHTML='';return;}
+    let h='<table><thead><tr><th>Ch</th><th>Cur</th><th>Min</th><th>Max</th><th>Mean</th><th>Pk-Pk</th></tr></thead><tbody>';
+    channels.forEach(ch=>{
+        const arr=chArr(ch);
+        const m=computeMeas(arr,start,arr.length);
+        if(!m) return;
+        const col=COLORS[ch%COLORS.length];
+        h+=`<tr><td style="color:${col}">${chLabel(ch)}</td><td>${m.cur.toFixed(0)}</td><td>${m.min.toFixed(0)}</td><td>${m.max.toFixed(0)}</td><td>${m.mean.toFixed(1)}</td><td>${m.pkpk.toFixed(0)}</td></tr>`;
+    });
+    h+='</tbody></table>';
+    container.innerHTML=h;
+}
+
+let lastMeasUpdate=0;
 function drawScope(){
     requestAnimationFrame(drawScope);
     const windowMs=+document.getElementById('scopeWindow').value;
@@ -276,35 +460,19 @@ function drawScope(){
     let start=scopeBuf.ts.length-1;
     while(start>0&&scopeBuf.ts[start]>tMin)start--;
 
-    // Analog canvas
-    const ctxA=cvA.getContext('2d');
-    const W=cvA.clientWidth, H=cvA.clientHeight;
-    if(cvA.width!==W*2){cvA.width=W*2;cvA.height=H*2;} // 2x for retina
-    ctxA.setTransform(2,0,0,2,0,0);
-    ctxA.clearRect(0,0,W,H);
-    // Grid
-    ctxA.strokeStyle='#333';ctxA.lineWidth=.5;
-    for(let y=0;y<H;y+=H/4){ctxA.beginPath();ctxA.moveTo(0,y);ctxA.lineTo(W,y);ctxA.stroke();}
-    for(let x=0;x<W;x+=W/10){ctxA.beginPath();ctxA.moveTo(x,0);ctxA.lineTo(x,H);ctxA.stroke();}
-    // Traces
-    ctxA.lineWidth=1.2;
-    scopeAnalogCh.forEach((ch)=>{
-        const arr=ch<8?scopeBuf.adc[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10];
-        const max=ch<10?4095:65535;
-        ctxA.strokeStyle=COLORS[ch%COLORS.length];
-        ctxA.beginPath();
-        let first=true;
-        for(let i=start;i<scopeBuf.ts.length;i++){
-            const x=(scopeBuf.ts[i]-tMin)/windowMs*W;
-            const y=H-(arr[i]/max)*H;
-            if(first){ctxA.moveTo(x,y);first=false;}else ctxA.lineTo(x,y);
-        }
-        ctxA.stroke();
-    });
-    // Labels
-    ctxA.font='10px monospace'; ctxA.fillStyle='#888';
-    const hasPwm=scopeAnalogCh.some(c=>c>=10);
-    ctxA.fillText(hasPwm?'65535':'4095',2,12); ctxA.fillText('0',2,H-4);
+    // Split analog channels: ADC+DAC (0-9) on Analog frame, PWM (10-11) on PWM frame
+    const analogCh=scopeAnalogCh.filter(c=>c<10);
+    const pwmCh=scopeAnalogCh.filter(c=>c>=10);
+
+    // Auto-shrink empty frames
+    frameA.classList.toggle('scope-empty', analogCh.length===0);
+    frameP.classList.toggle('scope-empty', pwmCh.length===0);
+    frameD.classList.toggle('scope-empty', scopeDigitalCh.length===0);
+
+    // Analog (ADC + DAC)
+    renderAnalogPlot(cvA, analogCh, start, tMin, windowMs, '4095');
+    // PWM (its own frame, 16-bit scale)
+    renderAnalogPlot(cvP, pwmCh, start, tMin, windowMs, '65535');
 
     // Digital canvas
     const ctxD=cvD.getContext('2d');
@@ -334,7 +502,13 @@ function drawScope(){
         ctxD.font='9px monospace';ctxD.fillStyle=COLORS[(ch+4)%COLORS.length];
         ctxD.fillText(ch<16?'DI'+ch:'DO'+(ch-16),2,yBase-rowH/2+4);
     });
-    if(!scopeDigitalCh.length){ctxD.font='11px sans-serif';ctxD.fillStyle='#666';ctxD.fillText('Select digital channels above',WD/2-80,HD/2);}
+
+    // Measurements (throttled to ~10 Hz)
+    if(measOn && now-lastMeasUpdate>100){
+        lastMeasUpdate=now;
+        renderMeasTable(document.getElementById('scopeAnalogMeas'), analogCh, start);
+        renderMeasTable(document.getElementById('scopePwmMeas'), pwmCh, start);
+    }
 }
 
 // ========== Sysinfo ==========
@@ -461,10 +635,164 @@ document.getElementById('errorsBox').onclick = async () => {
     } catch(e) { console.error('reset_errors failed', e); }
 };
 
+// ========== Layout (drag-and-drop, hide, persistence) ==========
+// localStorage keys
+const LAYOUT_ORDER_KEY = 'phycmd.layout.order';
+const LAYOUT_HIDDEN_KEY = 'phycmd.layout.hidden';
+
+let layoutHidden = (() => {
+    try { return JSON.parse(localStorage.getItem(LAYOUT_HIDDEN_KEY) || '[]'); }
+    catch(e) { return []; }
+})();
+
+function saveLayoutOrder() {
+    const grid = document.querySelector('.grid');
+    const order = Array.from(grid.children).filter(p=>p.classList.contains('panel')).map(p => p.id);
+    localStorage.setItem(LAYOUT_ORDER_KEY, JSON.stringify(order));
+}
+
+function saveLayoutHidden() {
+    localStorage.setItem(LAYOUT_HIDDEN_KEY, JSON.stringify(layoutHidden));
+}
+
+function refreshHiddenMenu() {
+    const sel = document.getElementById('layoutShowHidden');
+    sel.innerHTML = '<option value="">Show hidden ▾</option>';
+    layoutHidden.forEach(id => {
+        const p = document.getElementById(id);
+        if (!p) return;
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = p.dataset.title || id;
+        sel.appendChild(opt);
+    });
+    sel.style.display = layoutHidden.length ? '' : 'none';
+}
+
+function hidePanel(panel) {
+    panel.classList.add('hidden');
+    if (!layoutHidden.includes(panel.id)) layoutHidden.push(panel.id);
+    saveLayoutHidden();
+    refreshHiddenMenu();
+}
+
+function showPanel(id) {
+    const p = document.getElementById(id);
+    if (p) p.classList.remove('hidden');
+    layoutHidden = layoutHidden.filter(x => x !== id);
+    saveLayoutHidden();
+    refreshHiddenMenu();
+}
+
+function applyLayoutOrder() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(LAYOUT_ORDER_KEY) || 'null'); }
+    catch(e) { saved = null; }
+    if (!Array.isArray(saved) || !saved.length) return;
+    const grid = document.querySelector('.grid');
+    saved.forEach(id => {
+        const p = document.getElementById(id);
+        if (p && p.parentElement === grid) grid.appendChild(p);
+    });
+}
+
+function applyHiddenState() {
+    layoutHidden.forEach(id => {
+        const p = document.getElementById(id);
+        if (p) p.classList.add('hidden');
+    });
+}
+
+function setupPanelDragAndActions(panel) {
+    // Build the actions bar (drag handle + hide button) in the top-right
+    const actions = document.createElement('div');
+    actions.className = 'panel-actions';
+    const handle = document.createElement('button');
+    handle.className = 'panel-drag-handle';
+    handle.type = 'button';
+    handle.title = 'Drag to rearrange';
+    handle.textContent = '⋮⋮';
+    const hideBtn = document.createElement('button');
+    hideBtn.className = 'panel-hide-btn';
+    hideBtn.type = 'button';
+    hideBtn.title = 'Hide panel (use "Show hidden" or Reset to restore)';
+    hideBtn.textContent = '×';
+    hideBtn.onclick = (e) => { e.stopPropagation(); hidePanel(panel); };
+    actions.appendChild(handle);
+    actions.appendChild(hideBtn);
+    panel.appendChild(actions);
+
+    // Drag is gated on mousedown over the handle, then cleared on dragend.
+    // This avoids making sliders, buttons, and summary clicks draggable.
+    handle.addEventListener('mousedown', () => panel.setAttribute('draggable', 'true'));
+    handle.addEventListener('mouseup',   () => panel.setAttribute('draggable', 'false'));
+    handle.addEventListener('dragstart', (e) => e.stopPropagation()); // let panel handle it
+
+    panel.addEventListener('dragstart', (e) => {
+        if (panel.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
+        e.dataTransfer.setData('text/plain', panel.id);
+        e.dataTransfer.effectAllowed = 'move';
+        panel.classList.add('dragging');
+    });
+
+    panel.addEventListener('dragend', () => {
+        panel.classList.remove('dragging');
+        panel.setAttribute('draggable', 'false');
+        document.querySelectorAll('.panel.drag-over').forEach(p => p.classList.remove('drag-over'));
+    });
+
+    panel.addEventListener('dragover', (e) => {
+        if (panel.classList.contains('dragging')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        panel.classList.add('drag-over');
+    });
+
+    panel.addEventListener('dragleave', (e) => {
+        // Only clear when truly leaving (not entering a child)
+        if (e.currentTarget === panel && !panel.contains(e.relatedTarget)) {
+            panel.classList.remove('drag-over');
+        }
+    });
+
+    panel.addEventListener('drop', (e) => {
+        e.preventDefault();
+        panel.classList.remove('drag-over');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        if (!draggedId || draggedId === panel.id) return;
+        const dragged = document.getElementById(draggedId);
+        if (!dragged) return;
+        const grid = panel.parentElement;
+        const draggedIdx = Array.from(grid.children).indexOf(dragged);
+        const targetIdx = Array.from(grid.children).indexOf(panel);
+        if (draggedIdx < targetIdx) panel.after(dragged); else panel.before(dragged);
+        saveLayoutOrder();
+    });
+}
+
+function initLayout() {
+    document.querySelectorAll('.grid > .panel').forEach(setupPanelDragAndActions);
+    applyLayoutOrder();
+    applyHiddenState();
+    refreshHiddenMenu();
+
+    document.getElementById('layoutResetBtn').onclick = () => {
+        if (!confirm('Reset layout to default order and show all hidden panels?')) return;
+        localStorage.removeItem(LAYOUT_ORDER_KEY);
+        localStorage.removeItem(LAYOUT_HIDDEN_KEY);
+        location.reload();
+    };
+    document.getElementById('layoutShowHidden').onchange = function() {
+        if (this.value) showPanel(this.value);
+        this.value = '';
+    };
+}
+
 // ========== Boot ==========
 connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
 pollRtStats(); setInterval(pollRtStats, 2000);
 requestAnimationFrame(drawScope);
+initLayout();
 </script>
 </body>
 </html>

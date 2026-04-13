@@ -121,75 +121,20 @@ async fn main() -> Result<()> {
     // Create transport
     info!("Transport mode: {}", config.transport.transport_type);
 
-    let mut transport: Box<dyn Transport> = if config.transport.auto_detect {
-        info!("Auto-detecting PhyCMD device...");
+    // Iso mode short-circuits the bulk Transport creation entirely:
+    // the IsoTransport spawned later owns its own libusb context and
+    // I/O thread and never goes through the Box<dyn Transport> path.
+    let iso_mode = config.transport.transport_type.eq_ignore_ascii_case("iso");
 
-        // Try USB first (better performance) if feature is enabled
-        #[cfg(feature = "usb")]
-        {
-            match transport::usb::UsbTransport::new() {
-                Ok(usb) => {
-                    info!("✓ USB transport detected");
-                    Box::new(usb)
-                }
-                Err(_) => {
-                    info!("USB transport not available, trying serial...");
-                    // Try serial auto-detect
-                    let port_name = serial::SerialPortHandler::find_phycmd_device()
-                        .context("Failed to auto-detect any device")?;
-                    let serial = transport::serial::SerialTransport::new(&port_name, config.transport.baud_rate)
-                        .context("Failed to open serial transport")?;
-                    info!("✓ Serial transport detected on {}", port_name);
-                    Box::new(serial)
-                }
-            }
-        }
-        #[cfg(not(feature = "usb"))]
-        {
-            // USB not available, use serial only
-            info!("USB support not compiled in, using serial...");
-            let port_name = serial::SerialPortHandler::find_phycmd_device()
-                .context("Failed to auto-detect serial device")?;
-            let serial = transport::serial::SerialTransport::new(&port_name, config.transport.baud_rate)
-                .context("Failed to open serial transport")?;
-            info!("✓ Serial transport detected on {}", port_name);
-            Box::new(serial)
-        }
-    } else {
-        // Use configured transport type
-        match config.transport.transport_type.as_str() {
-            #[cfg(feature = "usb")]
-            "usb" => {
-                info!("Creating USB transport...");
-                let usb = transport::usb::UsbTransport::new()
-                    .context("Failed to create USB transport")?;
-                info!("✓ USB transport initialized (VID:PID = 0x2341:0x003e)");
-                Box::new(usb)
-            }
-            #[cfg(not(feature = "usb"))]
-            "usb" => {
-                anyhow::bail!("USB transport not available. Rebuild with --features usb and install libudev-dev");
-            }
-            "serial" => {
-                info!("Creating serial transport on {}", config.transport.serial_port);
-                let serial = transport::serial::SerialTransport::new(
-                    &config.transport.serial_port,
-                    config.transport.baud_rate
-                ).context("Failed to create serial transport")?;
-                info!("✓ Serial transport initialized ({} baud)", config.transport.baud_rate);
-                Box::new(serial)
-            }
-            _ => {
-                anyhow::bail!("Invalid transport type: {}. Use 'serial'{}",
-                    config.transport.transport_type,
-                    if cfg!(feature = "usb") { " or 'usb'" } else { "" });
-            }
-        }
-    };
+    let transport: Option<Box<dyn Transport>> = if iso_mode {
+        info!("Iso mode selected — skipping bulk Transport creation; IsoTransport will start after web/ipc plumbing is up");
+        None
+    } else { Some(create_bulk_transport(&config)?) };
 
-    info!("Transport info: max_rate={}Hz, typical_latency={}µs",
-          transport.max_rate(),
-          transport.typical_latency_us());
+    if let Some(t) = transport.as_ref() {
+        info!("Transport info: max_rate={}Hz, typical_latency={}µs",
+              t.max_rate(), t.typical_latency_us());
+    }
 
     // Apply real-time optimizations if requested
     if config.realtime.enabled {
@@ -300,12 +245,25 @@ async fn main() -> Result<()> {
     // custom Transport wrapper.
     let _ipc_server = ipc_server; // keep alive, avoid drop
 
-    // Consumer task: forward every status frame from the bus to the
-    // web state + WebSocket broadcast.
+    // Consumer task: forward status frames from the bus to the web
+    // state + WebSocket broadcast.
+    //
+    // Iso mode produces ~8000 frames/s (one per USB microframe), which
+    // is far more than any browser can display and would burn CPU on
+    // JSON serialisation in the WebSocket fan-out (one full Status
+    // marshal per client per frame). We always update `current_status`
+    // (cheap RwLock write — also serves the REST /api/status path),
+    // but throttle the WebSocket broadcast to a max of ~250 Hz with a
+    // wall-clock minimum interval. Bulk mode at 1 kHz also gets
+    // throttled to 250 Hz, which is still well above the dashboard's
+    // refresh budget.
     {
         let mut rx = bus.subscribe();
         let web_state_c = web_state.clone();
         tokio::spawn(async move {
+            const WS_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(4);
+            let mut last_ws_send = std::time::Instant::now()
+                .checked_sub(WS_MIN_INTERVAL).unwrap_or_else(std::time::Instant::now);
             loop {
                 match rx.recv().await {
                     Ok(frame) => {
@@ -315,7 +273,11 @@ async fn main() -> Result<()> {
                             let mut s = web_state_c.current_status.write().await;
                             *s = status.clone();
                         }
-                        let _ = web_state_c.status_broadcast.send(status);
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_ws_send) >= WS_MIN_INTERVAL {
+                            last_ws_send = now;
+                            let _ = web_state_c.status_broadcast.send(status);
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         warn!("status bus lagged by {n} frames");
@@ -351,9 +313,34 @@ async fn main() -> Result<()> {
     // Expose stats through the web module.
     web_state.set_rt_stats(Arc::clone(&stats));
 
-    // Spawn the RT scheduler on a dedicated thread with its own
-    // SCHED_FIFO scheduling class. This is where the hard-real-time
-    // ticking actually happens.
+    if iso_mode {
+        // -------------------------------------------------------------
+        //   Iso path — IsoTransport runs its own libusb I/O thread.
+        //   No RtScheduler, no fixed tick rate: status frames flow at
+        //   the USB microframe rate (8 kHz HS) and commands are taken
+        //   from `staging` once per OUT transfer (every ~1 ms).
+        // -------------------------------------------------------------
+        let iso = phycmd_core::transport::IsoTransport::new(
+            Arc::clone(&staging),
+            Arc::clone(&bus),
+            Arc::clone(&stats),
+        ).context("Failed to start IsoTransport")?;
+        web_state.set_iso_stats(iso.iso_stats_arc());
+
+        // Block until shutdown. IsoTransport's Drop signals stop +
+        // joins its I/O thread cleanly.
+        let _ = tokio::signal::ctrl_c().await;
+        info!("shutdown requested, stopping IsoTransport");
+        drop(iso);
+        info!("physerver (iso mode) terminated cleanly");
+        return Ok(());
+    }
+
+    // -----------------------------------------------------------------
+    //   Bulk path — pre-existing hard-RT scheduler on a dedicated
+    //   SCHED_FIFO std::thread, sync exchange() per tick.
+    // -----------------------------------------------------------------
+    let transport = transport.expect("bulk transport must exist when iso_mode is false");
     let scheduler = RtScheduler::new(
         rt_cfg,
         Arc::clone(&staging),
@@ -391,4 +378,57 @@ async fn main() -> Result<()> {
 
     info!("physerver terminated cleanly");
     Ok(())
+}
+
+/// Build the bulk Transport (USB or serial) from the config. Iso mode
+/// short-circuits this entirely and uses IsoTransport instead.
+fn create_bulk_transport(config: &config::Config) -> Result<Box<dyn Transport>> {
+    if config.transport.auto_detect {
+        info!("Auto-detecting PhyCMD device...");
+        #[cfg(feature = "usb")]
+        {
+            match transport::usb::UsbTransport::new() {
+                Ok(usb) => {
+                    info!("✓ USB transport detected");
+                    return Ok(Box::new(usb));
+                }
+                Err(_) => {
+                    info!("USB transport not available, trying serial...");
+                }
+            }
+        }
+        let port_name = serial::SerialPortHandler::find_phycmd_device()
+            .context("Failed to auto-detect any device")?;
+        let serial_t = transport::serial::SerialTransport::new(&port_name, config.transport.baud_rate)
+            .context("Failed to open serial transport")?;
+        info!("✓ Serial transport detected on {}", port_name);
+        return Ok(Box::new(serial_t));
+    }
+
+    match config.transport.transport_type.as_str() {
+        #[cfg(feature = "usb")]
+        "usb" => {
+            info!("Creating USB transport...");
+            let usb = transport::usb::UsbTransport::new()
+                .context("Failed to create USB transport")?;
+            info!("✓ USB transport initialized (VID:PID = 0x2341:0x003e)");
+            Ok(Box::new(usb))
+        }
+        #[cfg(not(feature = "usb"))]
+        "usb" => {
+            anyhow::bail!("USB transport not available. Rebuild with --features usb and install libudev-dev");
+        }
+        "serial" => {
+            info!("Creating serial transport on {}", config.transport.serial_port);
+            let serial_t = transport::serial::SerialTransport::new(
+                &config.transport.serial_port,
+                config.transport.baud_rate,
+            ).context("Failed to create serial transport")?;
+            info!("✓ Serial transport initialized ({} baud)", config.transport.baud_rate);
+            Ok(Box::new(serial_t))
+        }
+        other => {
+            anyhow::bail!("Invalid transport type: {other}. Use 'serial', 'usb', or 'iso'");
+        }
+    }
 }

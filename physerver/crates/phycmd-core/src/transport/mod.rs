@@ -2,6 +2,8 @@ pub mod serial;
 #[cfg(feature = "usb")]
 pub mod usb;
 #[cfg(feature = "usb")]
+pub mod usb_iso;
+#[cfg(feature = "usb")]
 pub mod usb_loopback;
 #[cfg(feature = "usb")]
 pub mod usb_loopback_pipelined;
@@ -14,6 +16,8 @@ pub use traits::{Transport, TransportStats, PipelinedTransport};
 pub use serial::SerialTransport;
 #[cfg(feature = "usb")]
 pub use usb::UsbTransport;
+#[cfg(feature = "usb")]
+pub use usb_iso::{IsoTransport, IsoStats, IsoStatsSnapshot};
 #[cfg(feature = "usb")]
 pub use usb_loopback::UsbLoopbackTransport;
 #[cfg(feature = "usb")]

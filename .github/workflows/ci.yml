@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, "v1.*" ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, "v1.*" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -109,3 +109,62 @@ jobs:
             echo "Checking $file for broken links..."
             # This is a simple check - could be enhanced with a proper link checker
           done
+
+  firmware-build:
+    name: Firmware (SAM3X)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install ARM GNU Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi
+
+      - name: Build firmware
+        run: cd ATSAM3X8E_FW/ATSAM3X8E_FW && make
+
+      - name: Verify wire-struct sizes (host-side assertions pass on compile)
+        run: cd physerver && cargo build --release -p phycmd-core
+        # The struct-size _Static_assert in ATSAM3X8E_FW/src/waveform.h
+        # and the const _ = assert!() in phycmd-core/src/protocol/wave_types.rs
+        # catch any layout drift between firmware and host at build time.
+
+      - name: Archive firmware binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: phycmd_fw.bin
+          path: ATSAM3X8E_FW/ATSAM3X8E_FW/build/phycmd_fw.bin
+
+  python-smoke:
+    name: Python (maturin + smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config python3-dev python3-venv
+
+      - name: Build + install pyo3 extension with maturin
+        run: |
+          cd physerver/crates/phycmd-py
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip maturin
+          .venv/bin/maturin develop --release
+
+      - name: Run Python smoke test (mock transport)
+        run: |
+          cd physerver/crates/phycmd-py
+          .venv/bin/python tests/test_smoke.py
+        # tests/test_waveform.py skips cleanly if no hardware is
+        # attached (exit 77); CI runners won't have a Due plugged
+        # in so we don't invoke it here.

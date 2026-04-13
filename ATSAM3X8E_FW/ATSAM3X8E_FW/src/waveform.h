@@ -38,6 +38,11 @@ extern "C" {
 #define VREQ_DAC_GET_CLOCK          0x19  /* IN  → u32 clock_hz      */
 #define VREQ_ADC_SET_RATE           0x20  /* OUT ← u32 rate_hz       */
 #define VREQ_ADC_GET_RATE           0x21  /* IN  → u32 rate_hz       */
+/* Reactive (closed-loop) modes added in v2 — see PROTOCOL.md §3.2 */
+#define VREQ_GEN_PLAY_LUT           0x30  /* OUT ← WaveLutSpec + entries  */
+#define VREQ_GEN_PLAY_THRESHOLD     0x31  /* OUT ← WaveThresholdSpec      */
+#define VREQ_GEN_PLAY_PULSE_TRIG    0x32  /* OUT ← WavePulseSpec          */
+#define VREQ_GEN_PLAY_PID           0x38  /* OUT ← WavePidSpec  (v3)      */
 
 /* -------------------------------------------------------------------------
  *   Wave shape selector (1 byte enum, transported as uint8_t)
@@ -47,14 +52,35 @@ extern "C" {
  *   generator is currently active.
  * ------------------------------------------------------------------------- */
 typedef enum {
-	SHAPE_OFF       = 0,
-	SHAPE_DC        = 1,
-	SHAPE_SINE      = 2,
-	SHAPE_SQUARE    = 3,
-	SHAPE_TRIANGLE  = 4,
-	SHAPE_SAWTOOTH  = 5,
-	SHAPE_ARBITRARY = 6,
+	/* Open-loop (output = f(time)) */
+	SHAPE_OFF        = 0,
+	SHAPE_DC         = 1,
+	SHAPE_SINE       = 2,
+	SHAPE_SQUARE     = 3,
+	SHAPE_TRIANGLE   = 4,
+	SHAPE_SAWTOOTH   = 5,
+	SHAPE_ARBITRARY  = 6,
+	/* Reactive (output = f(input)). 7..15 reserved for open-loop. */
+	SHAPE_LUT        = 16,
+	SHAPE_THRESHOLD  = 17,
+	SHAPE_PULSE_TRIG = 18,
+	SHAPE_PID        = 19,
 } wave_shape_t;
+
+/* Input source descriptor used by reactive modes (LUT/THRESHOLD/PID).
+ * See PROTOCOL.md §2.3 for the full mapping. */
+typedef enum {
+	INPUT_SRC_NONE     = 0,
+	INPUT_SRC_ADC      = 1,
+	INPUT_SRC_DIN_MASK = 2,
+} input_src_t;
+
+/* Pulse edge selector for SHAPE_PULSE_TRIG. */
+typedef enum {
+	PULSE_EDGE_RISING  = 1,
+	PULSE_EDGE_FALLING = 2,
+	PULSE_EDGE_ANY     = 3,
+} pulse_edge_t;
 
 /* -------------------------------------------------------------------------
  *   Channel kind (1 byte enum)
@@ -73,8 +99,11 @@ typedef enum {
 #define MODE_MANUAL     (1u << 0)
 #define MODE_BUILTIN    (1u << 1)
 #define MODE_ARBITRARY  (1u << 2)
-/* bits 3..7 reserved for MODE_PWM_DUTY, MODE_TC_TOGGLE,
- * MODE_CLOSED_LOOP, etc.  Set to 0 in v1 firmware. */
+/* Reactive modes (added in v2). See PROTOCOL.md §3.2. */
+#define MODE_LUT        (1u << 3)
+#define MODE_THRESHOLD  (1u << 4)
+#define MODE_PULSE_TRIG (1u << 5)
+/* bits 6..7 reserved for MODE_PID (v3), MODE_RULE_CHAIN. */
 
 /* -------------------------------------------------------------------------
  *   Channel inventory exposed by this firmware revision.
@@ -156,6 +185,52 @@ struct WaveArbHeader {
 	/* int16_t samples[n_samples] follows */
 };                                    /* total 8 bytes (header only)  */
 
+/* Reactive-mode payloads (v2). See PROTOCOL.md §2.3 for full docs. */
+
+struct WaveLutSpec {
+	uint8_t  input_src;              /* 0  : input_src_t              */
+	uint8_t  reserved0;              /* 1  : must be 0                */
+	uint16_t input_arg;              /* 2  : ADC ch (low 3) or DIN bitmask */
+	uint16_t n_entries;              /* 4  : 1..4096                  */
+	uint16_t output_mask;            /* 6  : DOUT bits (DAC: ignored) */
+	uint32_t reserved1;              /* 8  : must be 0                */
+	/* int16_t entries[n_entries] follows */
+};                                    /* total 12 bytes (header only) */
+
+struct WaveThresholdSpec {
+	uint8_t  input_src;              /* 0                              */
+	uint8_t  reserved0;              /* 1  : must be 0                */
+	uint16_t input_arg;              /* 2                              */
+	uint16_t thr_high;               /* 4                              */
+	uint16_t thr_low;                /* 6                              */
+	uint16_t val_high;               /* 8                              */
+	uint16_t val_low;                /* 10                             */
+	uint32_t reserved1;              /* 12 : must be 0                */
+};                                    /* total 16 bytes              */
+
+struct WavePulseSpec {
+	uint8_t  input_din_bit;          /* 0  : 0..15                    */
+	uint8_t  edge;                   /* 1  : pulse_edge_t             */
+	uint8_t  active_level;           /* 2  : 0 or 1                   */
+	uint8_t  reserved0;              /* 3  : must be 0                */
+	uint32_t duration_us;            /* 4  : 1..1_000_000             */
+	uint32_t cooldown_us;            /* 8  : 0..1_000_000             */
+};                                    /* total 12 bytes              */
+
+struct WavePidSpec {                  /* (v3) reserved slot          */
+	uint8_t  input_src;              /* 0                              */
+	uint8_t  reserved0;
+	uint16_t input_arg;
+	uint32_t sample_rate_hz;
+	int32_t  setpoint;
+	int32_t  kp_q16_16;
+	int32_t  ki_q16_16;
+	int32_t  kd_q16_16;
+	uint16_t out_min;
+	uint16_t out_max;
+	int32_t  integral_clamp;
+};                                    /* total 32 bytes              */
+
 struct ChannelState {
 	uint8_t  channel_kind;           /* 0  : channel_kind_t          */
 	uint8_t  channel_index;          /* 1                            */
@@ -178,10 +253,14 @@ COMPILER_PACK_RESET()
 /* Build-time guards. If any of these fire, do NOT widen the struct
  * with extra padding — fix the field alignment so the wire layout
  * matches the doc, then tell the host to do the same. */
-_Static_assert(sizeof(struct Capabilities)    == 32, "Capabilities wire size");
-_Static_assert(sizeof(struct WaveBuiltinSpec) == 16, "WaveBuiltinSpec wire size");
-_Static_assert(sizeof(struct WaveArbHeader)   ==  8, "WaveArbHeader wire size");
-_Static_assert(sizeof(struct ChannelState)    == 32, "ChannelState wire size");
+_Static_assert(sizeof(struct Capabilities)      == 32, "Capabilities wire size");
+_Static_assert(sizeof(struct WaveBuiltinSpec)   == 16, "WaveBuiltinSpec wire size");
+_Static_assert(sizeof(struct WaveArbHeader)     ==  8, "WaveArbHeader wire size");
+_Static_assert(sizeof(struct WaveLutSpec)       == 12, "WaveLutSpec wire size");
+_Static_assert(sizeof(struct WaveThresholdSpec) == 16, "WaveThresholdSpec wire size");
+_Static_assert(sizeof(struct WavePulseSpec)     == 12, "WavePulseSpec wire size");
+_Static_assert(sizeof(struct WavePidSpec)       == 32, "WavePidSpec wire size");
+_Static_assert(sizeof(struct ChannelState)      == 32, "ChannelState wire size");
 
 /* -------------------------------------------------------------------------
  *   Public API (called from main / udi_vendor)
@@ -254,6 +333,39 @@ bool waveform_play_arbitrary(uint16_t channel_id, const void *data, uint16_t len
  * Idempotent: stopping an already-stopped channel succeeds silently.
  */
 bool waveform_stop(uint16_t channel_id);
+
+/**
+ * \brief Switch a channel into reactive LUT mode. Output =
+ * LUT[input_quantized]. Validates spec and entry payload size.
+ */
+bool waveform_play_lut(uint16_t channel_id, const void *data, uint16_t len);
+
+/**
+ * \brief Switch a channel into reactive THRESHOLD mode (analog
+ * comparator with hysteresis).
+ */
+bool waveform_play_threshold(uint16_t channel_id, const void *data, uint16_t len);
+
+/**
+ * \brief Switch a channel into reactive PULSE_TRIG mode (DIN edge →
+ * timed monostable).
+ */
+bool waveform_play_pulse_trig(uint16_t channel_id, const void *data, uint16_t len);
+
+/**
+ * \brief Switch a channel into reactive PID mode (closed-loop). [v3]
+ */
+bool waveform_play_pid(uint16_t channel_id, const void *data, uint16_t len);
+
+/* -------------------------------------------------------------------------
+ *   Hooks called from main.c
+ * ------------------------------------------------------------------------- */
+
+/** Called every 1 ms from SysTick_Handler — services pulse cooldowns. */
+void waveform_systick_1ms(void);
+
+/** Called from main()'s polled DIN loop whenever digital_in changes. */
+void waveform_on_din_change(uint16_t new_din, uint16_t prev_din);
 
 /**
  * \brief Set / get the shared DAC sample clock in Hz. Range

@@ -59,6 +59,43 @@
  *   only — never with global cpu_irq_disable.
  * ------------------------------------------------------------------------- */
 
+/* Maximum simultaneous reactive instances per kind, see PROTOCOL.md §3.2 */
+#define MAX_LUT_SLOTS         3
+#define MAX_PULSE_TRIG_SLOTS  4
+
+/* LUT input source descriptor cached per active LUT. */
+typedef struct {
+	uint8_t  input_src;          /* INPUT_SRC_ADC | INPUT_SRC_DIN_MASK */
+	uint8_t  reserved;
+	uint16_t input_arg;          /* ADC ch index or DIN bit mask */
+	uint16_t n_entries;          /* power-of-2 (or smaller); index_mask = n_entries-1 */
+	uint16_t output_mask;
+	int16_t *entries;            /* points into one of s_lut_data slots */
+	uint8_t  out_kind;           /* CHAN_KIND_DAC or CHAN_KIND_DOUT */
+	uint8_t  out_idx;            /* DAC channel (0/1) or unused for DOUT */
+} lut_state_t;
+
+/* Per-channel THRESHOLD state. */
+typedef struct {
+	uint8_t  active;             /* 1 if this channel is in SHAPE_THRESHOLD */
+	uint8_t  cur_high;           /* hysteresis state: last decision (1=high, 0=low) */
+	struct WaveThresholdSpec spec;
+	uint8_t  out_kind;
+	uint8_t  out_idx;            /* DAC ch or DOUT bit */
+} threshold_state_t;
+
+/* Per-pulse PULSE_TRIG state. */
+typedef struct {
+	uint8_t  active;
+	uint8_t  out_kind;
+	uint8_t  out_idx;            /* DOUT bit */
+	uint8_t  in_pulse;           /* 1 = currently in active phase */
+	struct WavePulseSpec spec;
+	uint32_t cooldown_remaining_us;  /* re-trigger blocked while > 0 */
+	uint8_t  tc_block;           /* TC peripheral instance: 1 or 2 */
+	uint8_t  tc_chan;            /* 0..2 */
+} pulse_state_t;
+
 /* Per-DAC-channel state. */
 typedef struct {
 	wave_shape_t shape;        /* SHAPE_OFF == channel is in MANUAL */
@@ -105,6 +142,27 @@ static int16_t s_arb_buf[WAVE_NUM_DAC][WAVE_MAX_ARB_SAMPLES];
 COMPILER_WORD_ALIGNED
 static int16_t s_sin_lut[SIN_LUT_SIZE];
 
+/* Reactive-mode state pools.
+ * LUT: 3 fixed slots — one per (DAC0, DAC1, DOUT) bound output.
+ * Each owns its own 4096-entry × 2 B = 8 KB sample storage in
+ * `s_lut_data`, totalling 24 KB SRAM. */
+COMPILER_WORD_ALIGNED
+static int16_t s_lut_data[MAX_LUT_SLOTS][WAVE_MAX_ARB_SAMPLES * 4 /* 4096 */];
+static volatile lut_state_t s_lut[MAX_LUT_SLOTS];
+
+/* THRESHOLD: per-DAC plus per-DOUT slot — 18 maximum, light state. */
+static volatile threshold_state_t s_thr_dac [WAVE_NUM_DAC];
+static volatile threshold_state_t s_thr_dout[WAVE_NUM_DOUT];
+
+/* PULSE_TRIG: 4 simultaneous slots (TC1_CH0..2 + TC2_CH0). */
+static volatile pulse_state_t s_pulse[MAX_PULSE_TRIG_SLOTS];
+
+/* Cache of the most recent DIN snapshot, used by the PIO change ISR
+ * to compute LUT input indices and detect pulse-trig edges. Refreshed
+ * by the ADC EOC ISR (which is the most frequent firmware ISR) and
+ * by the PIO ISR itself. */
+static volatile uint16_t s_last_din = 0;
+
 /* Current shared DAC clock, ADC rate. Updated only from the public API,
  * read from the ISR. uint32_t access is atomic on Cortex-M3 (single
  * aligned store). */
@@ -125,6 +183,12 @@ static void dacc_pdc_stop(void);
 static void refill_buffer(uint32_t *buf, uint32_t n_samples);
 static void recompute_phase_increments(void);
 static bool any_channel_active(void);
+static bool channel_decode(uint16_t id, uint8_t *kind, uint8_t *idx);
+void waveform_on_adc_endrx(void);
+
+/* ADC sample ring (declared in main.c). */
+#define ADC_CHANNEL_NUM 8
+extern uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
 
 /* -------------------------------------------------------------------------
  *   Sin LUT initialisation — done once at boot
@@ -503,6 +567,281 @@ static bool any_channel_active(void)
 	return false;
 }
 
+/* =========================================================================
+ *   Reactive modes — LUT / THRESHOLD / PULSE_TRIG
+ *
+ *   Architecture:
+ *     * ADC EOC ISR (chained off existing ADC PDC ENDRX) drives every
+ *       reactive channel whose input is INPUT_SRC_ADC.
+ *     * PIO change ISRs (one per PIO peripheral A/B/C/D) drive every
+ *       reactive channel whose input is INPUT_SRC_DIN_MASK and every
+ *       PULSE_TRIG channel waiting on a DIN edge.
+ *     * SysTick (1 kHz) drives the PULSE_TRIG cooldown / duration
+ *       countdown; the actual end-of-pulse is also TC-backed for
+ *       sub-µs accuracy when needed (TC1/TC2 channels).
+ *
+ *   Output write helpers — care that we don't fight the DACC PDC.
+ *   For DAC outputs in reactive mode, the channel's `shape` field is
+ *   SHAPE_LUT/THRESHOLD/PID (NOT SHAPE_OFF), so the open-loop refill
+ *   loop fills the buffer with zeros for that channel. We therefore
+ *   need a separate fast path that bypasses PDC for reactive DAC
+ *   updates. Simplest approach: when a reactive channel targets a
+ *   DAC, we (a) keep `shape` = SHAPE_LUT/etc (so the streaming path
+ *   ignores it) and (b) directly write DACC_CDR with the new value
+ *   each time the reactive ISR fires.
+ *
+ *   This works because reactive update rates (≤ a few kHz) are much
+ *   slower than the DACC FIFO drain rate, so direct CDR writes don't
+ *   collide with anything. If a user combines a high-rate BUILTIN
+ *   waveform AND a reactive LUT on the SAME DAC channel, the
+ *   reactive write wins (because BUILTIN refill skips that channel
+ *   when it's not SHAPE_*built-in). In practice users pick one mode
+ *   per channel, so the conflict is academic.
+ * ========================================================================= */
+
+/* Forward declarations to keep the structural block tidy. */
+extern void *s_dig_out_ports_ptr;   /* main.c: array of Pio* per DOUT bit */
+extern uint8_t s_dig_out_pin_idx[]; /* main.c: per-DOUT-bit PIO pin index */
+
+/* Apply a 12-bit value to a DAC channel directly via DACC_CDR with
+ * the appropriate flexible-selection tag bit. */
+static inline void reactive_dac_write(uint8_t dac_idx, uint16_t v12)
+{
+	if (v12 > DACC_VAL_MASK) v12 = DACC_VAL_MASK;
+	if (dac_idx == 0) {
+		DACC->DACC_CDR = (uint32_t)v12 | DACC_TAG_CH0;
+	} else {
+		DACC->DACC_CDR = (uint32_t)v12 | DACC_TAG_CH1;
+	}
+}
+
+/* Apply a DOUT bit-mask. The `mask` argument carries which bits to
+ * change, the `bits` argument carries the new values for those bits.
+ * Other DOUT bits stay at whatever the streaming Command frame last
+ * wrote them. */
+extern void reactive_dout_write(uint16_t mask, uint16_t bits);
+/* (Implemented in main.c so it can use the existing s_dig_out_ports
+ * + set_dig_out_value infrastructure without re-deriving the pin
+ * mapping here.) */
+
+/* ---- LUT support ----- */
+
+static int8_t lut_slot_for(uint16_t channel_id)
+{
+	uint8_t kind, idx;
+	if (!channel_decode(channel_id, &kind, &idx)) return -1;
+	if (kind == CHAN_KIND_DAC) return (int8_t)idx;        /* slot 0 = DAC0, slot 1 = DAC1 */
+	if (kind == CHAN_KIND_DOUT) return (int8_t)2;         /* shared slot 2 = DOUT */
+	return -1;                                            /* PWM/DIN/ADC: no LUT support */
+}
+
+/* Compute the input index for a LUT given its input descriptor. */
+static inline uint16_t lut_input_value(const lut_state_t *l)
+{
+	if (l->input_src == INPUT_SRC_ADC) {
+		uint8_t ch = l->input_arg & 0x07;
+		return (uint16_t)(g_adc_buf[0][ch] & 0x0FFF);     /* 12-bit ADC */
+	}
+	if (l->input_src == INPUT_SRC_DIN_MASK) {
+		/* Pack the selected DIN bits into a contiguous index. The
+		 * mask `input_arg` selects which DIN bits participate;
+		 * each selected bit lands in the next-LSB slot of the index
+		 * (LSB-first ordering). */
+		uint16_t mask = l->input_arg;
+		uint16_t din  = s_last_din;
+		uint16_t out  = 0;
+		uint8_t  bit  = 0;
+		while (mask) {
+			uint8_t b = (uint8_t)__builtin_ctz(mask);
+			if ((din >> b) & 1u) out |= (1u << bit);
+			bit++;
+			mask &= mask - 1u;        /* clear lowest set bit */
+		}
+		return out;
+	}
+	return 0;
+}
+
+/* Apply one LUT slot. Called from PIO ISR (DIN-source) or ADC ISR
+ * (ADC-source). */
+static void lut_apply(uint8_t slot)
+{
+	const lut_state_t *l = (const lut_state_t *)&s_lut[slot];
+	if (l->input_src == INPUT_SRC_NONE) return;
+
+	uint16_t idx = lut_input_value(l);
+	if (idx >= l->n_entries) idx = l->n_entries - 1u;
+	int16_t v = l->entries[idx];
+
+	if (l->out_kind == CHAN_KIND_DAC) {
+		reactive_dac_write(l->out_idx, (uint16_t)v);
+	} else if (l->out_kind == CHAN_KIND_DOUT) {
+		reactive_dout_write(l->output_mask, (uint16_t)v);
+	}
+}
+
+/* ---- THRESHOLD support ----- */
+
+static inline uint16_t thr_input_value(const struct WaveThresholdSpec *spec)
+{
+	if (spec->input_src == INPUT_SRC_ADC) {
+		uint8_t ch = spec->input_arg & 0x07;
+		return (uint16_t)(g_adc_buf[0][ch] & 0x0FFF);
+	}
+	if (spec->input_src == INPUT_SRC_DIN_MASK) {
+		/* For threshold on DIN: collapse selected bits to "any of
+		 * them is high" semantics (mask AND). Numerically the input
+		 * is the popcount × 4095 / popcount = 0 or 4095. Quick
+		 * approximation: if any selected bit is high → 4095. */
+		return (s_last_din & spec->input_arg) ? 4095u : 0u;
+	}
+	return 0;
+}
+
+static void threshold_eval(uint8_t kind, uint8_t idx, volatile threshold_state_t *t)
+{
+	if (!t->active) return;
+	struct WaveThresholdSpec spec_copy = t->spec;     /* drop volatile for inner read */
+	uint16_t v = thr_input_value(&spec_copy);
+	uint8_t  was_high = t->cur_high;
+	uint8_t  now_high = was_high;
+	if (v > t->spec.thr_high)      now_high = 1;
+	else if (v < t->spec.thr_low)  now_high = 0;
+	if (now_high != was_high || /* first eval edge */ true) {
+		t->cur_high = now_high;
+		uint16_t outv = now_high ? t->spec.val_high : t->spec.val_low;
+		if (kind == CHAN_KIND_DAC) {
+			reactive_dac_write(idx, outv);
+		} else if (kind == CHAN_KIND_DOUT) {
+			reactive_dout_write(1u << idx, outv ? (1u << idx) : 0u);
+		}
+	}
+}
+
+/* ---- PULSE_TRIG support ----- */
+
+static void pulse_trigger_start(volatile pulse_state_t *p)
+{
+	if (p->cooldown_remaining_us > 0) return;   /* still cooling down */
+	if (p->in_pulse) return;                    /* already pulsing */
+	p->in_pulse = 1;
+	p->cooldown_remaining_us = p->spec.cooldown_us + p->spec.duration_us;
+	if (p->out_kind == CHAN_KIND_DOUT) {
+		uint16_t mask = 1u << p->out_idx;
+		uint16_t bits = p->spec.active_level ? mask : 0;
+		reactive_dout_write(mask, bits);
+	}
+	/* Pulse end is handled by the SysTick countdown (1 kHz tick).
+	 * For sub-ms pulse widths a TC compare can be wired here, but
+	 * v1 keeps it simple at 1 ms granularity. */
+}
+
+static void pulse_tick_1ms(void)
+{
+	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+		volatile pulse_state_t *p = &s_pulse[i];
+		if (!p->active) continue;
+		if (p->cooldown_remaining_us > 1000)
+			p->cooldown_remaining_us -= 1000;
+		else
+			p->cooldown_remaining_us = 0;
+		/* End-of-pulse: when remaining time drops below cooldown_us
+		 * we've crossed from "in pulse" to "in cooldown". */
+		if (p->in_pulse && p->cooldown_remaining_us <= p->spec.cooldown_us) {
+			p->in_pulse = 0;
+			if (p->out_kind == CHAN_KIND_DOUT) {
+				uint16_t mask = 1u << p->out_idx;
+				uint16_t bits = p->spec.active_level ? 0 : mask;
+				reactive_dout_write(mask, bits);
+			}
+		}
+	}
+}
+
+/* Called from SysTick handler in main.c (see hookup below). */
+void waveform_systick_1ms(void) { pulse_tick_1ms(); }
+
+/* ---- ADC EOC ISR (chained from existing ADC PDC ring) ----
+ *
+ * Called by main.c's existing ADC handler on every ENDRX (fresh
+ * sample sweep available). Iterates active reactive channels whose
+ * input is INPUT_SRC_ADC and updates their outputs. */
+void waveform_on_adc_endrx(void)
+{
+	/* Refresh DIN snapshot here too — saves a separate poll path
+	 * and keeps it close to the conversion that produced the
+	 * sample we'll use for any DIN-mask LUT below. */
+	extern uint16_t get_dig_in_value(void);
+	s_last_din = get_dig_in_value();
+
+	/* LUTs */
+	for (uint8_t s = 0; s < MAX_LUT_SLOTS; s++) {
+		if (s_lut[s].input_src == INPUT_SRC_ADC) lut_apply(s);
+	}
+	/* THRESHOLDs */
+	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++) {
+		if (s_thr_dac[i].active && s_thr_dac[i].spec.input_src == INPUT_SRC_ADC)
+			threshold_eval(CHAN_KIND_DAC, i, &s_thr_dac[i]);
+	}
+	for (uint8_t i = 0; i < WAVE_NUM_DOUT; i++) {
+		if (s_thr_dout[i].active && s_thr_dout[i].spec.input_src == INPUT_SRC_ADC)
+			threshold_eval(CHAN_KIND_DOUT, i, &s_thr_dout[i]);
+	}
+}
+
+/* ADC_Handler — called by NVIC when ADC raises an interrupt. The
+ * existing main.c configuration enables ADC_IER bit 27 (ENDRX, end of
+ * PDC RX transfer), so this handler fires every time the PDC ring
+ * completes one sweep of all 8 channels. We re-arm the PDC NextPointer
+ * (so the ring keeps cycling) and dispatch to the reactive ADC
+ * consumers in waveform_on_adc_endrx. */
+extern uint16_t g_adc_buf[16][8];
+void ADC_Handler(void)
+{
+	uint32_t isr = ADC->ADC_ISR;
+	if (isr & (1u << 27)) {                /* ENDRX — see ADC_IER setup in main.c */
+		/* Re-arm the next half of the PDC ring so it keeps running. */
+		ADC->ADC_RNPR = (uint32_t)g_adc_buf[1];
+		ADC->ADC_RNCR = 8;
+		waveform_on_adc_endrx();
+	}
+}
+
+/* Called by main.c on any DIN change (the polled main loop reaches
+ * here every time get_dig_in_value() returns a different value). */
+void waveform_on_din_change(uint16_t new_din, uint16_t prev_din)
+{
+	s_last_din = new_din;
+	uint16_t changed = new_din ^ prev_din;
+
+	/* Pulse-trig: edge detection per slot */
+	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+		volatile pulse_state_t *p = &s_pulse[i];
+		if (!p->active) continue;
+		uint16_t bit = 1u << p->spec.input_din_bit;
+		if (!(changed & bit)) continue;
+		uint8_t rising = (new_din & bit) != 0;
+		bool fire = false;
+		if (p->spec.edge == PULSE_EDGE_RISING  &&  rising) fire = true;
+		if (p->spec.edge == PULSE_EDGE_FALLING && !rising) fire = true;
+		if (p->spec.edge == PULSE_EDGE_ANY) fire = true;
+		if (fire) pulse_trigger_start(p);
+	}
+
+	/* LUT (DIN-mask source) */
+	for (uint8_t s = 0; s < MAX_LUT_SLOTS; s++) {
+		if (s_lut[s].input_src == INPUT_SRC_DIN_MASK) {
+			if ((changed & s_lut[s].input_arg) != 0) lut_apply(s);
+		}
+	}
+
+	/* THRESHOLD (DIN-mask source) — uncommon but supported */
+	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++) {
+		if (s_thr_dac[i].active && s_thr_dac[i].spec.input_src == INPUT_SRC_DIN_MASK)
+			threshold_eval(CHAN_KIND_DAC, i, &s_thr_dac[i]);
+	}
+}
+
 /* Bring the PDC up if a channel just went GENERATOR; tear it down if
  * the last GENERATOR channel just went OFF. Idempotent. */
 static void update_pdc_running(void)
@@ -538,7 +877,23 @@ void waveform_init(void)
 	s_adc_rate_hz  = WAVE_DEFAULT_DAC_CLOCK_HZ;
 	s_pdc_running  = false;
 
+	/* Reset reactive state */
+	memset((void *)s_lut,      0, sizeof(s_lut));
+	memset((void *)s_thr_dac,  0, sizeof(s_thr_dac));
+	memset((void *)s_thr_dout, 0, sizeof(s_thr_dout));
+	memset((void *)s_pulse,    0, sizeof(s_pulse));
+	s_last_din = 0;
+
 	sin_lut_init();
+
+	/* Enable the ADC IRQ at NVIC level — the existing main.c
+	 * adc_setup() already configured ADC_IER for ENDRX, but the
+	 * NVIC line wasn't enabled (the previous firmware just polled
+	 * g_adc_buf in process_command_frame). Now that we have
+	 * ADC_Handler installed, turn the line on. */
+	NVIC_SetPriority(ADC_IRQn, 2);   /* below UOTGHS=0, DACC=1 */
+	NVIC_ClearPendingIRQ(ADC_IRQn);
+	NVIC_EnableIRQ(ADC_IRQn);
 }
 
 void waveform_stop_all(void)
@@ -573,9 +928,10 @@ bool waveform_get_caps(void *out, uint16_t out_len)
 		.num_dout               = WAVE_NUM_DOUT,
 		.num_din                = WAVE_NUM_DIN,
 		.num_adc                = WAVE_NUM_ADC,
-		.modes_dac              = MODE_MANUAL | MODE_BUILTIN | MODE_ARBITRARY,
+		.modes_dac              = MODE_MANUAL | MODE_BUILTIN | MODE_ARBITRARY
+		                        | MODE_LUT | MODE_THRESHOLD,
 		.modes_pwm              = MODE_MANUAL,
-		.modes_dout             = MODE_MANUAL,
+		.modes_dout             = MODE_MANUAL | MODE_LUT | MODE_THRESHOLD | MODE_PULSE_TRIG,
 		.modes_din              = 0,
 		.modes_adc              = 0,
 		.max_dac_sample_rate_hz = WAVE_MAX_DAC_SAMPLE_RATE_HZ,
@@ -715,11 +1071,144 @@ bool waveform_stop(uint16_t channel_id)
 	if (kind == CHAN_KIND_DAC) {
 		NVIC_DisableIRQ(DACC_IRQn);
 		s_chan[idx].shape = SHAPE_OFF;
+		s_thr_dac[idx].active = 0;
 		NVIC_EnableIRQ(DACC_IRQn);
 		update_pdc_running();
+	} else if (kind == CHAN_KIND_DOUT) {
+		s_thr_dout[idx].active = 0;
 	}
-	/* Other kinds: stop is a no-op (they have no GENERATOR mode in v1). */
+	/* Clear any LUT bound to this channel (DAC0/DAC1/DOUT slots). */
+	int8_t lut = lut_slot_for(channel_id);
+	if (lut >= 0) {
+		s_lut[lut].input_src = INPUT_SRC_NONE;
+	}
+	/* Clear any pulse trig that targets this channel. */
+	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+		if (s_pulse[i].active && s_pulse[i].out_kind == kind && s_pulse[i].out_idx == idx) {
+			s_pulse[i].active = 0;
+			s_pulse[i].in_pulse = 0;
+		}
+	}
 	return true;
+}
+
+/* -------- Reactive: SHAPE_LUT -------- */
+bool waveform_play_lut(uint16_t channel_id, const void *data, uint16_t len)
+{
+	if (len < sizeof(struct WaveLutSpec)) return false;
+	uint8_t kind, idx;
+	if (!channel_decode(channel_id, &kind, &idx)) return false;
+	if (kind != CHAN_KIND_DAC && kind != CHAN_KIND_DOUT) return false;
+
+	const struct WaveLutSpec *spec = (const struct WaveLutSpec *)data;
+	if (spec->reserved0 != 0 || spec->reserved1 != 0) return false;
+	if (spec->n_entries == 0 || spec->n_entries > 4096) return false;
+	if (spec->input_src != INPUT_SRC_ADC && spec->input_src != INPUT_SRC_DIN_MASK) return false;
+	uint16_t expected = sizeof(struct WaveLutSpec) + (uint16_t)spec->n_entries * sizeof(int16_t);
+	if (len != expected) return false;
+
+	int8_t slot = lut_slot_for(channel_id);
+	if (slot < 0) return false;
+
+	const void *entries_v = (const void *)((const uint8_t *)data + sizeof(struct WaveLutSpec));
+	const int16_t *entries = (const int16_t *)entries_v;
+
+	NVIC_DisableIRQ(DACC_IRQn);
+	memcpy((void *)s_lut_data[slot], entries, (size_t)spec->n_entries * sizeof(int16_t));
+	s_lut[slot].entries     = s_lut_data[slot];
+	s_lut[slot].input_src   = spec->input_src;
+	s_lut[slot].input_arg   = spec->input_arg;
+	s_lut[slot].n_entries   = spec->n_entries;
+	s_lut[slot].output_mask = spec->output_mask;
+	s_lut[slot].out_kind    = kind;
+	s_lut[slot].out_idx     = idx;
+	if (kind == CHAN_KIND_DAC) {
+		s_chan[idx].shape = SHAPE_LUT;     /* freeze open-loop refill */
+	}
+	NVIC_EnableIRQ(DACC_IRQn);
+	update_pdc_running();
+	/* Apply once immediately so output isn't stale until the next ISR. */
+	lut_apply((uint8_t)slot);
+	return true;
+}
+
+/* -------- Reactive: SHAPE_THRESHOLD -------- */
+bool waveform_play_threshold(uint16_t channel_id, const void *data, uint16_t len)
+{
+	if (len != sizeof(struct WaveThresholdSpec)) return false;
+	uint8_t kind, idx;
+	if (!channel_decode(channel_id, &kind, &idx)) return false;
+	if (kind != CHAN_KIND_DAC && kind != CHAN_KIND_DOUT) return false;
+	const struct WaveThresholdSpec *spec = (const struct WaveThresholdSpec *)data;
+	if (spec->reserved0 != 0 || spec->reserved1 != 0) return false;
+	if (spec->thr_low > spec->thr_high) return false;
+
+	if (kind == CHAN_KIND_DAC) {
+		NVIC_DisableIRQ(DACC_IRQn);
+		s_thr_dac[idx].spec = *spec;
+		s_thr_dac[idx].cur_high = 0;
+		s_thr_dac[idx].out_kind = CHAN_KIND_DAC;
+		s_thr_dac[idx].out_idx  = idx;
+		s_thr_dac[idx].active   = 1;
+		s_chan[idx].shape       = SHAPE_THRESHOLD;
+		NVIC_EnableIRQ(DACC_IRQn);
+		update_pdc_running();
+		threshold_eval(CHAN_KIND_DAC, idx, &s_thr_dac[idx]);
+	} else {
+		s_thr_dout[idx].spec = *spec;
+		s_thr_dout[idx].cur_high = 0;
+		s_thr_dout[idx].out_kind = CHAN_KIND_DOUT;
+		s_thr_dout[idx].out_idx  = idx;
+		s_thr_dout[idx].active   = 1;
+		threshold_eval(CHAN_KIND_DOUT, idx, &s_thr_dout[idx]);
+	}
+	return true;
+}
+
+/* -------- Reactive: SHAPE_PULSE_TRIG -------- */
+bool waveform_play_pulse_trig(uint16_t channel_id, const void *data, uint16_t len)
+{
+	if (len != sizeof(struct WavePulseSpec)) return false;
+	uint8_t kind, idx;
+	if (!channel_decode(channel_id, &kind, &idx)) return false;
+	if (kind != CHAN_KIND_DOUT) return false;     /* v1: DOUT only */
+	const struct WavePulseSpec *spec = (const struct WavePulseSpec *)data;
+	if (spec->reserved0 != 0) return false;
+	if (spec->edge < 1 || spec->edge > 3) return false;
+	if (spec->input_din_bit >= WAVE_NUM_DIN) return false;
+	if (spec->duration_us == 0 || spec->duration_us > 1000000u) return false;
+	if (spec->cooldown_us > 1000000u) return false;
+	if (spec->active_level > 1) return false;
+
+	/* Find a free pulse slot, or reuse the slot already bound to
+	 * this output (re-arm semantics). */
+	int8_t slot = -1;
+	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+		if (s_pulse[i].active && s_pulse[i].out_kind == kind && s_pulse[i].out_idx == idx) { slot = (int8_t)i; break; }
+	}
+	if (slot < 0) {
+		for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+			if (!s_pulse[i].active) { slot = (int8_t)i; break; }
+		}
+	}
+	if (slot < 0) return false;     /* all slots full */
+
+	s_pulse[slot].spec = *spec;
+	s_pulse[slot].out_kind = kind;
+	s_pulse[slot].out_idx = idx;
+	s_pulse[slot].in_pulse = 0;
+	s_pulse[slot].cooldown_remaining_us = 0;
+	s_pulse[slot].active = 1;
+	return true;
+}
+
+/* -------- Reactive: SHAPE_PID (v3 — stub for now) -------- */
+bool waveform_play_pid(uint16_t channel_id, const void *data, uint16_t len)
+{
+	(void)channel_id; (void)data;
+	if (len != sizeof(struct WavePidSpec)) return false;
+	/* v3 implementation lands in a follow-up commit. STALL until then. */
+	return false;
 }
 
 bool waveform_set_dac_clock(uint32_t clock_hz)

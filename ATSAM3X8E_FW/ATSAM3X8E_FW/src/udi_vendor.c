@@ -475,6 +475,18 @@ static void vendor_setup_out_done(void)
 	case VREQ_GEN_PLAY_ARBITRARY:
 		ok = waveform_play_arbitrary(wIndex, s_setup_buf, wLength);
 		break;
+	case VREQ_GEN_PLAY_LUT:
+		ok = waveform_play_lut(wIndex, s_setup_buf, wLength);
+		break;
+	case VREQ_GEN_PLAY_THRESHOLD:
+		ok = waveform_play_threshold(wIndex, s_setup_buf, wLength);
+		break;
+	case VREQ_GEN_PLAY_PULSE_TRIG:
+		ok = waveform_play_pulse_trig(wIndex, s_setup_buf, wLength);
+		break;
+	case VREQ_GEN_PLAY_PID:
+		ok = waveform_play_pid(wIndex, s_setup_buf, wLength);
+		break;
 	case VREQ_DAC_SET_CLOCK:
 		if (wLength == 4) {
 			uint32_t v;
@@ -505,17 +517,25 @@ static void vendor_setup_out_done(void)
 	}
 }
 
+/* Called by UDC for class-recipient SETUP requests targeting our
+ * interface. We have none — return false so UDC STALLs them. */
 static bool udi_vendor_setup(void)
+{
+	return false;
+}
+
+/* Called by UDC for vendor-recipient=device SETUP requests via the
+ * USB_DEVICE_SPECIFIC_REQUEST hook in conf_usb.h. */
+bool phycmd_vendor_request(void)
 {
 	uint8_t  bmRequestType = udd_g_ctrlreq.req.bmRequestType;
 	uint8_t  bRequest      = udd_g_ctrlreq.req.bRequest;
 	uint16_t wIndex        = udd_g_ctrlreq.req.wIndex;
 	uint16_t wLength       = udd_g_ctrlreq.req.wLength;
 
-	/* Only handle vendor / device requests (bmRequestType type=2,
-	 * recipient=0). Class / standard requests are not ours. */
-	if ((bmRequestType & USB_REQ_TYPE_MASK)      != USB_REQ_TYPE_VENDOR) return false;
-	if ((bmRequestType & USB_REQ_RECIP_MASK)     != USB_REQ_RECIP_DEVICE) return false;
+	/* Only vendor type, recipient=device (the rest STALL upstream). */
+	if ((bmRequestType & USB_REQ_TYPE_MASK)  != USB_REQ_TYPE_VENDOR)  return false;
+	if ((bmRequestType & USB_REQ_RECIP_MASK) != USB_REQ_RECIP_DEVICE) return false;
 
 	bool dir_in = (bmRequestType & USB_REQ_DIR_IN) != 0;
 
@@ -562,6 +582,10 @@ static bool udi_vendor_setup(void)
 		return true;
 	case VREQ_GEN_PLAY_BUILTIN:
 	case VREQ_GEN_PLAY_ARBITRARY:
+	case VREQ_GEN_PLAY_LUT:
+	case VREQ_GEN_PLAY_THRESHOLD:
+	case VREQ_GEN_PLAY_PULSE_TRIG:
+	case VREQ_GEN_PLAY_PID:
 	case VREQ_DAC_SET_CLOCK:
 	case VREQ_ADC_SET_RATE:
 		/* Has DATA stage. Tell UDC to land it in s_setup_buf. */

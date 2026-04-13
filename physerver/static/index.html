@@ -139,6 +139,8 @@
         .fngen-params input[type="text"] { text-align:left; }
         .fngen-params select { text-align:left; font-family:inherit; }
         .fngen-params .fngen-hint { color:#999; font-size:10px; font-style:italic; grid-column:1 / -1; margin-top:-2px; }
+        .fngen-csvbtn { margin-left:6px; padding:2px 8px; font-size:10px; background:#fff; border:1px solid #ccc; border-radius:3px; cursor:pointer; color:#555; }
+        .fngen-csvbtn:hover { background:#f0f0f0; border-color:#667eea; color:#667eea; }
         .fngen-actions { display:flex; gap:8px; justify-content:flex-end; padding-top:4px; border-top:1px solid #f0f0f0; }
         .fngen-btn { background:#667eea; color:white; border:none; padding:5px 16px; border-radius:4px; cursor:pointer; font-size:11px; font-weight:600; letter-spacing:.3px; }
         .fngen-btn:hover { background:#5566c8; }
@@ -1395,6 +1397,89 @@ function fngenRenderPane(row) {
     const pane = row.querySelector('[data-k="pane"]');
     const maxVal = parseInt(row.dataset.maxval, 10);
     pane.innerHTML = fngenPaneHtml(mode, maxVal, 'dac');
+    fngenWireCsvButtons(pane);
+    fngenWirePreview(pane, maxVal);
+}
+
+// Insert a small canvas that previews a CSV field's samples.
+function fngenPreviewCanvas(fieldKey) {
+    return `<div class="fngen-hint" style="grid-column:1/-1;">preview:</div>
+            <canvas class="fngen-preview" data-preview-for="${fieldKey}" width="400" height="60" style="grid-column:1/-1;width:100%;height:60px;background:#0d0d1a;border-radius:3px;"></canvas>`;
+}
+
+// Render the preview canvas using the current field value.
+function fngenWirePreview(pane, maxVal) {
+    const draw = () => {
+        pane.querySelectorAll('canvas.fngen-preview').forEach(cv => {
+            const fieldKey = cv.dataset.previewFor;
+            const input = pane.querySelector(`[data-k="${fieldKey}"]`);
+            if (!input) return;
+            const samples = (input.value || '').split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+            const ctx = cv.getContext('2d');
+            const W = cv.clientWidth, H = cv.clientHeight;
+            if (cv.width !== W * 2) { cv.width = W * 2; cv.height = H * 2; }
+            ctx.setTransform(2, 0, 0, 2, 0, 0);
+            ctx.clearRect(0, 0, W, H);
+            // grid
+            ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+            ctx.beginPath(); ctx.moveTo(0, H/2); ctx.lineTo(W, H/2); ctx.stroke();
+            if (samples.length < 2) {
+                ctx.font = '10px sans-serif'; ctx.fillStyle = '#888';
+                ctx.fillText('(empty or single sample)', 6, H/2 + 4);
+                return;
+            }
+            // stepped waveform (zero-order hold) — matches firmware playback
+            ctx.strokeStyle = '#36a2eb'; ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            const N = samples.length;
+            for (let i = 0; i < N; i++) {
+                const x1 = (i / N) * W, x2 = ((i+1) / N) * W;
+                const y = H - (Math.max(0, Math.min(maxVal, samples[i])) / maxVal) * H;
+                if (i === 0) ctx.moveTo(x1, y); else ctx.lineTo(x1, y);
+                ctx.lineTo(x2, y);
+            }
+            ctx.stroke();
+            ctx.font = '9px monospace'; ctx.fillStyle = '#888';
+            ctx.fillText(`${N} samples  max=${maxVal}`, 6, 12);
+        });
+    };
+    // Update on input change
+    pane.querySelectorAll('input[type="text"]').forEach(inp => {
+        inp.addEventListener('input', draw);
+    });
+    draw();
+}
+
+// Wire any "load CSV…" buttons in the pane to a file picker.
+function fngenWireCsvButtons(pane) {
+    pane.querySelectorAll('.fngen-csvbtn').forEach(btn => {
+        btn.onclick = () => {
+            const inp = document.createElement('input');
+            inp.type = 'file';
+            inp.accept = '.csv,.txt,text/csv,text/plain';
+            inp.onchange = (e) => {
+                const f = e.target.files[0];
+                if (!f) return;
+                const r = new FileReader();
+                r.onload = (ev) => {
+                    const text = ev.target.result;
+                    // Parse any newline/comma-separated numbers, keep first 1024
+                    const nums = text.split(/[,;\s]+/).map(s => s.trim())
+                        .filter(s => s.length > 0)
+                        .map(s => parseInt(s, 10))
+                        .filter(n => !isNaN(n));
+                    const n = Math.min(nums.length, 4096);
+                    const target = pane.querySelector(`[data-k="${btn.dataset.target}"]`);
+                    if (target) {
+                        target.value = nums.slice(0, n).join(',');
+                        target.dispatchEvent(new Event('input'));  // triggers preview
+                    }
+                };
+                r.readAsText(f);
+            };
+            inp.click();
+        };
+    });
 }
 
 // Build an HTML form pane for the given mode. Produces a flat
@@ -1421,14 +1506,18 @@ function fngenPaneHtml(mode, maxVal, kind) {
         L('Offset',         N('offset', 0, maxVal, 1, halfMax, 'mid-point of the wave'));
         if (mode === 'square') L('Duty cycle', N('duty', 0, 1, 0.01, 0.5, '0.0-1.0 = 0-100 percent'));
     } else if (mode === 'arbitrary') {
-        L('Samples (CSV)', T('samples', '0,1024,2048,3072,4095,3072,2048,1024', 'comma-separated int16 DAC codes, max 1024'));
+        L('Samples (CSV)', T('samples', '0,1024,2048,3072,4095,3072,2048,1024', 'comma-separated int16 DAC codes, max 1024') +
+            ' <button type="button" class="fngen-csvbtn" data-target="samples">load CSV…</button>');
         L('Sample rate (Hz)', N('sample_rate_hz', 1, 1000000, 1, 100000));
         L('Loop count', N('loop_count', 0, 65535, 1, 0, '0 = infinite loop'));
+        rows.push(fngenPreviewCanvas('samples'));
     } else if (mode === 'lut') {
         L('Input source',   S('input_src', [{v:'adc',l:'ADC channel'}, {v:'din',l:'DIN bit-mask'}]));
         L('Input arg',      N('input_arg', 0, 65535, 1, 0, 'ADC channel 0-7, or DIN bitmask'));
-        L('Entries (CSV)',  T('entries', '0,1365,2730,4095', 'output values — length sets input resolution'));
+        L('Entries (CSV)',  T('entries', '0,1365,2730,4095', 'output values — length sets input resolution') +
+            ' <button type="button" class="fngen-csvbtn" data-target="entries">load CSV…</button>');
         if (kind === 'dout') L('Output mask', N('output_mask', 0, 65535, 1, 65535, 'which DOUT bits the LUT drives'));
+        rows.push(fngenPreviewCanvas('entries'));
     } else if (mode === 'threshold') {
         L('Input source',   S('input_src', [{v:'adc',l:'ADC channel'}, {v:'din',l:'DIN bit-mask'}]));
         L('Input arg',      N('input_arg', 0, 65535, 1, 0));

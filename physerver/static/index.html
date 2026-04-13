@@ -112,6 +112,43 @@
         .sysinfo-row .label { color:#666; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .sysinfo-row .value { color:#333; font-weight:bold; white-space:nowrap; }
         .sysinfo-unavailable { color:#999; font-style:italic; font-size:12px; text-align:center; padding:8px; }
+
+        /* Pinout (static reference, no polling) */
+        .pinout-content { margin-top:10px; font-size:11px; }
+        .pinout-intro { color:#666; font-size:11px; margin-bottom:8px; line-height:1.5; }
+        .pinout-intro code { background:#f0f0f0; padding:1px 4px; border-radius:2px; font-size:10px; }
+        .pinout-legend { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:12px; }
+        .pinout-group { background:#fff; border:1px solid #e0e0e0; border-radius:5px; margin-bottom:6px; padding:8px 12px; }
+        .pinout-group > summary { cursor:pointer; font-size:12px; font-weight:600; color:#444; text-transform:uppercase; letter-spacing:.4px; user-select:none; padding:2px 0; }
+        .pinout-group > summary:hover { color:#667eea; }
+        .pinout-conn { margin:6px 0 6px 8px; border-left:3px solid #ddd; padding:4px 10px; background:#fafafa; border-radius:0 4px 4px 0; }
+        .pinout-conn > summary { cursor:pointer; font-size:11px; color:#333; font-family:monospace; user-select:none; padding:2px 0; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+        .pinout-conn > summary:hover { color:#667eea; }
+        .pinout-conn[open] > summary { margin-bottom:6px; border-bottom:1px solid #eee; padding-bottom:4px; }
+        .pinout-conn.v3v3 { border-left-color:#3498db; }
+        .pinout-conn.v5v  { border-left-color:#27ae60; }
+        .pinout-conn.v24v { border-left-color:#e74c3c; }
+        .pinout-conn.vana { border-left-color:#9b59b6; }
+        .pinout-conn.vser { border-left-color:#f39c12; }
+        .pinout-conn.vdbg { border-left-color:#5b8def; }
+        .pinout-conn.vcan { border-left-color:#d64545; }
+        .pinout-tag { display:inline-block; padding:1px 7px; border-radius:9px; font-size:9px; font-weight:700; font-family:monospace; color:#fff; letter-spacing:.3px; }
+        .pinout-tag.v3v3 { background:#3498db; }
+        .pinout-tag.v5v  { background:#27ae60; }
+        .pinout-tag.v24v { background:#e74c3c; }
+        .pinout-tag.vana { background:#9b59b6; }
+        .pinout-tag.vser { background:#f39c12; }
+        .pinout-tag.vdbg { background:#5b8def; }
+        .pinout-tag.vcan { background:#d64545; }
+        .pinout-table { width:100%; border-collapse:collapse; font-family:'SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; }
+        .pinout-table th { text-align:left; padding:2px 8px; color:#888; font-weight:600; font-size:9px; text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid #ddd; background:#f5f5f5; }
+        .pinout-table td { padding:2px 8px; border-bottom:1px dotted #eee; vertical-align:top; }
+        .pinout-table tr:last-child td { border-bottom:none; }
+        .pinout-table tr:hover { background:#f0f4ff; }
+        .pinout-table td.pin { width:32px; color:#999; text-align:right; }
+        .pinout-table td.sig { font-weight:bold; color:#222; white-space:nowrap; }
+        .pinout-table td.note { color:#666; font-size:10px; }
+        .pinout-ascii { background:#1e1e1e; color:#d4d4d4; padding:10px 14px; border-radius:4px; font-family:'SFMono-Regular',Consolas,Menlo,monospace; font-size:10px; line-height:1.4; white-space:pre; overflow-x:auto; margin:8px 0 12px 0; }
     </style>
 </head>
 <body>
@@ -229,6 +266,339 @@
         <details class="panel wide" id="panelSysinfo" data-title="System Telemetry">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">System Telemetry</summary>
             <div id="sysinfoDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
+        </details>
+
+        <!-- Pinout (static reference, collapsible, closed by default) -->
+        <details class="panel wide" id="panelPinout" data-title="Pinout">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">Pinout</summary>
+            <div class="pinout-content">
+                <div class="pinout-intro">
+                    Device I/O reference — front panel (9 D-Sub via backplane PCB, 147 pins) and rear panel (4 DB9: 2 serial + SWD/JTAG + CAN). Full rationale, cable diagrams and BOM in <code>docs/technical/DEVICE_PINOUT.md</code> and <code>docs/technical/PCB_BACKPLANE_PINOUT.md</code>.
+                </div>
+                <div class="pinout-legend">
+                    <span class="pinout-tag v3v3">3.3V CMOS</span>
+                    <span class="pinout-tag v5v">5V TTL</span>
+                    <span class="pinout-tag v24v">24V O.C.</span>
+                    <span class="pinout-tag vana">Analog</span>
+                    <span class="pinout-tag vser">RS-232</span>
+                    <span class="pinout-tag vdbg">SWD/JTAG</span>
+                    <span class="pinout-tag vcan">CAN</span>
+                </div>
+
+                <!-- =========== FRONT PANEL =========== -->
+                <details class="pinout-group" open>
+                    <summary>Front panel — 9 connectors, 147 pins</summary>
+
+                    <details class="pinout-conn v3v3">
+                        <summary><span class="pinout-tag v3v3">3.3V</span><strong>DB25 #1</strong> — SENSING (16 DIN + 8 ADC + AGND)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Source</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DIN0</td><td class="note">PB26, pull-up</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DIN1</td><td class="note">PA15</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DIN2</td><td class="note">PD1</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DIN3</td><td class="note">PD3</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DIN4</td><td class="note">PD9</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DIN5</td><td class="note">PD10</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DIN6</td><td class="note">PC2</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DIN7</td><td class="note">PC4</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DIN8</td><td class="note">PC6</td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DIN9</td><td class="note">PC8</td></tr>
+                                <tr><td class="pin">11</td><td class="sig">DIN10</td><td class="note">PA19</td></tr>
+                                <tr><td class="pin">12</td><td class="sig">DIN11</td><td class="note">PC19</td></tr>
+                                <tr><td class="pin">13</td><td class="sig">DIN12</td><td class="note">PC17</td></tr>
+                                <tr><td class="pin">14</td><td class="sig">DIN13</td><td class="note">PC15</td></tr>
+                                <tr><td class="pin">15</td><td class="sig">DIN14</td><td class="note">PC13</td></tr>
+                                <tr><td class="pin">16</td><td class="sig">DIN15</td><td class="note">PB21</td></tr>
+                                <tr><td class="pin">17</td><td class="sig">ADC0</td><td class="note">Due A0, 0–3.3V 12-bit</td></tr>
+                                <tr><td class="pin">18</td><td class="sig">ADC1</td><td class="note">Due A1</td></tr>
+                                <tr><td class="pin">19</td><td class="sig">ADC2</td><td class="note">Due A2</td></tr>
+                                <tr><td class="pin">20</td><td class="sig">ADC3</td><td class="note">Due A3</td></tr>
+                                <tr><td class="pin">21</td><td class="sig">ADC4</td><td class="note">Due A4</td></tr>
+                                <tr><td class="pin">22</td><td class="sig">ADC5</td><td class="note">Due A5</td></tr>
+                                <tr><td class="pin">23</td><td class="sig">ADC6</td><td class="note">Due A6</td></tr>
+                                <tr><td class="pin">24</td><td class="sig">ADC7</td><td class="note">Due A7</td></tr>
+                                <tr><td class="pin">25</td><td class="sig">AGND</td><td class="note">analog ground</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v24v">
+                        <summary><span class="pinout-tag v24v">24V O.C.</span><strong>DB25 #2</strong> — CONTROL high-power (16 DOUT via ULN2803)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DOUT0_O.C.</td><td class="note">sink, ≤500 mA, 50 V max</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DOUT1_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DOUT2_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DOUT3_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DOUT4_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DOUT5_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DOUT6_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DOUT7_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DOUT8_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DOUT9_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">11</td><td class="sig">DOUT10_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">12</td><td class="sig">DOUT11_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">13</td><td class="sig">DOUT12_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">14</td><td class="sig">DOUT13_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">15</td><td class="sig">DOUT14_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">16</td><td class="sig">DOUT15_O.C.</td><td class="note">sink</td></tr>
+                                <tr><td class="pin">17</td><td class="sig">+24V</td><td class="note">XL6009 boost rail</td></tr>
+                                <tr><td class="pin">18</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">19</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">20</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">21</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">22</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">23</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">24</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">25</td><td class="sig">RESET</td><td class="note">active-low, optional chain</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v5v">
+                        <summary><span class="pinout-tag v5v">5V</span><strong>DB25 #3</strong> — CONTROL TTL (16 DOUT via 74HCT245 + DAC + PWM)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DOUT0_5V</td><td class="note">74HCT245 buffered, ≤25 mA</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DOUT1_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DOUT2_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DOUT3_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DOUT4_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DOUT5_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DOUT6_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DOUT7_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DOUT8_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DOUT9_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">11</td><td class="sig">DOUT10_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">12</td><td class="sig">DOUT11_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">13</td><td class="sig">DOUT12_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">14</td><td class="sig">DOUT13_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">15</td><td class="sig">DOUT14_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">16</td><td class="sig">DOUT15_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">17</td><td class="sig">DAC0</td><td class="note">0.55–2.75 V, 12-bit</td></tr>
+                                <tr><td class="pin">18</td><td class="sig">DAC1</td><td class="note">0.55–2.75 V, 12-bit</td></tr>
+                                <tr><td class="pin">19</td><td class="sig">PWM0</td><td class="note">future (FW not yet)</td></tr>
+                                <tr><td class="pin">20</td><td class="sig">PWM1</td><td class="note">future</td></tr>
+                                <tr><td class="pin">21</td><td class="sig">PWM2</td><td class="note">future</td></tr>
+                                <tr><td class="pin">22</td><td class="sig">+5V</td><td class="note">LM2596 rail</td></tr>
+                                <tr><td class="pin">23</td><td class="sig">+3.3V</td><td class="note">Due regulator</td></tr>
+                                <tr><td class="pin">24</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">25</td><td class="sig">AREF</td><td class="note">analog reference</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v5v">
+                        <summary><span class="pinout-tag v5v">5V</span><strong>DB15 #1</strong> — Expansion ch 0–7 (5V mixed)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DOUT0_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DOUT1_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DOUT2_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DOUT3_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DOUT4_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DOUT5_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DOUT6_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DOUT7_5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DIN0</td><td class="note">via R-divider 5V→3.3V</td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DIN1</td><td class="note">via R-divider</td></tr>
+                                <tr><td class="pin">11</td><td class="sig">DIN2</td><td class="note">via R-divider</td></tr>
+                                <tr><td class="pin">12</td><td class="sig">DIN3</td><td class="note">via R-divider</td></tr>
+                                <tr><td class="pin">13</td><td class="sig">+5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">14</td><td class="sig">+3.3V</td><td class="note"></td></tr>
+                                <tr><td class="pin">15</td><td class="sig">GND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v24v">
+                        <summary><span class="pinout-tag v24v">24V O.C.</span><strong>DB15 #2</strong> — Expansion ch 0–7 (24V, opto DIN)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DOUT0_O.C.</td><td class="note">ULN2803 sink</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DOUT1_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DOUT2_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DOUT3_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DOUT4_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DOUT5_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DOUT6_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DOUT7_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DIN8_OPTO</td><td class="note">PC817, 18–30 V swing</td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DIN9_OPTO</td><td class="note">PC817</td></tr>
+                                <tr><td class="pin">11</td><td class="sig">DIN10_OPTO</td><td class="note">PC817</td></tr>
+                                <tr><td class="pin">12</td><td class="sig">DIN11_OPTO</td><td class="note">PC817</td></tr>
+                                <tr><td class="pin">13</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">14</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">15</td><td class="sig">GND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vana">
+                        <summary><span class="pinout-tag vana">Analog</span><strong>DB15 #3</strong> — Analog mixed (2 DAC + 4 ADC + 4 DOUT raw)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DAC0</td><td class="note">analog out</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DAC1</td><td class="note">analog out</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">ADC0</td><td class="note">analog in</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">ADC1</td><td class="note">analog in</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">ADC2</td><td class="note">analog in</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">ADC3</td><td class="note">analog in</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">DOUT0</td><td class="note">3.3 V raw</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">DOUT1</td><td class="note">3.3 V raw</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">DOUT2</td><td class="note">3.3 V raw</td></tr>
+                                <tr><td class="pin">10</td><td class="sig">DOUT3</td><td class="note">3.3 V raw</td></tr>
+                                <tr><td class="pin">11</td><td class="sig">PWM0</td><td class="note">future</td></tr>
+                                <tr><td class="pin">12</td><td class="sig">PWM1</td><td class="note">future</td></tr>
+                                <tr><td class="pin">13</td><td class="sig">AREF</td><td class="note">analog reference</td></tr>
+                                <tr><td class="pin">14</td><td class="sig">+3.3V</td><td class="note"></td></tr>
+                                <tr><td class="pin">15</td><td class="sig">AGND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vana">
+                        <summary><span class="pinout-tag vana">Analog</span><strong>DB9 #1</strong> — Quick analog (4 ADC + 2 DAC)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">ADC0</td><td class="note"></td></tr>
+                                <tr><td class="pin">2</td><td class="sig">ADC1</td><td class="note"></td></tr>
+                                <tr><td class="pin">3</td><td class="sig">ADC2</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">ADC3</td><td class="note"></td></tr>
+                                <tr><td class="pin">5</td><td class="sig">DAC0</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DAC1</td><td class="note"></td></tr>
+                                <tr><td class="pin">7</td><td class="sig">AREF</td><td class="note"></td></tr>
+                                <tr><td class="pin">8</td><td class="sig">+3.3V</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">AGND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v24v">
+                        <summary><span class="pinout-tag v24v">24V O.C.</span><strong>DB9 #2</strong> — Quick power (4 DOUT 24V + 12V rail)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DOUT0_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">2</td><td class="sig">DOUT1_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">3</td><td class="sig">DOUT2_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DOUT3_O.C.</td><td class="note"></td></tr>
+                                <tr><td class="pin">5</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">+24V</td><td class="note"></td></tr>
+                                <tr><td class="pin">7</td><td class="sig">+12V</td><td class="note">direct from PSU input</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">GND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn v5v">
+                        <summary><span class="pinout-tag v5v">5V</span><strong>DB9 #3</strong> — Quick serial (UART + SPI + I2C)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">UART0_TX</td><td class="note">PA9, firmware TBD</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">UART0_RX</td><td class="note">PA8, firmware TBD</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">SPI_MOSI</td><td class="note">PA26, firmware TBD</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">SPI_MISO</td><td class="note">PA25, firmware TBD</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">SPI_SCK</td><td class="note">PA27, firmware TBD</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">I2C_SDA</td><td class="note">PB12, firmware TBD</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">I2C_SCL</td><td class="note">PB13, firmware TBD</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">+5V</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">GND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+                </details>
+
+                <!-- =========== REAR PANEL =========== -->
+                <details class="pinout-group" open>
+                    <summary>Rear panel — 4 DB9 (2 serial + debug + CAN)</summary>
+                    <div class="pinout-ascii">  [IEC C14]   [FUSE]   [MAIN SW]                           [FAN 80mm]
+
+  [COM1]  [COM2]              [DEBUG]  [CAN]
+   DB9m    DB9m                DB9f     DB9m</div>
+
+                    <details class="pinout-conn vser">
+                        <summary><span class="pinout-tag vser">RS-232</span><strong>COM1</strong> — DB9 male · motherboard UART1 · <code>/dev/ttyS0</code></summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Direction</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DCD</td><td class="note">Data Carrier Detect · IN</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">RXD</td><td class="note">Receive · IN</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">TXD</td><td class="note">Transmit · OUT</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DTR</td><td class="note">Data Terminal Ready · OUT</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">GND</td><td class="note">Signal ground</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DSR</td><td class="note">Data Set Ready · IN</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">RTS</td><td class="note">Request To Send · OUT</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">CTS</td><td class="note">Clear To Send · IN</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">RI</td><td class="note">Ring Indicator · IN</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vser">
+                        <summary><span class="pinout-tag vser">RS-232</span><strong>COM2</strong> — DB9 male · motherboard UART2 · <code>/dev/ttyS1</code></summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Direction</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">DCD</td><td class="note">IN</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">RXD</td><td class="note">IN</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">TXD</td><td class="note">OUT</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">DTR</td><td class="note">OUT</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">6</td><td class="sig">DSR</td><td class="note">IN</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">RTS</td><td class="note">OUT</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">CTS</td><td class="note">IN</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">RI</td><td class="note">IN</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vdbg">
+                        <summary><span class="pinout-tag vdbg">SWD/JTAG</span><strong>DEBUG</strong> — DB9 female · ATSAM3X8E debug (J-Link, ST-Link, CMSIS-DAP)</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">VREF</td><td class="note">3.3 V target sense</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">TMS / SWDIO</td><td class="note">PB6</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">TCK / SWCLK</td><td class="note">PB7</td></tr>
+                                <tr><td class="pin">4</td><td class="sig">TDO / SWO</td><td class="note">PB5</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">TDI</td><td class="note">PB4 (JTAG only)</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">nRESET</td><td class="note">open-drain</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">nTRST</td><td class="note">optional</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">9</td><td class="sig">GND</td><td class="note"></td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+
+                    <details class="pinout-conn vcan">
+                        <summary><span class="pinout-tag vcan">CAN</span><strong>CAN</strong> — DB9 male · CAN 2.0 B, CiA 303-1 · via MCP2562FD transceiver</summary>
+                        <table class="pinout-table">
+                            <thead><tr><th>Pin</th><th>Signal</th><th>Note</th></tr></thead>
+                            <tbody>
+                                <tr><td class="pin">1</td><td class="sig">Reserved</td><td class="note">optional CAN_V+ secondary</td></tr>
+                                <tr><td class="pin">2</td><td class="sig">CAN_L</td><td class="note">differential low</td></tr>
+                                <tr><td class="pin">3</td><td class="sig">CAN_GND</td><td class="note"></td></tr>
+                                <tr><td class="pin">4</td><td class="sig">Reserved</td><td class="note">NC</td></tr>
+                                <tr><td class="pin">5</td><td class="sig">CAN_SHLD</td><td class="note">cable shield</td></tr>
+                                <tr><td class="pin">6</td><td class="sig">GND</td><td class="note">optional</td></tr>
+                                <tr><td class="pin">7</td><td class="sig">CAN_H</td><td class="note">differential high</td></tr>
+                                <tr><td class="pin">8</td><td class="sig">Reserved</td><td class="note">error line, NC</td></tr>
+                                <tr><td class="pin">9</td><td class="sig">CAN_V+</td><td class="note">optional 7–36 V bus power</td></tr>
+                            </tbody>
+                        </table>
+                    </details>
+                </details>
+            </div>
         </details>
     </div>
 </div>
@@ -368,7 +738,10 @@ function updateStatus(s){
     document.getElementById('errorCountValue').textContent=s.error_count;
     document.getElementById('seqValue').textContent=String(s.seq_num).padStart(3,'\u2007');
 }
-setInterval(()=>{const n=performance.now(),dt=(n-lastRateTs)/1000;document.getElementById('rateValue').textContent=dt>0?((msgCount-lastRateCount)/dt).toFixed(0):'-';lastRateTs=n;lastRateCount=msgCount;},2000);
+// rateValue is now driven by rt_stats tick_ok deltas (see renderRtStats),
+// which reports the actual control-loop rate (1 kHz bulk / ~8 kHz iso),
+// not the WebSocket frame rate (throttled to ~250 Hz at the consumer task).
+// We still keep msgCount as a sanity counter accessible from the console.
 function fmtUp(ms){const s=Math.floor(ms/1000);if(s<60)return s+'s';const m=Math.floor(s/60);if(m<60)return m+'m';const h=Math.floor(m/60);return(h<24)?h+'h '+(m%60)+'m':Math.floor(h/24)+'d '+(h%24)+'h';}
 
 // ========== Scope ring buffer ==========
@@ -581,13 +954,24 @@ function renderRtStats(d) {
         </div>`;
     }
 
-    // Compute delta since last poll for "live" effective rate
+    // Compute delta since last poll for the "live" effective control-loop
+    // rate. This same number drives both the small "(N Hz live)" hint
+    // inside the RT stats panel and the prominent Hz badge in the
+    // status bar. Both are populated from rt_stats deltas because the
+    // WebSocket throughput is throttled at the server (~250 Hz) and
+    // would otherwise misrepresent the actual loop rate.
     let liveHz = '';
     const now = performance.now();
     if (lastRtSnap && (now - lastRtSnap.t) > 500) {
         const dT = (now - lastRtSnap.t) / 1000;
         const dN = d.tick_ok - lastRtSnap.tick_ok;
-        liveHz = ` <small style="color:#888">(${(dN/dT).toFixed(1)} Hz live)</small>`;
+        const hz = dN/dT;
+        liveHz = ` <small style="color:#888">(${hz.toFixed(1)} Hz live)</small>`;
+        document.getElementById('rateValue').textContent = hz >= 1000
+            ? (hz/1000).toFixed(1) + 'k'
+            : hz.toFixed(0);
+    } else if (!lastRtSnap) {
+        document.getElementById('rateValue').textContent = '-';
     }
     lastRtSnap = { t: now, tick_ok: d.tick_ok };
 

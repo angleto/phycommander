@@ -26,6 +26,13 @@ serialport = "4.3"
 # Transport: direct USB bulk — gated by feature
 rusb = { version = "0.9", optional = true }
 
+# Raw libusb-1.0 bindings used by transport::usb_iso (async iso transfers).
+# Pulled in transitively by rusb but named explicitly so that Cargo
+# resolves a single, consistent version. Gated on the same `usb` feature
+# as rusb because iso transport is meaningless without USB support.
+libusb1-sys = { version = "0.7", optional = true }
+libc = "0.2"
+
 # Logging
 tracing = "0.1"
 
@@ -42,7 +49,6 @@ crossbeam-channel = "0.5"
 
 # Real-time primitives (mlockall, sched_setscheduler, sched_setaffinity)
 nix = { version = "0.27", features = ["sched", "signal", "mman"] }
-libc = "0.2"
 
 # tokio::sync::broadcast for the StatusBus observer pattern; only the
 # sync primitives are pulled in (no net, no fs). `rt` gives us
@@ -52,7 +58,7 @@ tokio = { version = "1.35", features = ["sync", "rt"], default-features = false 
 
 [features]
 default = ["usb"]
-usb = ["rusb"]
+usb = ["rusb", "libusb1-sys"]
 
 # Exposes `transport::mock::MockTransport` outside of `cfg(test)`
 # so that sibling crates in the workspace can reuse it in their
@@ -60,9 +66,4 @@ usb = ["rusb"]
 test-mock = []
 
 [dev-dependencies]
-# Raw libusb-1.0 bindings for the iso_probe example.
-# rusb only exposes synchronous bulk/control; async iso transfers
-# require the lower-level libusb_alloc_transfer / submit / handle_events
-# API which lives in libusb1-sys (already pulled in transitively by rusb,
-# but we name it explicitly so the example can import its symbols).
-libusb1-sys = "0.7"
+# (libusb1-sys is now a normal dep above — see usb_iso.rs.)

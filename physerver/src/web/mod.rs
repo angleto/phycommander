@@ -32,6 +32,10 @@ pub struct AppState {
     /// Handle to the RT scheduler's stats (set by main after the
     /// scheduler is created). Served by /api/rt_stats.
     pub rt_stats: std::sync::OnceLock<Arc<phycmd_core::RtStats>>,
+    /// Handle to the iso transport's per-direction counters. Set
+    /// only when running in iso mode; absent in bulk mode. Folded
+    /// into the /api/rt_stats response when present.
+    pub iso_stats: std::sync::OnceLock<Arc<phycmd_core::transport::IsoStats>>,
 }
 
 impl AppState {
@@ -45,12 +49,19 @@ impl AppState {
             error_baseline: AtomicU16::new(0),
             error_baseline_initialized: std::sync::atomic::AtomicBool::new(false),
             rt_stats: std::sync::OnceLock::new(),
+            iso_stats: std::sync::OnceLock::new(),
         }
     }
 
     /// Register the RT scheduler's stats so /api/rt_stats can read them.
     pub fn set_rt_stats(&self, stats: Arc<phycmd_core::RtStats>) {
         let _ = self.rt_stats.set(stats);
+    }
+
+    /// Register the iso transport's stats (only set when running in
+    /// iso mode). Folded into /api/rt_stats when present.
+    pub fn set_iso_stats(&self, stats: Arc<phycmd_core::transport::IsoStats>) {
+        let _ = self.iso_stats.set(stats);
     }
 
     /// Apply the error_count baseline to a raw Status: subtract the
@@ -233,10 +244,37 @@ struct RtStatsResponse {
     jitter_histogram: [u64; 9],
     jitter_buckets_us: [i32; 8],
     success_ratio: f64,
+    /// Iso-mode counters. `None` in bulk mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    iso: Option<IsoStatsResponse>,
+}
+
+#[derive(Serialize)]
+struct IsoStatsResponse {
+    iso_in_pkts_ok: u64,
+    iso_in_errors: u64,
+    iso_in_short: u64,
+    iso_in_crc_errors: u64,
+    iso_out_pkts_ok: u64,
+    iso_out_errors: u64,
+    commands_taken: u64,
 }
 
 async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsResponse> {
-    let response = if let Some(stats) = state.rt_stats.get() {
+    let iso = state.iso_stats.get().map(|s| {
+        let snap = s.snapshot();
+        IsoStatsResponse {
+            iso_in_pkts_ok: snap.iso_in_pkts_ok,
+            iso_in_errors: snap.iso_in_errors,
+            iso_in_short: snap.iso_in_short,
+            iso_in_crc_errors: snap.iso_in_crc_errors,
+            iso_out_pkts_ok: snap.iso_out_pkts_ok,
+            iso_out_errors: snap.iso_out_errors,
+            commands_taken: snap.commands_taken,
+        }
+    });
+
+    let mut response = if let Some(stats) = state.rt_stats.get() {
         let snap = stats.snapshot();
         RtStatsResponse {
             tick_count: snap.tick_count,
@@ -257,6 +295,7 @@ async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsRespons
                 arr
             },
             success_ratio: snap.success_ratio(),
+            iso: None,
         }
     } else {
         // Scheduler not yet registered (service still booting)
@@ -266,8 +305,10 @@ async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsRespons
             jitter_min_us: 0, jitter_max_us: 0, mean_abs_jitter_us: 0.0,
             jitter_histogram: [0; 9], jitter_buckets_us: [0; 8],
             success_ratio: 1.0,
+            iso: None,
         }
     };
+    response.iso = iso;
     Json(response)
 }
 

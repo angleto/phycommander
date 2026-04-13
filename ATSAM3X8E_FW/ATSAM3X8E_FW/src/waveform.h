@@ -135,7 +135,17 @@ typedef enum {
 /* Hardware limits exposed via Capabilities. */
 #define WAVE_MAX_DAC_SAMPLE_RATE_HZ   1000000u   /* SAM3X DACC peak */
 #define WAVE_MAX_ARB_SAMPLES          1024u      /* per-channel buffer */
-#define WAVE_DEFAULT_DAC_CLOCK_HZ     1000000u   /* 1 MSPS shared default */
+/* Default DAC clock = 200 kSPS per channel (TC triggers at 400 kHz with
+ * alternating channels). More than enough for audio-band signals with
+ * generous oversampling (100 samples per 2 kHz cycle). Keeps the DACC
+ * ENDTX ISR rate low enough that the 125-µs USB microframes never
+ * get starved even during refill bursts.
+ *
+ * Users who need high-frequency signals (>~50 kHz fundamental) should
+ * bump the DAC clock via DAC_SET_CLOCK up to the hardware limit
+ * (WAVE_MAX_DAC_SAMPLE_RATE_HZ = 1 MSPS). Expect a small USB tick-rate
+ * drop (~5-10%) at the top of that range — see PROTOCOL.md §4.4. */
+#define WAVE_DEFAULT_DAC_CLOCK_HZ     200000u    /* 200 kSPS shared */
 
 /* -------------------------------------------------------------------------
  *   Wire-format structs (single source of truth, mirrors PROTOCOL.md §6.1)

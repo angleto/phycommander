@@ -32,7 +32,11 @@
  *   Compile-time configuration
  * ------------------------------------------------------------------------- */
 
-#define PINGPONG_SAMPLES   1024u   /* per ping-pong half (interleaved both channels) */
+/* PINGPONG_SAMPLES picked to keep each refill burst short enough
+ * that it can never starve the UOTGHS iso ISR (125 µs microframe).
+ * 256 samples × ~0.25 µs-per-sample compute ≈ 60 µs refill burst —
+ * UOTGHS can preempt mid-burst without losing iso packets. */
+#define PINGPONG_SAMPLES   256u    /* per ping-pong half (interleaved both channels) */
 #define SIN_LUT_SIZE       1024u   /* must be power of 2 for cheap masking */
 #define SIN_LUT_MASK       (SIN_LUT_SIZE - 1u)
 
@@ -319,7 +323,13 @@ static void dacc_pdc_start(void)
 	DACC->DACC_IDR = ~0u;
 	DACC->DACC_IER = DACC_IER_ENDTX;
 
-	NVIC_SetPriority(DACC_IRQn, 1);   /* below UOTGHS=0, above all else */
+	/* DACC priority 3: we do NOT touch UOTGHS priority (ASF sets it
+	 * during udc_start() and changing it on older ASF breaks the
+	 * iso scheduler — measured drop 8000→7000 Hz when we tried).
+	 * Instead we park DACC low enough that whatever ASF picks for
+	 * UOTGHS (typically 1 or 2), UOTGHS always preempts our 240 µs
+	 * DACC refill ISR. ADC stays at 4 (below DACC). */
+	NVIC_SetPriority(DACC_IRQn, 3);
 	NVIC_ClearPendingIRQ(DACC_IRQn);
 	NVIC_EnableIRQ(DACC_IRQn);
 
@@ -949,16 +959,59 @@ void waveform_init(void)
 	 * NVIC line wasn't enabled (the previous firmware just polled
 	 * g_adc_buf in process_command_frame). Now that we have
 	 * ADC_Handler installed, turn the line on. */
-	NVIC_SetPriority(ADC_IRQn, 2);   /* below UOTGHS=0, DACC=1 */
+	/* ADC_IRQn is NOT enabled at boot: leaving it on costs ~5% CPU
+	 * even when no reactive channel uses ADC because the PDC ring
+	 * in free-running mode raises ENDRX at ~75 kHz. The NVIC is
+	 * armed on demand by update_adc_irq_needed() whenever a
+	 * LUT / THRESHOLD / PID channel with input_src == ADC becomes
+	 * active, and disarmed when the last such consumer stops. */
+	NVIC_SetPriority(ADC_IRQn, 4);
 	NVIC_ClearPendingIRQ(ADC_IRQn);
-	NVIC_EnableIRQ(ADC_IRQn);
+}
+
+/* Scan per-channel state; return true iff any reactive slot is
+ * subscribed to an ADC EOC event. Called from every mode-change
+ * entry point and the idempotent toggle below. */
+static bool any_adc_consumer_active(void)
+{
+	for (uint8_t s = 0; s < MAX_LUT_SLOTS; s++)
+		if (s_lut[s].input_src == INPUT_SRC_ADC) return true;
+	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++)
+		if (s_thr_dac[i].active && s_thr_dac[i].spec.input_src == INPUT_SRC_ADC) return true;
+	for (uint8_t i = 0; i < WAVE_NUM_DOUT; i++)
+		if (s_thr_dout[i].active && s_thr_dout[i].spec.input_src == INPUT_SRC_ADC) return true;
+	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++)
+		if (s_pid[i].active) return true;   /* v3 PID is ADC-only */
+	return false;
+}
+
+static void update_adc_irq_needed(void)
+{
+	if (any_adc_consumer_active()) {
+		NVIC_ClearPendingIRQ(ADC_IRQn);
+		NVIC_EnableIRQ(ADC_IRQn);
+	} else {
+		NVIC_DisableIRQ(ADC_IRQn);
+	}
 }
 
 void waveform_stop_all(void)
 {
 	NVIC_DisableIRQ(DACC_IRQn);
+	NVIC_DisableIRQ(ADC_IRQn);
 	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++) {
 		s_chan[i].shape = SHAPE_OFF;
+		s_thr_dac[i].active = 0;
+		s_pid[i].active = 0;
+	}
+	for (uint8_t i = 0; i < WAVE_NUM_DOUT; i++) {
+		s_thr_dout[i].active = 0;
+	}
+	for (uint8_t s = 0; s < MAX_LUT_SLOTS; s++) {
+		s_lut[s].input_src = INPUT_SRC_NONE;
+	}
+	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
+		s_pulse[i].active = 0;
 	}
 	update_pdc_running();
 }
@@ -1076,6 +1129,7 @@ bool waveform_play_builtin(uint16_t channel_id, const void *data, uint16_t len)
 	NVIC_EnableIRQ(DACC_IRQn);
 
 	update_pdc_running();
+	update_adc_irq_needed();
 	return true;
 }
 
@@ -1119,6 +1173,7 @@ bool waveform_play_arbitrary(uint16_t channel_id, const void *data, uint16_t len
 	NVIC_EnableIRQ(DACC_IRQn);
 
 	update_pdc_running();
+	update_adc_irq_needed();
 	return true;
 }
 
@@ -1291,6 +1346,7 @@ bool waveform_play_pid(uint16_t channel_id, const void *data, uint16_t len)
 	s_chan[idx].shape = SHAPE_PID;
 	NVIC_EnableIRQ(DACC_IRQn);
 	update_pdc_running();
+	update_adc_irq_needed();
 	return true;
 }
 

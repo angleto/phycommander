@@ -24,6 +24,7 @@
 #include "udc_desc.h"
 #include "udi.h"
 #include "udi_vendor.h"
+#include <string.h>
 
 /* Defined in main.c — processes a PhyCMD-64 command frame and fills
  * the 64-byte status response.  Called from ISR context. */
@@ -34,6 +35,8 @@ extern void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf);
  * are not bound to a single bulk callback. */
 extern void apply_command_frame(const uint8_t *rx_buf);
 extern void build_status_frame(uint8_t *tx_buf);
+
+#include "waveform.h"   /* vendor SETUP requests */
 
 /* -------------------------------------------------------------------------
  *   Device descriptor
@@ -436,14 +439,140 @@ static void udi_vendor_disable(void)
 	 * before calling us — any in-flight transfer has already been
 	 * aborted and vendor_bulk_out_cb() will have seen
 	 * UDD_EP_TRANSFER_ABORT and bailed out. The ring state will be
-	 * reset the next time udi_vendor_enable() is called. */
+	 * reset the next time udi_vendor_enable() is called.
+	 *
+	 * Safety: on host disconnect we also stop every running waveform
+	 * generator — see PROTOCOL.md §4.3. Without this a Python script
+	 * crashing while DAC0 is playing a 1 kHz square wave would leave
+	 * the DAC oscillating in the wild until the device is power-cycled. */
+	waveform_stop_all();
+}
+
+/* Scratch for SETUP DATA-stage payloads. Sized to the largest
+ * inbound payload we accept (WaveArbHeader + WAVE_MAX_ARB_SAMPLES
+ * × int16_t = 8 + 2048 = 2056 bytes; round up). */
+#define VENDOR_SETUP_BUF_SIZE 2056u
+COMPILER_WORD_ALIGNED
+static uint8_t s_setup_buf[VENDOR_SETUP_BUF_SIZE];
+
+/* Outbound payload for IN requests (Capabilities, ChannelState).
+ * 32 bytes is enough for both. */
+COMPILER_WORD_ALIGNED
+static uint8_t s_setup_in_buf[32];
+
+/* Called by UDC when the host has finished sending the SETUP DATA stage. */
+static void vendor_setup_out_done(void)
+{
+	uint8_t  bRequest = udd_g_ctrlreq.req.bRequest;
+	uint16_t wIndex   = udd_g_ctrlreq.req.wIndex;
+	uint16_t wLength  = udd_g_ctrlreq.req.wLength;
+
+	bool ok = false;
+	switch (bRequest) {
+	case VREQ_GEN_PLAY_BUILTIN:
+		ok = waveform_play_builtin(wIndex, s_setup_buf, wLength);
+		break;
+	case VREQ_GEN_PLAY_ARBITRARY:
+		ok = waveform_play_arbitrary(wIndex, s_setup_buf, wLength);
+		break;
+	case VREQ_DAC_SET_CLOCK:
+		if (wLength == 4) {
+			uint32_t v;
+			memcpy(&v, s_setup_buf, 4);
+			ok = waveform_set_dac_clock(v);
+		}
+		break;
+	case VREQ_ADC_SET_RATE:
+		if (wLength == 4) {
+			uint32_t v;
+			memcpy(&v, s_setup_buf, 4);
+			ok = waveform_set_adc_rate(v);
+		}
+		break;
+	default:
+		break;
+	}
+
+	if (!ok) {
+		/* UDC has no public hook to STALL after-the-fact; the best we
+		 * can do is silently drop the side-effect. The host's
+		 * libusb_control_transfer still returns success because the
+		 * STATUS stage was ACKed. To make errors more visible we
+		 * could refuse the DATA stage in the SETUP callback by
+		 * returning false there, but that requires knowing the
+		 * payload size at SETUP time. v1: rely on host using
+		 * GEN_GET_STATE to verify the side-effect landed. */
+	}
 }
 
 static bool udi_vendor_setup(void)
 {
-	/* No vendor-specific control requests supported yet. Return false
-	 * so UDC issues the default STALL on unknown class/vendor requests. */
-	return false;
+	uint8_t  bmRequestType = udd_g_ctrlreq.req.bmRequestType;
+	uint8_t  bRequest      = udd_g_ctrlreq.req.bRequest;
+	uint16_t wIndex        = udd_g_ctrlreq.req.wIndex;
+	uint16_t wLength       = udd_g_ctrlreq.req.wLength;
+
+	/* Only handle vendor / device requests (bmRequestType type=2,
+	 * recipient=0). Class / standard requests are not ours. */
+	if ((bmRequestType & USB_REQ_TYPE_MASK)      != USB_REQ_TYPE_VENDOR) return false;
+	if ((bmRequestType & USB_REQ_RECIP_MASK)     != USB_REQ_RECIP_DEVICE) return false;
+
+	bool dir_in = (bmRequestType & USB_REQ_DIR_IN) != 0;
+
+	if (dir_in) {
+		/* IN requests: prepare s_setup_in_buf and let UDC stream it. */
+		uint16_t reply_len = 0;
+		bool ok = false;
+		switch (bRequest) {
+		case VREQ_GEN_GET_CAPS:
+			ok = waveform_get_caps(s_setup_in_buf, sizeof(s_setup_in_buf));
+			reply_len = 32;
+			break;
+		case VREQ_GEN_GET_STATE:
+			ok = waveform_get_state(wIndex, s_setup_in_buf, sizeof(s_setup_in_buf));
+			reply_len = 32;
+			break;
+		case VREQ_DAC_GET_CLOCK: {
+			uint32_t v = waveform_get_dac_clock();
+			memcpy(s_setup_in_buf, &v, 4);
+			ok = true; reply_len = 4;
+			break;
+		}
+		case VREQ_ADC_GET_RATE: {
+			uint32_t v = waveform_get_adc_rate();
+			memcpy(s_setup_in_buf, &v, 4);
+			ok = true; reply_len = 4;
+			break;
+		}
+		default:
+			return false;        /* STALL */
+		}
+		if (!ok) return false;
+		if (wLength > reply_len) wLength = reply_len;   /* truncate to actual */
+		udd_g_ctrlreq.payload      = s_setup_in_buf;
+		udd_g_ctrlreq.payload_size = wLength;
+		return true;
+	}
+
+	/* OUT requests */
+	switch (bRequest) {
+	case VREQ_GEN_STOP:
+		/* No DATA stage. Apply immediately. */
+		(void)waveform_stop(wIndex);
+		return true;
+	case VREQ_GEN_PLAY_BUILTIN:
+	case VREQ_GEN_PLAY_ARBITRARY:
+	case VREQ_DAC_SET_CLOCK:
+	case VREQ_ADC_SET_RATE:
+		/* Has DATA stage. Tell UDC to land it in s_setup_buf. */
+		if (wLength > VENDOR_SETUP_BUF_SIZE) return false;
+		udd_g_ctrlreq.payload          = s_setup_buf;
+		udd_g_ctrlreq.payload_size     = wLength;
+		udd_g_ctrlreq.callback         = vendor_setup_out_done;
+		return true;
+	default:
+		return false;            /* STALL on unknown vendor OUT request */
+	}
 }
 
 static uint8_t udi_vendor_getsetting(void)

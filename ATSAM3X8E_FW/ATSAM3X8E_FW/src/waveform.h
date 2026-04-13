@@ -103,7 +103,8 @@ typedef enum {
 #define MODE_LUT        (1u << 3)
 #define MODE_THRESHOLD  (1u << 4)
 #define MODE_PULSE_TRIG (1u << 5)
-/* bits 6..7 reserved for MODE_PID (v3), MODE_RULE_CHAIN. */
+#define MODE_PID        (1u << 6)
+/* bit 7 reserved for MODE_RULE_CHAIN. */
 
 /* -------------------------------------------------------------------------
  *   Channel inventory exposed by this firmware revision.

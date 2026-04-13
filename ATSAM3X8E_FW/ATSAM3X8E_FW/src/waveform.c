@@ -157,6 +157,19 @@ static volatile threshold_state_t s_thr_dout[WAVE_NUM_DOUT];
 /* PULSE_TRIG: 4 simultaneous slots (TC1_CH0..2 + TC2_CH0). */
 static volatile pulse_state_t s_pulse[MAX_PULSE_TRIG_SLOTS];
 
+/* PID: per-DAC slot. State in addition to the spec is integrator
+ * accumulator, previous error (for derivative), and previous output
+ * (for derivative LP filter). All in Q16.16 fixed-point. */
+typedef struct {
+	uint8_t  active;
+	uint8_t  out_idx;            /* DAC channel 0 or 1 */
+	struct WavePidSpec spec;
+	int32_t  integral_q16_16;    /* anti-windup clamped to spec.integral_clamp */
+	int32_t  prev_error_q16_16;
+	int32_t  prev_d_q16_16;      /* low-pass filtered derivative */
+} pid_state_t;
+static volatile pid_state_t s_pid[WAVE_NUM_DAC];
+
 /* Cache of the most recent DIN snapshot, used by the PIO change ISR
  * to compute LUT input indices and detect pulse-trig edges. Refreshed
  * by the ADC EOC ISR (which is the most frequent firmware ISR) and
@@ -761,6 +774,46 @@ static void pulse_tick_1ms(void)
 /* Called from SysTick handler in main.c (see hookup below). */
 void waveform_systick_1ms(void) { pulse_tick_1ms(); }
 
+/* ---- PID closed-loop step ----
+ *
+ * Q16.16 fixed-point throughout. Evaluated once per ADC EOC (so the
+ * effective PID rate equals the ADC sampling rate, which can be
+ * configured via ADC_SET_RATE). The derivative term is single-pole
+ * low-passed with a fixed alpha=0.25 to suppress measurement noise. */
+static void pid_step(uint8_t dac_idx)
+{
+	volatile pid_state_t *p = &s_pid[dac_idx];
+	if (!p->active) return;
+	if (p->spec.input_src != INPUT_SRC_ADC) return;
+	uint8_t adc_ch = p->spec.input_arg & 0x07;
+	int32_t input = (int32_t)(g_adc_buf[0][adc_ch] & 0x0FFF);
+
+	int32_t err   = (p->spec.setpoint - input) << 16;     /* Q16.16 */
+	/* Integrator (Ki·∫err·dt where dt = 1/ADC_rate, baked into Ki). */
+	int64_t i_acc = (int64_t)p->integral_q16_16 + (int64_t)err;
+	int32_t clamp = p->spec.integral_clamp;
+	if (i_acc >  (int64_t)clamp) i_acc = clamp;
+	if (i_acc < -(int64_t)clamp) i_acc = -clamp;
+	p->integral_q16_16 = (int32_t)i_acc;
+
+	/* Derivative: (err - prev_err) low-pass filtered. alpha=1/4. */
+	int32_t d_raw = err - p->prev_error_q16_16;
+	int32_t d_filt = p->prev_d_q16_16 + ((d_raw - p->prev_d_q16_16) >> 2);
+	p->prev_d_q16_16 = d_filt;
+	p->prev_error_q16_16 = err;
+
+	/* output = Kp·err + Ki·integral + Kd·derivative, all Q16.16
+	 * multiplications, shift down to integer DAC units. */
+	int64_t out64 = ((int64_t)p->spec.kp_q16_16 * err) >> 16;
+	out64       += ((int64_t)p->spec.ki_q16_16 * p->integral_q16_16) >> 16;
+	out64       += ((int64_t)p->spec.kd_q16_16 * d_filt) >> 16;
+	int32_t out_int = (int32_t)(out64 >> 16);    /* now in DAC units */
+
+	if (out_int < (int32_t)p->spec.out_min) out_int = p->spec.out_min;
+	if (out_int > (int32_t)p->spec.out_max) out_int = p->spec.out_max;
+	reactive_dac_write(dac_idx, (uint16_t)out_int);
+}
+
 /* ---- ADC EOC ISR (chained from existing ADC PDC ring) ----
  *
  * Called by main.c's existing ADC handler on every ENDRX (fresh
@@ -786,6 +839,10 @@ void waveform_on_adc_endrx(void)
 	for (uint8_t i = 0; i < WAVE_NUM_DOUT; i++) {
 		if (s_thr_dout[i].active && s_thr_dout[i].spec.input_src == INPUT_SRC_ADC)
 			threshold_eval(CHAN_KIND_DOUT, i, &s_thr_dout[i]);
+	}
+	/* PIDs */
+	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++) {
+		if (s_pid[i].active) pid_step(i);
 	}
 }
 
@@ -882,6 +939,7 @@ void waveform_init(void)
 	memset((void *)s_thr_dac,  0, sizeof(s_thr_dac));
 	memset((void *)s_thr_dout, 0, sizeof(s_thr_dout));
 	memset((void *)s_pulse,    0, sizeof(s_pulse));
+	memset((void *)s_pid,      0, sizeof(s_pid));
 	s_last_din = 0;
 
 	sin_lut_init();
@@ -929,7 +987,7 @@ bool waveform_get_caps(void *out, uint16_t out_len)
 		.num_din                = WAVE_NUM_DIN,
 		.num_adc                = WAVE_NUM_ADC,
 		.modes_dac              = MODE_MANUAL | MODE_BUILTIN | MODE_ARBITRARY
-		                        | MODE_LUT | MODE_THRESHOLD,
+		                        | MODE_LUT | MODE_THRESHOLD | MODE_PID,
 		.modes_pwm              = MODE_MANUAL,
 		.modes_dout             = MODE_MANUAL | MODE_LUT | MODE_THRESHOLD | MODE_PULSE_TRIG,
 		.modes_din              = 0,
@@ -1072,6 +1130,7 @@ bool waveform_stop(uint16_t channel_id)
 		NVIC_DisableIRQ(DACC_IRQn);
 		s_chan[idx].shape = SHAPE_OFF;
 		s_thr_dac[idx].active = 0;
+		s_pid[idx].active     = 0;
 		NVIC_EnableIRQ(DACC_IRQn);
 		update_pdc_running();
 	} else if (kind == CHAN_KIND_DOUT) {
@@ -1202,13 +1261,37 @@ bool waveform_play_pulse_trig(uint16_t channel_id, const void *data, uint16_t le
 	return true;
 }
 
-/* -------- Reactive: SHAPE_PID (v3 — stub for now) -------- */
+/* -------- Reactive: SHAPE_PID (v3) -------- */
 bool waveform_play_pid(uint16_t channel_id, const void *data, uint16_t len)
 {
-	(void)channel_id; (void)data;
 	if (len != sizeof(struct WavePidSpec)) return false;
-	/* v3 implementation lands in a follow-up commit. STALL until then. */
-	return false;
+	uint8_t kind, idx;
+	if (!channel_decode(channel_id, &kind, &idx)) return false;
+	if (kind != CHAN_KIND_DAC) return false;     /* PID outputs to DAC only in v3 */
+	const struct WavePidSpec *spec = (const struct WavePidSpec *)data;
+	if (spec->reserved0 != 0) return false;
+	if (spec->input_src != INPUT_SRC_ADC) return false;     /* v3 supports ADC source only */
+	if ((spec->input_arg & 0x07) >= WAVE_NUM_ADC) return false;
+	if (spec->out_min > spec->out_max) return false;
+	if (spec->out_max > DACC_VAL_MASK) return false;
+	if (spec->integral_clamp < 0) return false;
+
+	NVIC_DisableIRQ(DACC_IRQn);
+	/* Whether or not we were already in PID mode, accept new spec
+	 * seamlessly: keep integrator unless this is a fresh start. */
+	bool was_active = s_pid[idx].active;
+	s_pid[idx].spec   = *spec;
+	s_pid[idx].active = 1;
+	s_pid[idx].out_idx = idx;
+	if (!was_active) {
+		s_pid[idx].integral_q16_16  = 0;
+		s_pid[idx].prev_error_q16_16 = 0;
+		s_pid[idx].prev_d_q16_16    = 0;
+	}
+	s_chan[idx].shape = SHAPE_PID;
+	NVIC_EnableIRQ(DACC_IRQn);
+	update_pdc_running();
+	return true;
 }
 
 bool waveform_set_dac_clock(uint32_t clock_hz)

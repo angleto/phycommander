@@ -166,19 +166,23 @@ static void tc_dac_setup(uint32_t trigger_hz)
 {
 	pmc_enable_periph_clk(ID_TC0);
 
-	/* MCK / 2 path: TIMER_CLOCK1 in ASF. */
+	/* TIMER_CLOCK1 = MCK / 2 = 42 MHz on the SAM3X8E.
+	 * TIOA generates a 50%-duty square wave at trigger_hz so each
+	 * rising edge produces exactly one DACC conversion. */
 	uint32_t tc_clock = sysclk_get_main_hz() / 2u;
-	uint32_t rc = tc_clock / (2u * trigger_hz);   /* TIOA toggles → 2× */
-	if (rc < 2u)            rc = 2u;
-	if (rc > 0xFFFFu)       rc = 0xFFFFu;
+	uint32_t rc = tc_clock / trigger_hz;   /* counter wraps every RC ticks → trigger_hz */
+	if (rc < 4u)        rc = 4u;
+	if (rc > 0xFFFFu)   rc = 0xFFFFu;
+	uint32_t ra = rc / 2u;                 /* TIOA goes HIGH at RA, LOW at RC */
 
 	tc_init(TC0, 0,
 	        TC_CMR_TCCLKS_TIMER_CLOCK1 |
 	        TC_CMR_WAVE                 |
 	        TC_CMR_WAVSEL_UP_RC         |
-	        TC_CMR_ACPA_CLEAR           |
-	        TC_CMR_ACPC_SET);
+	        TC_CMR_ACPA_SET             |
+	        TC_CMR_ACPC_CLEAR);
 
+	tc_write_ra(TC0, 0, ra);
 	tc_write_rc(TC0, 0, rc);
 	tc_start(TC0, 0);
 }

@@ -2,9 +2,9 @@
 name = "phycmd-py"
 version = "0.1.0"
 edition = "2021"
-authors = ["PhyCMD Contributors"]
+authors = ["Angelo Leto <angelo@leto.blue>"]
 description = "pyo3 bindings for the PhyCommander Rust RT stack"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [lib]
 # The pyo3 cdylib is named `phycmd_ext` to avoid colliding with the

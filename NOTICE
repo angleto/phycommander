@@ -1,0 +1,15 @@
+PhyCMD — Physical Commander
+Copyright © 2014-2026 Angelo Leto <angelo@leto.blue>
+
+Hardware build (enclosure, steel panels, DB-25 I/O harness) and
+original C/C++ services: 2014 (Angelo Leto).
+
+Browser dashboard, Rust physerver, on-chip function generator firmware,
+isochronous USB transport, Python bindings, PREEMPT_RT deployment
+plumbing, and this documentation pass: 2026 rewrite (Angelo Leto).
+
+This product includes software developed at Arduino SA (core, ASF) —
+original Atmel Software Framework bits are reused under their
+respective permissive licenses, see the per-file headers.
+
+See LICENSE for the combined licensing summary.

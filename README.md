@@ -17,6 +17,14 @@
   <a href="#roadmap">Roadmap</a>
 </p>
 
+<p align="center">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
+  <img alt="hardware" src="https://img.shields.io/badge/hardware-CC--BY--SA%204.0-lightgrey">
+  <img alt="status" src="https://img.shields.io/badge/status-in%20active%20use-4CAF50">
+  <br/>
+  Designed & built by <b><a href="https://github.com/angleto">Angelo Leto</a></b> · 2014&nbsp;→&nbsp;2026
+</p>
+
 ---
 
 <p align="center">
@@ -219,9 +227,15 @@ For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing
 - **v4.x** — second supported MCU (SAMD51 / RP2350) with the same wire protocol.
 - **Long term** — pluggable front-end PCB with galvanic isolation and ±10 V amplifiers, designed hand-solder-first.
 
-## License
+## License & authorship
 
-See [`LICENSE`](LICENSE) — dual-licensed MIT / Apache-2.0. Hardware designs are CC-BY-SA 4.0 unless noted otherwise.
+PhyCMD is © 2014-2026 **Angelo Leto** ([@angleto](https://github.com/angleto), `angelo@leto.blue`).
+
+- **Software** (firmware, Rust server, dashboard, scripts): dual-licensed **MIT OR Apache-2.0** — pick whichever fits your use case. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
+- **Hardware designs, panel CAD, photos, and long-form prose docs**: **CC-BY-SA 4.0** — attribution + share-alike. See [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0).
+- The top-level [`LICENSE`](LICENSE) summarises the whole arrangement; [`NOTICE`](NOTICE) carries the project attribution that redistributions must preserve.
+
+If you build on PhyCMD — academic paper, product, student project, blog post — credit would be appreciated in whichever form fits (README line, paper citation, slide footer).
 
 ## Documentation index
 

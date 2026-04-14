@@ -1,0 +1,16 @@
+# KiCad local user settings (per-machine, not versioned)
+*.kicad_prl
+
+# KiCad auto-backup directory
+.history/
+
+# KiCad auto-saved backups
+*.kicad_pcb-bak
+*.kicad_sch-bak
+*-backups/
+
+# Gerber export output (regenerated)
+gerbers/
+
+# Netlist backups
+*.net

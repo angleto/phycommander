@@ -378,6 +378,12 @@ void waveform_systick_1ms(void);
 /** Called from main()'s polled DIN loop whenever digital_in changes. */
 void waveform_on_din_change(uint16_t new_din, uint16_t prev_din);
 
+/** Bitmask of DOUT channels currently owned by a reactive generator
+ * (LUT, THRESHOLD, PULSE_TRIG). Bits set here must NOT be overwritten
+ * by the iso Command-frame digital_out path, otherwise the manual
+ * stream races against the generator at microframe rate. */
+uint16_t waveform_reactive_dout_mask(void);
+
 /**
  * \brief Set / get the shared DAC sample clock in Hz. Range
  * 1..WAVE_MAX_DAC_SAMPLE_RATE_HZ. Both DAC channels share this clock.

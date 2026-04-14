@@ -229,7 +229,9 @@ static inline void set_dig_out_value(uint16_t v)
 		PHYCMD_DIGITAL_OUTPUT_12, PHYCMD_DIGITAL_OUTPUT_13,
 		PHYCMD_DIGITAL_OUTPUT_14, PHYCMD_DIGITAL_OUTPUT_15,
 	};
+	uint16_t reactive = waveform_reactive_dout_mask();
 	for (int i = 0; i < 16; i++) {
+		if (reactive & (1u << i)) continue;   /* owned by generator */
 		if ((v >> i) & 1u)
 			s_dig_out_ports[i]->PIO_SODR = 1u << (pins[i] & 0x1F);
 		else

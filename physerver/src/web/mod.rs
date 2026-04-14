@@ -114,6 +114,8 @@ impl AppState {
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index_handler))
+        .route("/logo.svg",      get(|| async { svg_asset(include_str!("../../static/logo.svg")) }))
+        .route("/logo-mark.svg", get(|| async { svg_asset(include_str!("../../static/logo-mark.svg")) }))
         .route("/api/status", get(get_status))
         .route("/api/command", post(set_command))
         .route("/api/command", get(get_command))
@@ -145,9 +147,28 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// Serve the main HTML page
-async fn index_handler() -> Html<&'static str> {
-    Html(include_str!("../../static/index.html"))
+fn svg_asset(body: &'static str) -> impl IntoResponse {
+    (
+        [
+            ("content-type", "image/svg+xml"),
+            ("cache-control", "public, max-age=3600"),
+        ],
+        body,
+    )
+}
+
+/// Serve the main HTML page. We set `Cache-Control: no-store` so the
+/// browser always fetches the latest dashboard after a redeploy —
+/// without it, Safari/Firefox heuristics were serving stale HTML and
+/// the user kept hitting bugs that were already fixed on the server.
+async fn index_handler() -> impl IntoResponse {
+    (
+        [
+            ("cache-control", "no-store, max-age=0"),
+            ("content-type", "text/html; charset=utf-8"),
+        ],
+        include_str!("../../static/index.html"),
+    )
 }
 
 /// Get current status (REST API). The error_count in the returned

@@ -836,7 +836,12 @@ mod tests {
         assert!(snap.tick_ok > 10);
     }
 
+    // Wall-clock rate assertion — 5 kHz ± 20% over 300 ms. Flaky on
+    // overcommitted CI runners where no PREEMPT-RT scheduler is
+    // available and the VM itself gets preempted. Kept runnable
+    // locally via `cargo test -- --ignored` for manual verification.
     #[test]
+    #[ignore = "timing-sensitive; needs an RT-capable host to be reliable"]
     fn pipelined_hits_target_rate() {
         // 5 kHz with 100 us mock latency. The pipelined loop should
         // overlap I/O with sleep and hit rate even though

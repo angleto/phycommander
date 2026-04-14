@@ -1,0 +1,13 @@
+{
+  "ignorePatterns": [
+    { "pattern": "^http://localhost" },
+    { "pattern": "^http://192\\.168\\." },
+    { "pattern": "^https?://<.*>" }
+  ],
+  "replacementPatterns": [
+    { "pattern": "^/", "replacement": "./" }
+  ],
+  "retryOn429": true,
+  "fallbackRetryDelay": "30s",
+  "aliveStatusCodes": [200, 206, 301, 302, 308, 403]
+}

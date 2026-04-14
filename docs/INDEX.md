@@ -203,7 +203,7 @@ PhyCMD/
 ├── README.md                          # Start here
 ├── CONTRIBUTING.md                    # Contribution guidelines
 ├── CHANGELOG.md                       # Version history
-├── LICENSE                            # MIT License
+├── LICENSE                            # Dual MIT OR Apache-2.0 (software); CC-BY-SA 4.0 (hardware/docs)
 │
 └── docs/
     ├── INDEX.md                       # This file

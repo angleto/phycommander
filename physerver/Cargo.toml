@@ -17,9 +17,9 @@ members = [
 name = "physerver"
 version = "1.0.0"
 edition = "2021"
-authors = ["PhyCMD Contributors"]
+authors = ["Angelo Leto <angelo@leto.blue>"]
 description = "Physical Commander - Real-time hardware control server"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "physerver"

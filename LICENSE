@@ -1,21 +1,38 @@
-MIT License
+PhyCMD — licensing summary
+==========================
 
-Copyright (c) 2025 PhyCMD Contributors
+Copyright © 2014-2026 Angelo Leto <angelo@leto.blue>
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This project is dual-licensed for software and separately licensed
+for hardware / design artefacts, as follows:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1.  Software (firmware under ATSAM3X8E_FW/, Rust code under
+    physerver/, dashboard HTML/JS under physerver/static/, scripts,
+    build files): the user may choose EITHER
+      * the Apache License, Version 2.0        → LICENSE-APACHE
+      * the MIT License                        → LICENSE-MIT
+    whichever better suits their use case.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+    Unless you explicitly state otherwise, any contribution intentionally
+    submitted for inclusion in this project — as defined in the Apache-2.0
+    license § 5 — shall be dual-licensed as above, without any additional
+    terms or conditions.
+
+2.  Hardware designs, panel CAD, photos of the physical device, and all
+    long-form prose documentation (docs/ content, README narrative):
+    Creative Commons Attribution-ShareAlike 4.0 International
+                                             → LICENSE-CC-BY-SA-4.0
+
+    This covers docs/hardware/, docs/images/, panel_sketch/,
+    companion_board/, and the Markdown files under docs/ that are
+    written as narrative rather than as code comments.
+
+3.  Trademarks, logos, and the project name "PhyCMD / Physical
+    Commander" are NOT licensed. Keep attribution visible in forks and
+    derivatives; do not present modified versions as the original
+    project.
+
+Attribution notice for redistribution: keep this LICENSE file together
+with the applicable license texts (LICENSE-MIT, LICENSE-APACHE,
+LICENSE-CC-BY-SA-4.0) and preserve the copyright line at the top of
+each license.

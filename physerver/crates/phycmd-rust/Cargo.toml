@@ -2,9 +2,9 @@
 name = "phycmd-rust"
 version = "0.1.0"
 edition = "2021"
-authors = ["PhyCMD Contributors"]
+authors = ["Angelo Leto <angelo@leto.blue>"]
 description = "High-level Rust API on top of phycmd-core (RT scheduler + staging buffer + status observer)"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "phycmd"

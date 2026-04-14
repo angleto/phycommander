@@ -46,11 +46,11 @@ use std::time::Duration;
 // NB: `phycmd-rust` builds a lib called `phycmd`, so we import from
 // `phycmd::*`. Do NOT write `use phycmd_rust::*`.
 use parking_lot::Mutex;
-use phycmd_core::transport::mock::MockState;
 use phycmd::{
-    MockTransport, PhyCommander as RustPhyCommander, RtConfig, StagingError,
-    StatusFrame, Transport, WriteMode as RustWriteMode,
+    MockTransport, PhyCommander as RustPhyCommander, RtConfig, StagingError, StatusFrame,
+    Transport, WriteMode as RustWriteMode,
 };
+use phycmd_core::transport::mock::MockState;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
@@ -138,11 +138,7 @@ impl PyPhyCommander {
     /// will land once the physerver integration of Phase C3 is in.
     #[staticmethod]
     #[pyo3(signature = (rate_hz=10_000, mock_latency_us=50, default_mode=PyWriteMode::BlockUntilSent))]
-    fn open_mock(
-        rate_hz: u32,
-        mock_latency_us: u64,
-        default_mode: PyWriteMode,
-    ) -> PyResult<Self> {
+    fn open_mock(rate_hz: u32, mock_latency_us: u64, default_mode: PyWriteMode) -> PyResult<Self> {
         let mock_state = Arc::new(Mutex::new(MockState {
             latency: Duration::from_micros(mock_latency_us),
             ..Default::default()
@@ -163,10 +159,7 @@ impl PyPhyCommander {
         let phy = RustPhyCommander::open(config, transport)
             .map_err(|e| PyValueError::new_err(format!("open failed: {e}")))?;
 
-        Ok(Self {
-            inner: Arc::new(phy),
-            dispatchers: Mutex::new(Vec::new()),
-        })
+        Ok(Self { inner: Arc::new(phy), dispatchers: Mutex::new(Vec::new()) })
     }
 
     // -----------------------------------------------------------------
@@ -308,10 +301,7 @@ impl PyPhyCommander {
             })
             .map_err(|e| PyRuntimeError::new_err(format!("spawn dispatcher: {e}")))?;
 
-        self.dispatchers.lock().push(DispatcherHandle {
-            stop,
-            join: Some(join),
-        });
+        self.dispatchers.lock().push(DispatcherHandle { stop, join: Some(join) });
         Ok(())
     }
 
@@ -382,10 +372,7 @@ fn staging_err(e: StagingError) -> PyErr {
 }
 
 /// Convert a StatusFrame into a Python dict.
-fn frame_to_pydict<'py>(
-    py: Python<'py>,
-    frame: &StatusFrame,
-) -> PyResult<Bound<'py, PyDict>> {
+fn frame_to_pydict<'py>(py: Python<'py>, frame: &StatusFrame) -> PyResult<Bound<'py, PyDict>> {
     let d = PyDict::new_bound(py);
     d.set_item("cmd_seq", frame.cmd_seq)?;
     d.set_item("wire_seq", frame.wire_seq)?;

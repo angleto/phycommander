@@ -29,6 +29,18 @@ Where a benchtop scope and signal generator are *manually operated*, PhyCMD is *
 
 You get an Intel mini-PC, an Arduino Due, a handful of protection components, and suddenly your lab has a sample-coherent 8 kHz DAC↔ADC↔DIN↔DOUT link with a PREEMPT\_RT Linux brain that can run PID loops, lock-in detectors, Kalman filters, frequency sweeps, or whatever else you care to script.
 
+### A bit of history
+
+PhyCMD started in **2014**. The reference Intel DN2800MT mini-PC, the aluminium chassis, the steel front panel (hand-drawn in AutoCAD — see [`docs/hardware/FrontPanel_2014.dwg`](docs/hardware/FrontPanel_2014.dwg)), and the DB-25 I/O harness all date back to that build. The original software stack was a custom C/C++ bulk-USB service. The Rust `physerver`, the on-chip function generator firmware, the iso-USB transport at 8 kHz, and the browser dashboard you see in these screenshots are a 2026 rewrite that slotted into the existing hardware without a single connector change.
+
+<p align="center">
+  <img src="docs/images/hardware/IMG_0436.jpg" alt="Front panel: 9 × DB-25 female + 3 red push-buttons" width="720"/>
+</p>
+
+<p align="center">
+  <img src="docs/images/hardware/IMG_0429.jpg" alt="Open chassis — aluminium inner plate, mini-PC centre, DB-25 harness on both sides" width="720"/>
+</p>
+
 ## Highlights
 
 - **8 kHz sample-coherent iso-USB link** — 64-byte PhyCMD frames every USB microframe (125 µs), HS isochronous EP on a dual-interface Vendor/CDC device.
@@ -74,7 +86,7 @@ Every panel collapses to its header with a ▸ chevron; state is persisted in `l
 
 | Qty | Item | Notes | Typical price |
 |-----|------|-------|---------------|
-| 1 | Intel mini-PC with x86\_64 CPU, ≥ 2 GB RAM, USB 2.0 HS port | Reference box: **Intel DN2800MT** (Atom N2800, Cedar Trail) running Ubuntu 24.04 PREEMPT\_RT. Any similar fanless Atom/Celeron box works. | 40–120 € used |
+| 1 | Intel mini-PC with x86\_64 CPU, ≥ 2 GB RAM, USB 2.0 HS port | Reference box: **Intel DN2800MT** (Atom N2800, Cedar Trail) running Ubuntu 24.04 PREEMPT\_RT. Any similar fanless Atom/Celeron box works. A host with **xHCI** (USB 3.0+) instead of the reference **EHCI** controller handles iso-USB microframes more aggressively and can push the effective refresh rate well above 8 kHz — EHCI caps cleanly at HS-iso's 8 kHz, xHCI's per-bus scheduler gives you extra headroom plus lower jitter. | 40–120 € used |
 | 1 | Arduino Due (SAM3X8E, 84 MHz Cortex-M3) | Native USB 2.0 HS. Stock board, no hardware mods. | 35 € |
 | 1 | USB A → micro-B cable | Connect Due *native* port to the host. Programming port only needed for first flash. | 3 € |
 
@@ -84,6 +96,27 @@ Every panel collapses to its header with a ▸ chevron; state is persisted in `l
 |-----|------|-------|
 | 1 | Ethernet cable + switch / LAN router | Dashboard is served at `http://host:8080`. |
 | 1 | Screen + keyboard (optional, first boot only) | After network setup all interaction is over SSH + browser. |
+
+### Chassis & mechanics (reference build)
+
+The reference enclosure, front / rear steel panels, and PSU-support bar are from the **2014 build**. The Amazon Italy listings below are the ones actually used — swap for local equivalents as you prefer. The front panel and the PSU-support bar were hand-drawn in AutoCAD (see [`docs/hardware/FrontPanel_2014.dwg`](docs/hardware/FrontPanel_2014.dwg)).
+
+| Qty | Item | Amazon IT ASIN |
+|-----|------|----------------|
+| 1 | Compact aluminium rack/bench case with integrated vent grille | [B00GUFL76U](https://www.amazon.it/dp/B00GUFL76U) |
+| 1 | Power / chassis accessory | [B00E7QGHE6](https://www.amazon.it/dp/B00E7QGHE6) |
+| 1 | Power / chassis accessory | [B00COFMPAM](https://www.amazon.it/dp/B00COFMPAM) |
+| 1 | Internal hardware kit (brackets / fasteners / cabling) | [B007BVDVAM](https://www.amazon.it/dp/B007BVDVAM) |
+| 1 | Custom-cut steel front panel | Machined from the DWG above. 9 × DB-25F cut-outs + 3 push-button holes. |
+| 1 | Custom-cut rear panel | Shaped around the mini-PC's native I/O (VGA/HDMI/USB/audio). |
+
+<p align="center">
+  <img src="docs/images/hardware/IMG_0437.jpg" alt="Rear panel — mini-PC native I/O exposed through the custom cut-out" width="720"/>
+</p>
+
+<p align="center">
+  <img src="docs/images/hardware/IMG_0430.jpg" alt="Inside view — DB-25 harness meeting the Due and mini-PC" width="720"/>
+</p>
 
 ### Signal-conditioning front-end (recommended hand-solder / through-hole)
 

@@ -2,7 +2,6 @@
 ///
 /// Run this after starting physerver:
 ///   cargo run --example simple_client
-
 use physerver::{Command, CommandFlags, IpcClient};
 use std::time::Duration;
 
@@ -44,8 +43,10 @@ fn main() -> anyhow::Result<()> {
         println!("Status:");
         println!("  Digital In:  {:016b}", status.digital_in);
         println!("  Digital Out: {:016b}", status.digital_out);
-        println!("  ADC 0: {:4}  ADC 1: {:4}  ADC 2: {:4}  ADC 3: {:4}",
-                 status.adc[0], status.adc[1], status.adc[2], status.adc[3]);
+        println!(
+            "  ADC 0: {:4}  ADC 1: {:4}  ADC 2: {:4}  ADC 3: {:4}",
+            status.adc[0], status.adc[1], status.adc[2], status.adc[3]
+        );
         println!("  Loop Time: {} µs", status.loop_time_us);
         println!("  Uptime: {} ms", status.uptime_ms);
         println!("  Errors: {}", status.error_count);

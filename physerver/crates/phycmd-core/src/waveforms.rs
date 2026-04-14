@@ -47,7 +47,9 @@ pub enum WaveformShape {
 }
 
 impl Default for WaveformShape {
-    fn default() -> Self { WaveformShape::Dc }
+    fn default() -> Self {
+        WaveformShape::Dc
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -89,16 +91,28 @@ impl WaveformSpec {
     /// at sampling rate `sr_hz`.
     #[inline]
     pub fn sample(&self, t: u64, sr_hz: f32) -> u16 {
-        if !self.enabled { return 0; }
+        if !self.enabled {
+            return 0;
+        }
         let phase = ((t as f64) * (self.freq_hz as f64) / (sr_hz as f64)).rem_euclid(1.0) as f32;
         let unit = match self.shape {
             WaveformShape::Dc => 0.0,
             WaveformShape::Sine => (2.0 * std::f32::consts::PI * phase).sin(),
-            WaveformShape::Square => if phase < self.duty.clamp(0.0, 1.0) { 1.0 } else { -1.0 },
+            WaveformShape::Square => {
+                if phase < self.duty.clamp(0.0, 1.0) {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
             // Triangle: rises 0→1 in [0, 0.5], falls 1→-1 in [0.5, 1].
             // Re-centred to ±1 around 0.
             WaveformShape::Triangle => {
-                if phase < 0.5 { 4.0 * phase - 1.0 } else { 3.0 - 4.0 * phase }
+                if phase < 0.5 {
+                    4.0 * phase - 1.0
+                } else {
+                    3.0 - 4.0 * phase
+                }
             }
             // Sawtooth: -1 at phase=0, +1 at phase→1.
             WaveformShape::Sawtooth => 2.0 * phase - 1.0,

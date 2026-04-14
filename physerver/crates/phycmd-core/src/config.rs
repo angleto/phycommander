@@ -121,14 +121,10 @@ impl RtConfig {
             return Err(RtConfigError::PipelineDepthOutOfRange(self.pipeline_depth));
         }
         if self.status_bus_capacity < 2 {
-            return Err(RtConfigError::StatusBusCapacityTooSmall(
-                self.status_bus_capacity,
-            ));
+            return Err(RtConfigError::StatusBusCapacityTooSmall(self.status_bus_capacity));
         }
         if self.transport_timeout < Duration::from_micros(100) {
-            return Err(RtConfigError::TransportTimeoutTooSmall(
-                self.transport_timeout,
-            ));
+            return Err(RtConfigError::TransportTimeoutTooSmall(self.transport_timeout));
         }
         Ok(())
     }
@@ -165,16 +161,10 @@ mod tests {
 
     #[test]
     fn tick_period_matches_rate() {
-        let c = RtConfig {
-            rate_hz: 10_000,
-            ..Default::default()
-        };
+        let c = RtConfig { rate_hz: 10_000, ..Default::default() };
         assert_eq!(c.tick_period(), Duration::from_micros(100));
 
-        let c = RtConfig {
-            rate_hz: 1_000,
-            ..Default::default()
-        };
+        let c = RtConfig { rate_hz: 1_000, ..Default::default() };
         assert_eq!(c.tick_period(), Duration::from_millis(1));
     }
 
@@ -186,38 +176,23 @@ mod tests {
         assert!(matches!(c.validate(), Err(RtConfigError::RateOutOfRange(0))));
 
         c.rate_hz = 30_000;
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::RateOutOfRange(30_000))
-        ));
+        assert!(matches!(c.validate(), Err(RtConfigError::RateOutOfRange(30_000))));
     }
 
     #[test]
     fn priority_out_of_range_errors() {
         let mut c = RtConfig::default();
         c.rt_priority = 0;
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::PriorityOutOfRange(0))
-        ));
+        assert!(matches!(c.validate(), Err(RtConfigError::PriorityOutOfRange(0))));
         c.rt_priority = 100;
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::PriorityOutOfRange(100))
-        ));
+        assert!(matches!(c.validate(), Err(RtConfigError::PriorityOutOfRange(100))));
     }
 
     #[test]
     fn aggressive_rate_flag() {
-        let c = RtConfig {
-            rate_hz: 10_000,
-            ..Default::default()
-        };
+        let c = RtConfig { rate_hz: 10_000, ..Default::default() };
         assert!(!c.is_aggressive_rate());
-        let c = RtConfig {
-            rate_hz: 16_000,
-            ..Default::default()
-        };
+        let c = RtConfig { rate_hz: 16_000, ..Default::default() };
         assert!(c.is_aggressive_rate());
     }
 
@@ -225,28 +200,16 @@ mod tests {
     fn pipeline_depth_bounds() {
         let mut c = RtConfig::default();
         c.pipeline_depth = 0;
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::PipelineDepthOutOfRange(0))
-        ));
+        assert!(matches!(c.validate(), Err(RtConfigError::PipelineDepthOutOfRange(0))));
         c.pipeline_depth = 128;
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::PipelineDepthOutOfRange(128))
-        ));
+        assert!(matches!(c.validate(), Err(RtConfigError::PipelineDepthOutOfRange(128))));
         c.pipeline_depth = 8;
         assert!(c.validate().is_ok());
     }
 
     #[test]
     fn transport_timeout_lower_bound() {
-        let c = RtConfig {
-            transport_timeout: Duration::from_micros(50),
-            ..Default::default()
-        };
-        assert!(matches!(
-            c.validate(),
-            Err(RtConfigError::TransportTimeoutTooSmall(_))
-        ));
+        let c = RtConfig { transport_timeout: Duration::from_micros(50), ..Default::default() };
+        assert!(matches!(c.validate(), Err(RtConfigError::TransportTimeoutTooSmall(_))));
     }
 }

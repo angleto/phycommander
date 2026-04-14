@@ -9,15 +9,15 @@
 
 // Re-exports from the new core crate
 pub use phycmd_core::protocol;
-pub use phycmd_core::transport;
 pub use phycmd_core::rt_setup as rt;
+pub use phycmd_core::transport;
 
 // Service-only modules (HTTP, IPC, system telemetry, config, ...)
+pub mod config;
 pub mod ipc;
 pub mod sysinfo;
-pub mod web;
 pub mod telemetry;
-pub mod config;
+pub mod web;
 
 // Legacy serial discovery helper (distinct from phycmd_core::transport::serial
 // — this one contains `SerialPortHandler::find_phycmd_device` used by the
@@ -25,9 +25,9 @@ pub mod config;
 pub mod serial;
 
 // Re-export common types at the crate root for ergonomic use.
-pub use protocol::{Command, Status, CommandFlags, StatusFlags};
+pub use config::Config;
 pub use ipc::{IpcClient, IpcServer};
-pub use transport::{Transport, TransportType, SerialTransport};
+pub use protocol::{Command, CommandFlags, Status, StatusFlags};
 #[cfg(feature = "usb")]
 pub use transport::UsbTransport;
-pub use config::Config;
+pub use transport::{SerialTransport, Transport, TransportType};

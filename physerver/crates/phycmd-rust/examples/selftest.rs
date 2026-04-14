@@ -28,10 +28,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use phycmd::{
-    MockState, MockTransport, PhyCommander, RtConfig, StatusFrame, Transport,
-    WriteMode,
-};
+use phycmd::{MockState, MockTransport, PhyCommander, RtConfig, StatusFrame, Transport, WriteMode};
 use tokio::sync::broadcast::error::TryRecvError;
 
 // -------------------------------------------------------------------------
@@ -196,8 +193,7 @@ fn main() -> ExitCode {
                     latency: Duration::from_micros(args.mock_latency_us),
                     ..Default::default()
                 }));
-                let t: Box<dyn Transport> =
-                    Box::new(MockTransport::with_state(Arc::clone(&state)));
+                let t: Box<dyn Transport> = Box::new(MockTransport::with_state(Arc::clone(&state)));
                 (t, Some(state))
             }
             #[cfg(feature = "usb")]
@@ -260,17 +256,27 @@ fn main() -> ExitCode {
             while !stop.load(std::sync::atomic::Ordering::Acquire) {
                 let v = (count & 0xFFF) as u16;
                 match w % 6 {
-                    0 => { let _ = phy.set_dac0(v); }
-                    1 => { let _ = phy.set_dac1(v); }
-                    2 => { let _ = phy.set_pwm0(v); }
-                    3 => { let _ = phy.set_pwm1(v); }
+                    0 => {
+                        let _ = phy.set_dac0(v);
+                    }
+                    1 => {
+                        let _ = phy.set_dac1(v);
+                    }
+                    2 => {
+                        let _ = phy.set_pwm0(v);
+                    }
+                    3 => {
+                        let _ = phy.set_pwm1(v);
+                    }
                     4 => {
                         // Toggle a rotating single bit
                         let bit = (count % 16) as u8;
                         let val = (count / 16) & 1 == 0;
                         let _ = phy.set_digital_out_bit(bit, val);
                     }
-                    _ => { let _ = phy.set_digital_out((count & 0xFFFF) as u16); }
+                    _ => {
+                        let _ = phy.set_digital_out((count & 0xFFFF) as u16);
+                    }
                 }
                 count += 1;
             }
@@ -295,17 +301,13 @@ fn main() -> ExitCode {
         loop {
             match rx.try_recv() {
                 Ok(f) => {
-                    obs_vec
-                        .lock()
-                        .push((f.cmd_seq, f.tick_index, f.wire_seq));
+                    obs_vec.lock().push((f.cmd_seq, f.tick_index, f.wire_seq));
                 }
                 Err(TryRecvError::Empty) => {
                     if obs_stop.load(std::sync::atomic::Ordering::Acquire) {
                         // Drain any remaining buffered frames, then exit
                         while let Ok(f) = rx.try_recv() {
-                            obs_vec
-                                .lock()
-                                .push((f.cmd_seq, f.tick_index, f.wire_seq));
+                            obs_vec.lock().push((f.cmd_seq, f.tick_index, f.wire_seq));
                         }
                         return lagged_total;
                     }
@@ -325,28 +327,19 @@ fn main() -> ExitCode {
     thread::sleep(Duration::from_millis(args.duration_ms));
     stop.store(true, std::sync::atomic::Ordering::Release);
 
-    let writer_totals: Vec<u64> = writer_handles
-        .into_iter()
-        .map(|h| h.join().unwrap())
-        .collect();
+    let writer_totals: Vec<u64> = writer_handles.into_iter().map(|h| h.join().unwrap()).collect();
     let lagged_total = consumer.join().unwrap();
     let elapsed = t0.elapsed();
 
     // Stop the scheduler before inspecting stats.
     phy.stop();
     let final_stats = phy.stats();
-    let mock_call_count = mock_state
-        .as_ref()
-        .map(|s| s.lock().call_count)
-        .unwrap_or(0);
+    let mock_call_count = mock_state.as_ref().map(|s| s.lock().call_count).unwrap_or(0);
 
     // -- Print summary ---------------------------------------------
     let obs = observed.lock();
     println!("--- results ---");
-    println!(
-        "  elapsed       : {:.3} s",
-        elapsed.as_secs_f64()
-    );
+    println!("  elapsed       : {:.3} s", elapsed.as_secs_f64());
     println!("  tick_count    : {}", final_stats.tick_count);
     println!("  tick_ok       : {}", final_stats.tick_ok);
     println!("  missed        : {}", final_stats.missed_ticks);
@@ -356,15 +349,9 @@ fn main() -> ExitCode {
         final_stats.effective_hz(elapsed.as_secs_f64()),
         final_stats.effective_hz(elapsed.as_secs_f64()) / args.rate_hz as f64 * 100.0
     );
-    println!(
-        "  latency mean  : {:.2} us",
-        final_stats.mean_latency_us
-    );
+    println!("  latency mean  : {:.2} us", final_stats.mean_latency_us);
     println!("  latency max   : {} us", final_stats.latency_max_us);
-    println!(
-        "  jitter mean   : {:.2} us",
-        final_stats.mean_abs_jitter_us
-    );
+    println!("  jitter mean   : {:.2} us", final_stats.mean_abs_jitter_us);
     println!(
         "  jitter range  : {:+} .. {:+} us",
         final_stats.jitter_min_us, final_stats.jitter_max_us
@@ -372,10 +359,7 @@ fn main() -> ExitCode {
     println!("  frames on bus : {}", obs.len());
     println!("  bus lagged    : {} frames", lagged_total);
     if mock_state.is_some() {
-        println!(
-            "  mock exchanges: {} (writers totals: {:?})",
-            mock_call_count, writer_totals
-        );
+        println!("  mock exchanges: {} (writers totals: {:?})", mock_call_count, writer_totals);
     } else {
         println!("  writers totals: {:?}", writer_totals);
     }
@@ -397,9 +381,7 @@ fn main() -> ExitCode {
     let hi = args.rate_hz as f64 * 1.10;
     fails.check(
         eff >= lo && eff <= hi,
-        format!(
-            "effective rate {eff:.1} Hz outside ±10% window [{lo:.0}, {hi:.0}]"
-        ),
+        format!("effective rate {eff:.1} Hz outside ±10% window [{lo:.0}, {hi:.0}]"),
     );
 
     // (2) Missed ticks below the configured budget
@@ -419,22 +401,14 @@ fn main() -> ExitCode {
     // (3) Zero transport errors
     fails.check(
         final_stats.transport_errors == 0,
-        format!(
-            "{} transport errors recorded",
-            final_stats.transport_errors
-        ),
+        format!("{} transport errors recorded", final_stats.transport_errors),
     );
 
     // (4) Frames on bus are monotonic in cmd_seq
     let mut prev_seq: i64 = -1;
     for &(seq, _tick, _wire) in obs.iter() {
         if (seq as i64) <= prev_seq {
-            fails.check(
-                false,
-                format!(
-                    "bus frames out of order: prev={prev_seq} got={seq}"
-                ),
-            );
+            fails.check(false, format!("bus frames out of order: prev={prev_seq} got={seq}"));
             break;
         }
         prev_seq = seq as i64;
@@ -445,19 +419,12 @@ fn main() -> ExitCode {
     //     the constraint is one-sided).
     fails.check(
         final_stats.tick_ok >= obs.len() as u64,
-        format!(
-            "tick_ok ({}) < observed frames ({})",
-            final_stats.tick_ok,
-            obs.len()
-        ),
+        format!("tick_ok ({}) < observed frames ({})", final_stats.tick_ok, obs.len()),
     );
 
     // (6) Writers each did at least a few hundred writes
     for (i, c) in writer_totals.iter().enumerate() {
-        fails.check(
-            *c > 100,
-            format!("writer {i} only managed {c} writes"),
-        );
+        fails.check(*c > 100, format!("writer {i} only managed {c} writes"));
     }
 
     println!();

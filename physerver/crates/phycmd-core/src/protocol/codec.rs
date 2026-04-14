@@ -17,12 +17,7 @@ pub fn encode_command(cmd: &Command) -> [u8; MESSAGE_SIZE] {
     };
 
     // Calculate CRC over first 14 bytes (header through seq_num)
-    let bytes = unsafe {
-        std::slice::from_raw_parts(
-            &msg as *const _ as *const u8,
-            14,
-        )
-    };
+    let bytes = unsafe { std::slice::from_raw_parts(&msg as *const _ as *const u8, 14) };
     msg.crc = crc::crc16_ccitt_table(bytes);
 
     // Convert to byte array
@@ -32,32 +27,21 @@ pub fn encode_command(cmd: &Command) -> [u8; MESSAGE_SIZE] {
 /// Decode a StatusMessage from raw bytes
 pub fn decode_status(data: &[u8]) -> Result<Status> {
     if data.len() != MESSAGE_SIZE {
-        return Err(ProtocolError::InvalidLength {
-            expected: MESSAGE_SIZE,
-            got: data.len(),
-        });
+        return Err(ProtocolError::InvalidLength { expected: MESSAGE_SIZE, got: data.len() });
     }
 
     // Parse message
-    let msg: StatusMessage = unsafe {
-        std::ptr::read_unaligned(data.as_ptr() as *const _)
-    };
+    let msg: StatusMessage = unsafe { std::ptr::read_unaligned(data.as_ptr() as *const _) };
 
     // Verify header
     if msg.header != STATUS_HEADER {
-        return Err(ProtocolError::InvalidHeader {
-            expected: STATUS_HEADER,
-            got: msg.header,
-        });
+        return Err(ProtocolError::InvalidHeader { expected: STATUS_HEADER, got: msg.header });
     }
 
     // Verify CRC (over bytes 0-23)
     let calculated_crc = crc::crc16_ccitt_table(&data[0..24]);
     if msg.crc != calculated_crc {
-        return Err(ProtocolError::CrcMismatch {
-            expected: calculated_crc,
-            got: msg.crc,
-        });
+        return Err(ProtocolError::CrcMismatch { expected: calculated_crc, got: msg.crc });
     }
 
     // Convert to high-level Status
@@ -99,7 +83,7 @@ mod tests {
         assert_eq!(bytes[0], 0x55); // COMMAND_HEADER low byte
         assert_eq!(bytes[1], 0xAA); // COMMAND_HEADER high byte
         assert_eq!(bytes[12], 0x07); // flags
-        assert_eq!(bytes[13], 42);   // seq_num
+        assert_eq!(bytes[13], 42); // seq_num
     }
 
     #[test]

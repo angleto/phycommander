@@ -26,18 +26,33 @@ fn main() -> ExitCode {
     let mut i = 1;
     while i < argv.len() {
         match argv[i].as_str() {
-            "--rate" => { rate_hz = argv[i+1].parse().unwrap(); i += 2; }
-            "--duration-ms" => { duration_ms = argv[i+1].parse().unwrap(); i += 2; }
-            "--enable-rt" => { enable_rt = true; i += 1; }
-            "--miss-budget-pct" => { miss_budget_pct = argv[i+1].parse().unwrap(); i += 2; }
-            _ => { eprintln!("unknown: {}", argv[i]); return ExitCode::from(2); }
+            "--rate" => {
+                rate_hz = argv[i + 1].parse().unwrap();
+                i += 2;
+            }
+            "--duration-ms" => {
+                duration_ms = argv[i + 1].parse().unwrap();
+                i += 2;
+            }
+            "--enable-rt" => {
+                enable_rt = true;
+                i += 1;
+            }
+            "--miss-budget-pct" => {
+                miss_budget_pct = argv[i + 1].parse().unwrap();
+                i += 2;
+            }
+            _ => {
+                eprintln!("unknown: {}", argv[i]);
+                return ExitCode::from(2);
+            }
         }
     }
 
     println!("pipelined_hwtest: rate={rate_hz} duration={duration_ms}ms rt={enable_rt}");
 
-    let transport = PipelinedUsbLoopbackTransport::new()
-        .expect("open pipelined USB loopback (2341:003e)");
+    let transport =
+        PipelinedUsbLoopbackTransport::new().expect("open pipelined USB loopback (2341:003e)");
 
     let config = RtConfig {
         rate_hz,
@@ -50,8 +65,7 @@ fn main() -> ExitCode {
     };
 
     let phy = Arc::new(
-        PhyCommander::open_pipelined(config, Box::new(transport))
-            .expect("open_pipelined"),
+        PhyCommander::open_pipelined(config, Box::new(transport)).expect("open_pipelined"),
     );
 
     // Spawn a writer thread that sets dac0 continuously
@@ -98,9 +112,7 @@ fn main() -> ExitCode {
     let lo = rate_hz as f64 * 0.90;
     let hi = rate_hz as f64 * 1.10;
 
-    let pass = eff >= lo && eff <= hi
-        && missed_pct < miss_budget_pct
-        && snap.transport_errors == 0;
+    let pass = eff >= lo && eff <= hi && missed_pct < miss_budget_pct && snap.transport_errors == 0;
 
     println!();
     if pass {

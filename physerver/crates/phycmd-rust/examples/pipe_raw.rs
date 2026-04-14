@@ -14,11 +14,7 @@ fn main() {
     let mut err = 0u32;
 
     for i in 0..n {
-        let cmd = Command {
-            seq_num: (i & 0xFF) as u8,
-            dac: [i as u16, 0],
-            ..Default::default()
-        };
+        let cmd = Command { seq_num: (i & 0xFF) as u8, dac: [i as u16, 0], ..Default::default() };
         if let Err(e) = t.submit(&cmd) {
             eprintln!("submit #{i}: {e}");
             err += 1;

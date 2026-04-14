@@ -23,7 +23,7 @@ impl Default for RtConfig {
     fn default() -> Self {
         Self {
             enable_rt_scheduler: true,
-            rt_priority: 80,  // High priority, but not maximum (99)
+            rt_priority: 80, // High priority, but not maximum (99)
             lock_memory: true,
             set_cpu_affinity: false,
             cpu_core: None,
@@ -37,19 +37,16 @@ pub fn apply_rt_optimizations(config: &RtConfig) -> Result<()> {
     info!("Applying real-time optimizations");
 
     if config.enable_rt_scheduler {
-        set_realtime_priority(config.rt_priority)
-            .context("Failed to set real-time priority")?;
+        set_realtime_priority(config.rt_priority).context("Failed to set real-time priority")?;
     }
 
     if config.lock_memory {
-        lock_memory()
-            .context("Failed to lock memory")?;
+        lock_memory().context("Failed to lock memory")?;
     }
 
     if config.set_cpu_affinity {
         if let Some(core) = config.cpu_core {
-            set_cpu_affinity(core)
-                .context("Failed to set CPU affinity")?;
+            set_cpu_affinity(core).context("Failed to set CPU affinity")?;
         }
     }
 
@@ -74,7 +71,10 @@ fn set_realtime_priority(priority: i32) -> Result<()> {
 
             let result = libc::sched_setscheduler(0, libc::SCHED_FIFO, &param);
             if result == -1 {
-                anyhow::bail!("Failed to set SCHED_FIFO scheduler: {}", std::io::Error::last_os_error());
+                anyhow::bail!(
+                    "Failed to set SCHED_FIFO scheduler: {}",
+                    std::io::Error::last_os_error()
+                );
             }
         }
         info!("Set real-time priority to {} (SCHED_FIFO)", priority);
@@ -141,8 +141,7 @@ fn set_dma_latency(latency_us: i32) -> Result<()> {
 
         // Write the latency value (as i32 bytes)
         let bytes = latency_us.to_le_bytes();
-        std::fs::write("/dev/cpu_dma_latency", bytes)
-            .context("Failed to write DMA latency")?;
+        std::fs::write("/dev/cpu_dma_latency", bytes).context("Failed to write DMA latency")?;
 
         info!("Set DMA latency to {} µs (fd={})", latency_us, fd);
 
@@ -167,7 +166,10 @@ pub fn get_thread_priority() -> Result<i32> {
             let mut param: libc::sched_param = std::mem::zeroed();
             let result = libc::sched_getparam(0, &mut param);
             if result == -1 {
-                anyhow::bail!("Failed to get scheduler parameters: {}", std::io::Error::last_os_error());
+                anyhow::bail!(
+                    "Failed to get scheduler parameters: {}",
+                    std::io::Error::last_os_error()
+                );
             }
             Ok(param.sched_priority)
         }

@@ -1,6 +1,6 @@
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use anyhow::{Context, Result};
 
 /// Physerver configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,10 +149,7 @@ impl Default for Config {
                 cpu_core: None,
                 dma_latency: true,
             },
-            ipc: IpcConfig {
-                enabled: true,
-                shm_name: default_shm_name(),
-            },
+            ipc: IpcConfig { enabled: true, shm_name: default_shm_name() },
         }
     }
 }
@@ -160,11 +157,10 @@ impl Default for Config {
 impl Config {
     /// Load configuration from TOML file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let contents = std::fs::read_to_string(path.as_ref())
-            .context("Failed to read config file")?;
+        let contents =
+            std::fs::read_to_string(path.as_ref()).context("Failed to read config file")?;
 
-        let config: Config = toml::from_str(&contents)
-            .context("Failed to parse config file")?;
+        let config: Config = toml::from_str(&contents).context("Failed to parse config file")?;
 
         Ok(config)
     }
@@ -185,11 +181,9 @@ impl Config {
 
     /// Save configuration to TOML file
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let contents = toml::to_string_pretty(self)
-            .context("Failed to serialize config")?;
+        let contents = toml::to_string_pretty(self).context("Failed to serialize config")?;
 
-        std::fs::write(path, contents)
-            .context("Failed to write config file")?;
+        std::fs::write(path, contents).context("Failed to write config file")?;
 
         Ok(())
     }

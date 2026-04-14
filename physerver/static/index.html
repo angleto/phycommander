@@ -29,13 +29,13 @@
         .stat-mini .l { font-size:9px; color:#999; text-transform:uppercase; }
 
         /* Grid */
-        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-bottom:14px; }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-bottom:14px; align-items:start; }
         .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; position:relative; }
         .panel h2 { font-size:13px; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #667eea; padding-bottom:6px; padding-right:48px; cursor:pointer; user-select:none; }
         .panel h2::before { content:'▾ '; color:#aaa; font-size:11px; display:inline-block; width:14px; }
         .panel.collapsed h2::before { content:'▸ '; }
         .panel.collapsed h2 { margin-bottom:0; border-bottom-color:#e0e0e0; }
-        .panel.collapsed > :not(h2) { display:none !important; }
+        .panel.collapsed > :not(h2):not(.panel-actions):not(summary) { display:none !important; }
         .panel.wide { grid-column:1/-1; }
         .panel.hidden { display:none; }
         .panel.dragging { opacity:.4; }
@@ -262,7 +262,7 @@
             <div class="stat-mini"><div class="v" id="uptimeValue">-</div><div class="l">Uptime</div></div>
             <div class="stat-mini"><div class="v" id="loopTimeValue">-</div><div class="l">Loop</div></div>
             <div class="stat-mini" id="errorsBox" title="Click to reset" style="cursor:pointer;"><div class="v" id="errorCountValue">0</div><div class="l">Errors</div></div>
-            <div class="stat-mini"><div class="v" id="seqValue">  0</div><div class="l">Seq</div></div>
+            <div class="stat-mini" id="seqBox" title="Click to toggle per-packet seq + latency tracking" style="cursor:pointer;"><div class="v" id="seqValue">  0</div><div class="l">Seq</div></div>
         </div>
     </div>
 
@@ -1336,6 +1336,34 @@ document.getElementById('resetTelemetryBtn').onclick = async () => {
 };
 
 // ========== Error reset ==========
+// Telemetry-detail toggle: click the Seq badge to pause per-packet
+// seq + latency tracking in the iso OUT hot path. Saves ~24k atomic
+// ops/s when you're not watching the numbers. Also gray the badges
+// so it's obvious the stats panel's latency/seq readings are frozen.
+async function applyTelemetryDetailUi(on) {
+    const box = document.getElementById('seqBox');
+    box.style.opacity = on ? '1' : '0.35';
+    box.title = on ? 'Click to pause per-packet seq + latency tracking'
+                   : 'Click to resume per-packet seq + latency tracking';
+}
+async function refreshTelemetryDetail() {
+    try {
+        const r = await fetch('/api/telemetry/detail');
+        if (r.ok) applyTelemetryDetailUi((await r.json()).enabled);
+    } catch (e) {}
+}
+document.getElementById('seqBox').onclick = async () => {
+    const r = await fetch('/api/telemetry/detail');
+    if (!r.ok) return;
+    const cur = (await r.json()).enabled;
+    const r2 = await fetch('/api/telemetry/detail', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({enabled: !cur})
+    });
+    if (r2.ok) applyTelemetryDetailUi(!cur);
+};
+refreshTelemetryDetail();
+
 document.getElementById('errorsBox').onclick = async () => {
     try {
         await fetch('/api/reset_errors', { method: 'POST' });

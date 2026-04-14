@@ -161,6 +161,33 @@ static volatile threshold_state_t s_thr_dout[WAVE_NUM_DOUT];
 /* PULSE_TRIG: 4 simultaneous slots (TC1_CH0..2 + TC2_CH0). */
 static volatile pulse_state_t s_pulse[MAX_PULSE_TRIG_SLOTS];
 
+/* PWM channel state for MODE_PWM_DUTY. We expose 4 PWM channels
+ * (out of SAM3X's 8) wired to Arduino Due pins 9, 8, 7, 6 — these
+ * are PWMH4..PWMH7 on PIOC21..PIOC24 via peripheral B.
+ *
+ * PWM0 → Arduino Due pin 9  → PIOC21 / PWMH4
+ * PWM1 → Arduino Due pin 8  → PIOC22 / PWMH5
+ * PWM2 → Arduino Due pin 7  → PIOC23 / PWMH6
+ * PWM3 → Arduino Due pin 6  → PIOC24 / PWMH7
+ *
+ * PWM4..PWM7 remain reserved in the protocol for future dead-time /
+ * complementary / phase-shifted modes. */
+typedef struct {
+	uint8_t  active;          /* 1 iff this PWM channel is running */
+	uint8_t  pwm_channel;     /* hardware PWM channel 4..7 (see map above) */
+	uint8_t  pio_pin;         /* PIOC pin index 21..24 */
+	uint32_t freq_mHz;
+	uint16_t duty_x10;
+} pwm_state_t;
+#define WAVE_NUM_PWM_ACTIVE 4u
+static volatile pwm_state_t s_pwm[WAVE_NUM_PWM_ACTIVE];
+static uint8_t s_pwm_init_done = 0;
+
+/* Forward declarations so waveform_stop_all() / play_builtin() above the
+ * implementations can reach the PWM helpers. */
+static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10);
+static void pwm_hw_stop(uint8_t idx);
+
 /* PID: per-DAC slot. State in addition to the spec is integrator
  * accumulator, previous error (for derivative), and previous output
  * (for derivative LP filter). All in Q16.16 fixed-point. */
@@ -759,6 +786,9 @@ static void pulse_trigger_start(volatile pulse_state_t *p)
 	 * v1 keeps it simple at 1 ms granularity. */
 }
 
+static bool any_adc_consumer_active(void);
+void waveform_on_adc_endrx(void);
+
 static void pulse_tick_1ms(void)
 {
 	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
@@ -781,8 +811,21 @@ static void pulse_tick_1ms(void)
 	}
 }
 
-/* Called from SysTick handler in main.c (see hookup below). */
-void waveform_systick_1ms(void) { pulse_tick_1ms(); }
+/* Called from SysTick handler in main.c (see hookup below).
+ *
+ * Reactive ADC-driven modes (LUT/THRESHOLD/PID) are evaluated here at
+ * 1 kHz instead of inside ADC_Handler. Running them from the ADC ISR
+ * at ~60 kHz ENDRX rate was starving UOTGHS microframes and hanging
+ * the USB stack; 1 kHz is plenty responsive for any practical analog
+ * control loop and keeps the ADC peripheral free-running purely for
+ * g_adc_buf snapshot purposes (no NVIC hit). */
+void waveform_systick_1ms(void)
+{
+	pulse_tick_1ms();
+	if (any_adc_consumer_active()) {
+		waveform_on_adc_endrx();
+	}
+}
 
 /* ---- PID closed-loop step ----
  *
@@ -987,12 +1030,10 @@ static bool any_adc_consumer_active(void)
 
 static void update_adc_irq_needed(void)
 {
-	if (any_adc_consumer_active()) {
-		NVIC_ClearPendingIRQ(ADC_IRQn);
-		NVIC_EnableIRQ(ADC_IRQn);
-	} else {
-		NVIC_DisableIRQ(ADC_IRQn);
-	}
+	/* ADC_IRQn stays permanently disabled: reactive evaluation runs
+	 * from waveform_systick_1ms() instead. Left as a stub so the
+	 * existing call sites don't need to change shape. */
+	NVIC_DisableIRQ(ADC_IRQn);
 }
 
 void waveform_stop_all(void)
@@ -1013,6 +1054,9 @@ void waveform_stop_all(void)
 	for (uint8_t i = 0; i < MAX_PULSE_TRIG_SLOTS; i++) {
 		s_pulse[i].active = 0;
 	}
+	for (uint8_t i = 0; i < WAVE_NUM_PWM_ACTIVE; i++) {
+		pwm_hw_stop(i);
+	}
 	update_pdc_running();
 }
 
@@ -1020,6 +1064,148 @@ bool waveform_dac_is_generating(uint8_t dac_idx)
 {
 	if (dac_idx >= WAVE_NUM_DAC) return false;
 	return s_chan[dac_idx].shape != SHAPE_OFF;
+}
+
+uint16_t waveform_reactive_dout_mask(void)
+{
+	uint16_t mask = 0;
+	for (uint8_t i = 0; i < WAVE_NUM_DOUT; i++) {
+		if (s_thr_dout[i].active) mask |= 1u << i;
+	}
+	for (uint8_t s = 0; s < MAX_PULSE_TRIG_SLOTS; s++) {
+		if (s_pulse[s].active && s_pulse[s].out_kind == CHAN_KIND_DOUT)
+			mask |= 1u << s_pulse[s].out_idx;
+	}
+	for (uint8_t s = 0; s < MAX_LUT_SLOTS; s++) {
+		if (s_lut[s].input_src != INPUT_SRC_NONE && s_lut[s].out_kind == CHAN_KIND_DOUT)
+			mask |= s_lut[s].output_mask;
+	}
+	return mask;
+}
+
+/* =========================================================================
+ *   PWM peripheral — MODE_PWM_DUTY on PWM channels 0..3
+ *
+ *   Lazy-initialised on the first play_builtin for a PWM channel.
+ *   CLKA prescaler is picked dynamically per channel so each user
+ *   always gets at least ~10 bits of duty resolution at the requested
+ *   frequency. PWMH4..7 are routed to PC21..PC24 (Arduino Due pins 9,
+ *   8, 7, 6) via peripheral B.
+ * ========================================================================= */
+
+static void pwm_hw_init(void)
+{
+	if (s_pwm_init_done) return;
+
+	/* Route PC21..PC24 to PWM peripheral B. Disable PIO control
+	 * (give the pin to the peripheral) and select peripheral B. */
+	pmc_enable_periph_clk(ID_PIOC);
+	uint32_t mask = (1u << 21) | (1u << 22) | (1u << 23) | (1u << 24);
+	PIOC->PIO_PDR  = mask;                /* pin release to peripheral */
+	PIOC->PIO_ABSR |= mask;               /* B peripheral select       */
+	PIOC->PIO_PUDR = mask;                /* no pull-up                */
+
+	/* Enable PWM peripheral clock. */
+	pmc_enable_periph_clk(ID_PWM);
+
+	/* Initialise with CLKA = MCK (no prescaling). Per-channel CMR
+	 * is configured later with a dynamic CPRE. CLKB left unused. */
+	pwm_clock_t clock_cfg = {
+		.ul_clka = sysclk_get_main_hz(),
+		.ul_clkb = 0,
+		.ul_mck  = sysclk_get_main_hz(),
+	};
+	pwm_init(PWM, &clock_cfg);
+
+	/* Populate channel map for PWM0..3. */
+	for (uint8_t i = 0; i < WAVE_NUM_PWM_ACTIVE; i++) {
+		s_pwm[i].pwm_channel = 4 + i;     /* PWMH4..7 */
+		s_pwm[i].pio_pin     = 21 + i;    /* PIOC21..24 */
+		s_pwm[i].active      = 0;
+	}
+
+	s_pwm_init_done = 1;
+}
+
+/* Pick a prescaler (PREA) that keeps the period in [256, 65535] —
+ * always at least 8 bits of duty resolution — and a CPRD that gives
+ * the requested frequency. Returns actual CPRD + CPRE bits. */
+static void pwm_hw_pick_clock(uint32_t freq_hz, uint32_t *out_cpre, uint32_t *out_cprd)
+{
+	uint32_t mck = sysclk_get_main_hz();
+	if (freq_hz == 0) freq_hz = 1;
+	uint32_t cpre;
+	uint32_t cprd;
+	for (cpre = 0; cpre < 11; cpre++) {
+		uint32_t clk = mck >> cpre;
+		cprd = clk / freq_hz;
+		if (cprd <= 65535) break;
+	}
+	if (cprd < 4) cprd = 4;
+	if (cprd > 65535) cprd = 65535;
+	*out_cpre = cpre;
+	*out_cprd = cprd;
+}
+
+static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
+{
+	if (idx >= WAVE_NUM_PWM_ACTIVE) return false;
+	pwm_hw_init();
+
+	uint32_t freq_hz = (freq_mHz + 500u) / 1000u;
+	if (freq_hz == 0) freq_hz = 1;
+
+	uint32_t cpre, cprd;
+	pwm_hw_pick_clock(freq_hz, &cpre, &cprd);
+	uint32_t cdty = (cprd * duty_x10) / 1000u;
+	if (cdty > cprd) cdty = cprd;
+
+	uint32_t ch = s_pwm[idx].pwm_channel;
+
+	/* Disable before reconfig (allows period change without glitches
+	 * on first start; for parameter updates we also write the "update"
+	 * registers so the change is picked up at the next period boundary
+	 * without disabling. */
+	if (!s_pwm[idx].active) {
+		pwm_channel_disable(PWM, 1u << ch);
+		PWM->PWM_CH_NUM[ch].PWM_CMR = (cpre & PWM_CMR_CPRE_Msk) | PWM_CMR_CPOL;
+		PWM->PWM_CH_NUM[ch].PWM_CPRD = cprd;
+		PWM->PWM_CH_NUM[ch].PWM_CDTY = cdty;
+		pwm_channel_enable(PWM, 1u << ch);
+	} else {
+		/* Live update: use the update registers so PWM applies the
+		 * new CPRD/CDTY synchronously at the next period boundary. */
+		PWM->PWM_CH_NUM[ch].PWM_CPRDUPD = cprd;
+		PWM->PWM_CH_NUM[ch].PWM_CDTYUPD = cdty;
+		/* If cpre changed we need a full restart — rare, but handle it. */
+		uint32_t cur_cpre = PWM->PWM_CH_NUM[ch].PWM_CMR & PWM_CMR_CPRE_Msk;
+		if (cur_cpre != cpre) {
+			pwm_channel_disable(PWM, 1u << ch);
+			PWM->PWM_CH_NUM[ch].PWM_CMR = (cpre & PWM_CMR_CPRE_Msk) | PWM_CMR_CPOL;
+			PWM->PWM_CH_NUM[ch].PWM_CPRD = cprd;
+			PWM->PWM_CH_NUM[ch].PWM_CDTY = cdty;
+			pwm_channel_enable(PWM, 1u << ch);
+		}
+	}
+
+	s_pwm[idx].freq_mHz = freq_mHz;
+	s_pwm[idx].duty_x10 = duty_x10;
+	s_pwm[idx].active   = 1;
+	return true;
+}
+
+static void pwm_hw_stop(uint8_t idx)
+{
+	if (idx >= WAVE_NUM_PWM_ACTIVE) return;
+	if (!s_pwm[idx].active) return;
+	uint32_t ch = s_pwm[idx].pwm_channel;
+	pwm_channel_disable(PWM, 1u << ch);
+	s_pwm[idx].active = 0;
+	/* Park the pin low by giving it back to PIO and clearing it. */
+	uint32_t mask = 1u << s_pwm[idx].pio_pin;
+	PIOC->PIO_CODR = mask;
+	PIOC->PIO_OER  = mask;
+	PIOC->PIO_PER  = mask;    /* PIO controller owns the pin again */
 }
 
 /* -------------------------------------------------------------------------
@@ -1041,7 +1227,7 @@ bool waveform_get_caps(void *out, uint16_t out_len)
 		.num_adc                = WAVE_NUM_ADC,
 		.modes_dac              = MODE_MANUAL | MODE_BUILTIN | MODE_ARBITRARY
 		                        | MODE_LUT | MODE_THRESHOLD | MODE_PID,
-		.modes_pwm              = MODE_MANUAL,
+		.modes_pwm              = MODE_MANUAL | MODE_BUILTIN,
 		.modes_dout             = MODE_MANUAL | MODE_LUT | MODE_THRESHOLD | MODE_PULSE_TRIG,
 		.modes_din              = 0,
 		.modes_adc              = 0,
@@ -1091,6 +1277,30 @@ bool waveform_get_state(uint16_t channel_id, void *out, uint16_t out_len)
 		st.arb_loops_remaining   = c.arb_loops_remaining;
 		st.arb_sample_rate_hz    = c.arb_sample_rate_hz;
 		st.cur_phase_q24_8       = c.phase_q24_8;
+	} else if (kind == CHAN_KIND_PWM && idx < WAVE_NUM_PWM_ACTIVE && s_pwm[idx].active) {
+		st.shape    = SHAPE_SQUARE;
+		st.freq_mHz = s_pwm[idx].freq_mHz;
+		st.duty_x10 = s_pwm[idx].duty_x10;
+	} else if (kind == CHAN_KIND_DOUT) {
+		/* Report whichever reactive mode owns this DOUT so the
+		 * dashboard indicator reflects the firmware state. */
+		if (s_thr_dout[idx].active) {
+			st.shape = SHAPE_THRESHOLD;
+		} else {
+			for (uint8_t s = 0; s < MAX_PULSE_TRIG_SLOTS; s++) {
+				if (s_pulse[s].active && s_pulse[s].out_kind == CHAN_KIND_DOUT
+				                      && s_pulse[s].out_idx == idx) {
+					st.shape = SHAPE_PULSE_TRIG;
+					break;
+				}
+			}
+			if (st.shape == SHAPE_OFF) {
+				int8_t slot = lut_slot_for((uint16_t)(WAVE_NUM_DAC + WAVE_NUM_PWM + idx));
+				if (slot >= 0 && s_lut[slot].input_src != INPUT_SRC_NONE) {
+					st.shape = SHAPE_LUT;
+				}
+			}
+		}
 	}
 	memcpy(out, &st, sizeof(st));
 	return true;
@@ -1101,7 +1311,6 @@ bool waveform_play_builtin(uint16_t channel_id, const void *data, uint16_t len)
 	if (len != sizeof(struct WaveBuiltinSpec)) return false;
 	uint8_t kind, idx;
 	if (!channel_decode(channel_id, &kind, &idx)) return false;
-	if (kind != CHAN_KIND_DAC) return false;        /* PWM/DOUT BUILTIN reserved for future */
 
 	const struct WaveBuiltinSpec *spec = (const struct WaveBuiltinSpec *)data;
 	if (spec->shape == SHAPE_OFF || spec->shape == SHAPE_ARBITRARY) return false;
@@ -1110,6 +1319,15 @@ bool waveform_play_builtin(uint16_t channel_id, const void *data, uint16_t len)
 	if (spec->phase_offset_x16 != 0) return false;  /* reserved in v1 */
 	if (spec->reserved1 != 0)        return false;
 	if (spec->shape == SHAPE_SQUARE && spec->duty_x10 > 1000) return false;
+
+	/* PWM channels (MODE_PWM_DUTY): only SHAPE_SQUARE is meaningful
+	 * — the PWM peripheral is a digital duty-cycle generator. */
+	if (kind == CHAN_KIND_PWM) {
+		if (spec->shape != SHAPE_SQUARE) return false;
+		if (idx >= WAVE_NUM_PWM_ACTIVE)  return false;   /* PWM4..7 not pinned on Due */
+		return pwm_hw_play(idx, spec->freq_mHz, spec->duty_x10);
+	}
+	if (kind != CHAN_KIND_DAC) return false;        /* DOUT BUILTIN reserved for future */
 
 	NVIC_DisableIRQ(DACC_IRQn);
 	dac_chan_t *c = (dac_chan_t *)&s_chan[idx];
@@ -1188,6 +1406,8 @@ bool waveform_stop(uint16_t channel_id)
 		s_pid[idx].active     = 0;
 		NVIC_EnableIRQ(DACC_IRQn);
 		update_pdc_running();
+	} else if (kind == CHAN_KIND_PWM) {
+		pwm_hw_stop(idx);
 	} else if (kind == CHAN_KIND_DOUT) {
 		s_thr_dout[idx].active = 0;
 	}
@@ -1203,6 +1423,7 @@ bool waveform_stop(uint16_t channel_id)
 			s_pulse[i].in_pulse = 0;
 		}
 	}
+	update_adc_irq_needed();
 	return true;
 }
 
@@ -1241,6 +1462,7 @@ bool waveform_play_lut(uint16_t channel_id, const void *data, uint16_t len)
 	}
 	NVIC_EnableIRQ(DACC_IRQn);
 	update_pdc_running();
+	update_adc_irq_needed();
 	/* Apply once immediately so output isn't stale until the next ISR. */
 	lut_apply((uint8_t)slot);
 	return true;
@@ -1276,6 +1498,7 @@ bool waveform_play_threshold(uint16_t channel_id, const void *data, uint16_t len
 		s_thr_dout[idx].active   = 1;
 		threshold_eval(CHAN_KIND_DOUT, idx, &s_thr_dout[idx]);
 	}
+	update_adc_irq_needed();
 	return true;
 }
 

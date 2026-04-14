@@ -1,407 +1,201 @@
-# PhyCMD - Physical Commander
+<p align="center">
+  <img src="physerver/static/logo.svg" alt="PhyCommander" width="320"/>
+</p>
 
-**A programmable laboratory bench — signal generator, oscilloscope, DAQ card, and test rig collapsed into one scriptable system.**
+<h1 align="center">PhyCMD — Physical Commander</h1>
 
-## What phycommander is
+<p align="center">
+  <b>A programmable laboratory bench — signal generator, oscilloscope, DAQ card, and test rig collapsed into one scriptable system.</b>
+</p>
 
-An open, programmable laboratory bench. It takes a Linux PC and an Arduino Due and turns them into a deterministic I/O platform that collapses a rack of benchtop instruments — signal generator, oscilloscope, DAQ card, I/O board — into a single scriptable system. The hardware streams sample-coherent DAC↔ADC data to the host at up to 10 kHz over USB with ~120 µs latency and ±5–10 µs jitter; the host, running PREEMPT_RT Linux, is where *all* the intelligence lives: waveform synthesis, triggering logic, DSP, control loops, test sequences.
+<p align="center">
+  <a href="#highlights">Highlights</a> ·
+  <a href="#the-dashboard">Dashboard</a> ·
+  <a href="#bill-of-materials">Bill of Materials</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#roadmap">Roadmap</a>
+</p>
 
-Where a scope + signal generator is *manually operated*, phycommander is *programmable*. Where an Arduino is *non-deterministic*, phycommander is *real-time*. Where a National Instruments DAQ is *proprietary*, phycommander is *end-to-end open*, from the firmware on the Due to the Rust client on the PC.
+---
 
-## What you use it for
+<p align="center">
+  <img src="docs/images/dashboard-full.png" alt="PhyCMD dashboard — DAC sine + triangle, two PWM square waves, DOUT threshold"/>
+</p>
 
-- **Hardware test rigs.** Build a programmable "companion machine" that stimulates a device under test with arbitrary signals, reads its response, and drives the whole test sequence from a Python or Rust script. Replace a week of custom electronics with a hundred lines of code. Characterize drivers, sensors, analog filters, small mechanical systems — without committing to a custom board for each DUT.
-- **Control algorithm prototyping.** Close a 1–10 kHz loop around a physical plant with PID, state observers, Kalman filters, MPC, or adaptive controllers — all written in Python or Rust, running on the PC where you have real CPUs, real RAM, and real debuggers. The plant lives in the real world; the controller lives on the PC.
-- **Custom instruments.** When "oscilloscope + signal generator" isn't enough because you need programmable logic *between* the stimulus and the response — frequency sweeps with coherent demodulation, lock-in, frequency response analysis, TDR, conditional triggers, computed waveforms — phycommander is the foundation. See [LOCKIN_OPTICAL_DEMO.md](docs/applications/LOCKIN_OPTICAL_DEMO.md) for a fully worked example.
-- **Rapid prototyping.** Instrument a physical system, characterize it, iterate, before committing to dedicated electronics.
+## Why this project exists
 
-## What phycommander is not
+Where a benchtop scope and signal generator are *manually operated*, PhyCMD is **programmable**. Where an Arduino sketch is *non-deterministic*, PhyCMD is **real-time**. Where a National Instruments DAQ is *proprietary*, PhyCMD is **end-to-end open** — from the firmware on the SAM3X8E up through the Rust streaming server and the browser dashboard.
 
-- **Not a > 100 kHz digitizer.** Use a Red Pitaya or an ADALM-Pluto.
-- **Not a field-deployable embedded controller.** Requires a PREEMPT_RT Linux host.
-- **Not a replacement for NI / Keysight** in certified industrial test or safety-critical applications.
-- **Not a benchtop scope with its own screen.** If that's what you want, buy one.
+You get an Intel mini-PC, an Arduino Due, a handful of protection components, and suddenly your lab has a sample-coherent 8 kHz DAC↔ADC↔DIN↔DOUT link with a PREEMPT\_RT Linux brain that can run PID loops, lock-in detectors, Kalman filters, frequency sweeps, or whatever else you care to script.
+
+## Highlights
+
+- **8 kHz sample-coherent iso-USB link** — 64-byte PhyCMD frames every USB microframe (125 µs), HS isochronous EP on a dual-interface Vendor/CDC device.
+- **On-chip function generator in firmware** — sine / square / triangle / sawtooth / arbitrary / LUT / threshold / pulse-trig / PID on 2 DACs, 4 PWM channels, 16 DOUTs. Up to 1 MSPS per DAC; DOUT reactive modes evaluated at 1 kHz.
+- **Full dashboard in the browser** — live scope with analytic synth at canvas-pixel resolution, collapsible drag-and-drop panels, On-Chip FnGen controls per channel, PREEMPT\_RT scheduler telemetry with URB-level jitter histogram.
+- **PREEMPT\_RT host** — source-based policy routing, CPU isolation (2,3), IRQ pinning — documented turn-key setup in [`docs/deployment/`](docs/deployment/).
+- **Clean layered wire protocol** — the 64-byte frame is a single source of truth: `_Static_assert` in C, `const _: () = assert!(...)` in Rust. Any drift between firmware and host fails the build loudly.
+- **Python, Rust, REST, WebSocket, and SHM IPC** — pick the surface that fits your workflow.
+
+## The dashboard
+
+Open `http://<host>:8080/` from any browser on your LAN.
+
+### Oscilloscope with analytic rendering
+
+<p align="center">
+  <img src="docs/images/dashboard-scope.png" alt="Oscilloscope — 30 Hz sine + 15 Hz triangle on DAC, 60 Hz + 120 Hz PWM, one threshold-driven DOUT"/>
+</p>
+
+Because the WebSocket stream is throttled at ~250 Hz, anything above ~50 Hz would alias on a naive sampled trace. The scope therefore **evaluates the on-chip generator's waveform analytically at canvas-pixel resolution** for sine / square / triangle / sawtooth DACs and for PWM squares — so you see the real shape even at several kHz. Digital inputs and outputs and raw ADC traces are drawn from the captured sample buffer.
+
+### On-Chip Function Generator
+
+<p align="center">
+  <img src="docs/images/dashboard-fngen.png" alt="On-Chip Function Generator — DAC0 sine, DAC1 triangle, PWM0/1 square, DOUT5 threshold-reactive"/>
+</p>
+
+Every DAC, PWM, and DOUT channel has its own row with mode dropdown, parameter form, Apply, and Stop. `userDirty` flag protects in-progress edits from being stomped by the 1 s state poll. The DOUT strip is a single 16-pin panel — click a row to expand the config, click × on the row head to stop a channel without expanding.
+
+### Compact / mobile layout
+
+<p align="center">
+  <img src="docs/images/dashboard-compact.png" alt="Dashboard with auxiliary panels collapsed — useful on a 1080p monitor or a tablet"/>
+</p>
+
+Every panel collapses to its header with a ▸ chevron; state is persisted in `localStorage`. Drag-handles stay visible even when collapsed so you can reorder the layout in either state.
+
+## Bill of Materials
+
+> Total cost of a fresh build is ≈ 180–250 € depending on the mini-PC. Sensors, actuators, and the DUT are obviously project-specific.
+
+### Core compute & I/O
+
+| Qty | Item | Notes | Typical price |
+|-----|------|-------|---------------|
+| 1 | Intel mini-PC with x86\_64 CPU, ≥ 2 GB RAM, USB 2.0 HS port | Reference box: **Intel DN2800MT** (Atom N2800, Cedar Trail) running Ubuntu 24.04 PREEMPT\_RT. Any similar fanless Atom/Celeron box works. | 40–120 € used |
+| 1 | Arduino Due (SAM3X8E, 84 MHz Cortex-M3) | Native USB 2.0 HS. Stock board, no hardware mods. | 35 € |
+| 1 | USB A → micro-B cable | Connect Due *native* port to the host. Programming port only needed for first flash. | 3 € |
+
+### Connectivity & UI
+
+| Qty | Item | Notes |
+|-----|------|-------|
+| 1 | Ethernet cable + switch / LAN router | Dashboard is served at `http://host:8080`. |
+| 1 | Screen + keyboard (optional, first boot only) | After network setup all interaction is over SSH + browser. |
+
+### Signal-conditioning front-end (recommended hand-solder / through-hole)
+
+The Due's DACs output 0.55–2.75 V and its ADCs expect 0–3.3 V — you usually want some protection + buffering around them. The project's author prefers **through-hole / DIP** parts and prebuilt buck/boost modules over SMT; the schematic in [`docs/technical/PCB_BACKPLANE_PINOUT.md`](docs/technical/PCB_BACKPLANE_PINOUT.md) follows this rule.
+
+| Qty | Item | Role |
+|-----|------|------|
+| 2 | Op-amp ×2 (MCP6002 / TL072 DIP-8) | DAC buffer & ADC input follower |
+| 2 | Rail-to-rail op-amp or instrumentation amplifier | Scale DAC output to ±10 V (optional) |
+| 16 | TVS diode (SMAJ3.3CA-like) | Clamp DIN pins to 0–3.3 V |
+| 16 | 1 kΩ series resistor | DIN current-limit |
+| 16 | 10 kΩ pull-down resistor | DIN default level |
+| 16 | N-MOS logic-level (e.g. 2N7000) + 1 kΩ gate resistor | Level-shift DOUTs to whatever your load needs |
+| 4 | 330 Ω + LED | Optional status LEDs on the PWM pins |
+| 1 | Buck module 12 V → 5 V (prebuilt) | Power Arduino Due from the lab supply |
+| 1 | Pluggable screw-terminal blocks | All external I/O lands here |
+| 1 | Drilled aluminium or 3 mm ABS enclosure | See [`companion_board/panel_sketch/`](companion_board/panel_sketch/) for the front/rear panel SVGs |
+
+### What you can skip
+
+- **Real-time clock / battery.** Host NTP is enough; Due has its own 1 ms SysTick for `uptime_ms`.
+- **Dedicated crystal oscillator.** Due's on-board 84 MHz is stable to ±50 ppm — plenty for audio-band work.
+- **Fan PWM control.** The reference Intel DN2800MT has no hwmon path for fans; use the motherboard BIOS. If you must, the SAM3X PWM pins can drive a fan through a transistor.
+
+## Quick start
+
+```bash
+# --- On the mini-PC (Ubuntu 24.04 LTS + PREEMPT_RT kernel) -----------
+git clone https://github.com/<you>/phycommander.git
+cd phycommander
+
+# Build + flash firmware (ARM GNU Toolchain required)
+cd ATSAM3X8E_FW/ATSAM3X8E_FW && make
+# With Due in SAM-BA mode (stty -F /dev/arduino_due_prog 1200):
+bossac --port=ttyACM1 -e -w -v -b build/phycmd_fw.bin
+# See docs/firmware/FIRMWARE_UPLOAD.md for the RSTC-reset trick — bossac -R
+# does NOT actually reset the SAM3X core.
+
+# Build + install physerver
+cd ../../physerver && cargo build --release
+sudo cp target/release/physerver /usr/local/bin/
+sudo cp ../deploy/systemd/physerver.service /etc/systemd/system/
+sudo systemctl enable --now physerver
+
+# Open the dashboard
+xdg-open http://localhost:8080
+```
+
+For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing, see [`docs/deployment/DEPLOYMENT.md`](docs/deployment/DEPLOYMENT.md).
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Application Layer                   │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │   Web    │  │  Custom  │  │  Test    │              │
-│  │  Browser │  │  Rust    │  │  Scripts │              │
-│  └─────┬────┘  └────┬─────┘  └────┬─────┘              │
-│        │            │             │                     │
-│     WebSocket    IPC (SHM)     REST API                 │
-└────────┼────────────┼─────────────┼─────────────────────┘
-         │            │             │
-┌────────┴────────────┴─────────────┴─────────────────────┐
-│                    physerver (Rust)                     │
-│  • Modular transport layer (USB/Serial)                │
-│  • Protocol encoding/decoding (CRC-16)                  │
-│  • Multi-interface server                              │
-│  • Real-time scheduling & telemetry                    │
-└──────────────────────┬──────────────────────────────────┘
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-     USB Bulk (10kHz)          USB CDC Serial (1kHz)
-    (Direct libusb)            (Virtual serial port)
-          │                         │
-          └────────────┬────────────┘
-                       │
-┌──────────────────────┴──────────────────────────────────┐
-│           phyextension (ATSAM3X8E firmware)             │
-│  • 16 digital I/O                                       │
-│  • 8-channel ADC (DMA buffered)                         │
-│  • 2-channel DAC (12-bit)                               │
-│  • Fixed 64-byte protocol                               │
-└─────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────┐
+│               Application Layer                               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐       │
+│  │  Browser │  │  Python  │  │  Rust    │  │  Test    │       │
+│  │  (Dash)  │  │  (pyo3)  │  │  Custom  │  │  Scripts │       │
+│  └─────┬────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘       │
+│    WebSocket     IPC (SHM)    Rust crate     REST / curl      │
+└────────┼────────────┼─────────────┼─────────────┼─────────────┘
+         │            │             │             │
+┌────────┴────────────┴─────────────┴─────────────┴─────────────┐
+│              physerver (Rust, PREEMPT_RT)                     │
+│  • IsoTransport — 8 kHz HS isochronous USB on EP1 IN/OUT       │
+│  • WaveformBank, CommandStaging, StatusBus                    │
+│  • Web (axum), WS broadcast, sysinfo, RT stats                │
+│  • Vendor SETUP client for on-chip generator control          │
+└──────────────────────────────┬────────────────────────────────┘
+                               │  USB 2.0 HS (Vendor iso + Vendor EP0 control)
+┌──────────────────────────────┴────────────────────────────────┐
+│              SAM3X8E firmware (ATSAM3X8E_FW/)                 │
+│  • PhyCMD-64 wire protocol (CRC-16-CCITT)                     │
+│  • 2 DAC + 4 PWM + 16 DOUT + 16 DIN + 8 ADC                   │
+│  • On-chip generator: BUILTIN / ARBITRARY / LUT / THRESHOLD / │
+│    PULSE_TRIG / PID — per-channel, per-microframe             │
+│  • DACC PDC ping-pong, TC-triggered ADC, PWM peripheral B     │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## Components
-
-### 1. physerver (Rust)
-High-performance server for real-time communication with the microcontroller.
-
-**Features**:
-- 🚀 **Dual Transport Modes**: USB Bulk (10kHz) or Serial (1kHz)
-- ⚡ **10x Performance**: Direct USB provides 120µs latency vs 750µs serial
-- 🔧 **Modular Design**: Switch transports via configuration
-- 🔒 Memory-safe Rust implementation
-- 🌐 Built-in web server with REST API
-- 📡 WebSocket support for live updates
-- 💾 Shared memory IPC for ultra-low latency
-- 🔄 Automatic device detection
-
-**Location**: `physerver/`
-**Documentation**: [physerver/README.md](physerver/README.md)
-
-### 2. phyextension (Firmware)
-Microcontroller firmware for ATSAM3X8E (Arduino Due compatible).
-
-**Features**:
-- ⚡ DMA-based ADC sampling (minimal CPU overhead)
-- 🔌 16 digital inputs + 16 digital outputs
-- 📊 8-channel 12-bit ADC
-- 🎛️ 2-channel 12-bit DAC
-- 📦 Fixed 64-byte protocol
-- 🔁 USB CDC virtual serial port
-
-**Location**: `ATSAM3X8E_FW/`
-**Updates needed**: [FIRMWARE_UPDATES.md](docs/firmware/FIRMWARE_UPDATES.md)
-
-### 3. phywebapp (Web Interface)
-Modern web dashboard for monitoring and control.
-
-**Features**:
-- 🎮 Real-time GPIO control
-- 📈 Live ADC readings
-- 🎚️ DAC output sliders
-- 📊 System telemetry
-- 📱 Responsive design
-- ⚡ WebSocket live updates
-
-**Location**: `physerver/static/`
-**Access**: http://localhost:8080 (when physerver is running)
-
-## Quick Start
-
-### Prerequisites
-
-**Linux (Ubuntu/Debian)**:
-```bash
-# Install dependencies
-sudo apt-get update
-sudo apt-get install -y build-essential pkg-config libudev-dev
-
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Add user to dialout group for serial access
-sudo usermod -a -G dialout $USER
-# Log out and back in
-```
-
-**macOS**:
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Install pkg-config (optional)
-brew install pkg-config
-```
-
-### Build & Run
-
-```bash
-# 1. Build physerver
-cd physerver
-cargo build --release
-
-# 2. Connect Arduino Due via USB
-
-# 3. Run physerver (auto-detect device)
-./target/release/physerver --auto-detect
-
-# 4. Open web interface
-# Visit http://localhost:8080 in your browser
-```
-
-### Test with Example Client
-
-```bash
-# Terminal 1: Run physerver
-./target/release/physerver --auto-detect
-
-# Terminal 2: Run example client
-cargo run --example simple_client
-```
-
-## Documentation
-
-All documentation is organized in the [`docs/`](docs/) folder. See the full [Documentation Index](docs/INDEX.md).
-
-### 📖 Core Documentation
-| Document | Description |
-|----------|-------------|
-| [USER_MANUAL.md](docs/user-guide/USER_MANUAL.md) | Comprehensive user guide |
-| [QUICK_REFERENCE.md](docs/getting-started/QUICK_REFERENCE.md) | Quick command reference |
-| [API_REFERENCE.md](docs/technical/API_REFERENCE.md) | Complete API documentation |
-
-### 🔧 Setup & Configuration
-| Document | Description |
-|----------|-------------|
-| [BUILDING.md](docs/getting-started/BUILDING.md) | Build instructions and dependencies |
-| [CONFIGURATION.md](docs/user-guide/CONFIGURATION.md) | Configuration guide (TOML) |
-| [DEPLOYMENT.md](docs/deployment/DEPLOYMENT.md) | Production deployment guide |
-| [SETUP.md](docs/getting-started/SETUP.md) | Initial setup and installation |
-
-### ⚙️ Technical Reference
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE.md](docs/technical/ARCHITECTURE.md) | System design and components |
-| [PROTOCOL.md](docs/technical/PROTOCOL.md) | PhyCMD-64 protocol specification |
-| [PERFORMANCE.md](docs/technical/PERFORMANCE.md) | Performance comparison USB vs Serial |
-| [FIRMWARE_UPLOAD.md](docs/firmware/FIRMWARE_UPLOAD.md) | Firmware upload guide (BOSSA) |
-| [FIRMWARE_UPDATES.md](docs/firmware/FIRMWARE_UPDATES.md) | Required firmware updates |
-
-## Features
-
-### Current (Implemented)
-
-**Transport & Communication**:
-- ✅ **Modular transport system** (USB Bulk / USB CDC Serial)
-- ✅ **Direct USB bulk transfer** (10 kHz, 120µs latency)
-- ✅ **USB CDC serial** (1 kHz, 750µs latency)
-- ✅ **Auto-detection** with USB fallback to serial
-- ✅ **TOML configuration** system
-- ✅ 64-byte fixed protocol with CRC-16
-
-**Server Features**:
-- ✅ REST API with JSON
-- ✅ WebSocket streaming
-- ✅ Shared memory IPC
-- ✅ Web dashboard
-- ✅ Real-time scheduling support
-- ✅ Example client library
-- ✅ Comprehensive logging
-
-**Hardware I/O**:
-- ✅ Digital I/O (16 in + 16 out)
-- ✅ 8-channel 12-bit ADC
-- ✅ 2-channel 12-bit DAC
-- ✅ DMA-based ADC sampling
-
-### Planned (Firmware Updates)
-
-- ⏳ Direct USB bulk endpoint support in firmware
-- ⏳ PWM outputs (2 channels)
-- ⏳ Enhanced error counters
-- ⏳ Communications watchdog
-- ⏳ Firmware version reporting
-
-## Performance
-
-### USB Bulk Transport (Direct libusb)
-| Metric | Value | Status |
-|--------|-------|--------|
-| Max update rate | 10 kHz | ✅ Implemented |
-| Avg latency | 120 µs | ✅ Tested |
-| Jitter (stddev) | ±7 µs | ✅ Tested |
-| Throughput | 8 Mbps | ✅ Capable |
-
-### USB CDC Serial Transport
-| Metric | Value | Status |
-|--------|-------|--------|
-| Max update rate | 1 kHz | ✅ Implemented |
-| Avg latency | 750 µs | ✅ Tested |
-| Jitter (stddev) | ±35 µs | ✅ Tested |
-| Throughput | 900 kbps | ✅ Capable |
-
-See [PERFORMANCE.md](docs/technical/PERFORMANCE.md) for detailed benchmarks.
-
-## Application domains
-
-phycommander targets contexts where openness, reproducibility, and programmability matter as much as the measurement itself:
-
-- **Teaching labs** — physics and engineering students build their own instruments (spectrometer, Bode plotter, lock-in, PLL, PID controllers) on an auditable signal chain instead of a closed-box commercial DAQ.
-- **Benchtop research** — PhD students and small groups characterize sensors, amplifiers, transducers, analog circuits, and small mechanical or optical setups without buying a dedicated instrument per DUT.
-- **Control prototyping** — PID, state observers, Kalman filters, MPC, or adaptive controllers running in Python / Rust against a physical plant at 1–10 kHz.
-- **Custom test benches** — automated electrical and mechanical test rigs: one phycommander plus a few drivers replaces a purpose-built tester.
-- **Open-hardware publication** — measurement methods that must be reproducible by any reader of a paper, end-to-end, with no proprietary black boxes in the signal chain.
-- **Makerspace / hobbyist instrumentation** — when you need the precision of a lab DAQ but cannot justify €500+ of NI gear.
-
-## API Examples
-
-### REST API
-
-```bash
-# Get status
-curl http://localhost:8080/api/status
-
-# Set GPIO pin 3 high
-curl -X POST http://localhost:8080/api/gpio/set \
-  -H "Content-Type: application/json" \
-  -d '{"pin": 3, "value": true}'
-
-# Set DAC to mid-scale
-curl -X POST http://localhost:8080/api/dac/set \
-  -H "Content-Type: application/json" \
-  -d '{"channel": 0, "value": 2047}'
-```
-
-### Rust Client (IPC)
-
-```rust
-use physerver::{IpcClient, Command, CommandFlags};
-
-fn main() -> anyhow::Result<()> {
-    let client = IpcClient::connect()?;
-
-    // Set outputs
-    let mut cmd = Command::default();
-    cmd.digital_out = 0x00FF;  // Pins 0-7 high
-    cmd.dac[0] = 2047;         // Mid-scale
-    cmd.flags = CommandFlags {
-        adc_enable: true,
-        dac_enable: true,
-        ..Default::default()
-    };
-
-    client.write_command(&cmd);
-
-    // Read inputs
-    let status = client.read_status();
-    println!("ADC 0: {}", status.adc[0]);
-
-    Ok(())
-}
-```
-
-### WebSocket (JavaScript)
-
-```javascript
-const ws = new WebSocket('ws://localhost:8080/ws');
-
-ws.onmessage = (event) => {
-    const status = JSON.parse(event.data);
-    console.log('ADC values:', status.adc);
-};
-
-// Send command
-const cmd = {
-    digital_out: 0x0001,  // Pin 0 high
-    dac: [2047, 4095],
-    pwm: [0, 0],
-    flags: { adc_enable: true, dac_enable: true },
-    seq_num: 0
-};
-ws.send(JSON.stringify(cmd));
-```
-
-## Development Status
-
-### Completed ✅
-
-1. **Architecture & Design**
-   - System architecture document
-   - Protocol specification (PhyCMD-64)
-   - Comprehensive documentation suite
-
-2. **Physerver (Rust)**
-   - ✅ **Modular transport system** (USB Bulk + Serial)
-   - ✅ **TOML configuration** with runtime overrides
-   - ✅ Protocol encoder/decoder with CRC-16
-   - ✅ REST API server (Axum)
-   - ✅ WebSocket streaming
-   - ✅ Shared memory IPC
-   - ✅ Real-time scheduling
-   - ✅ Web dashboard
-   - ✅ Example client library
-
-3. **Documentation**
-   - User manual, API reference, quick reference
-   - Configuration and deployment guides
-   - Performance analysis and benchmarks
-   - Build instructions and firmware upload guide
-
-### In Progress ⏳
-
-1. **Firmware Updates**
-   - Add direct USB bulk endpoint support
-   - Implement PWM outputs
-   - Enhanced telemetry and error reporting
-
-2. **Testing**
-   - Hardware integration tests with Arduino Due
-   - Real-world performance validation
-   - Long-term stability testing
-
-### Future 🔮
-
-1. **Features**
-   - Multiple simultaneous device support
-   - Data logging to file (CSV/binary)
-   - Scripting interface (Lua/Python bindings)
-   - GUI configuration tool
-
-2. **Optimizations**
-   - Zero-copy protocol parsing
-   - SIMD optimizations for data processing
-   - USB 3.0 support (requires hardware upgrade)
-
-## Contributing
-
-This project is designed for embedded systems and real-time applications. Contributions are welcome!
-
-## Hardware
-
-### Recommended
-
-- **Microcontroller**: ATSAM3X8E (Arduino Due)
-- **Connection**: USB 2.0 (Full Speed)
-- **Power**: USB powered or external 7-12V
-
-### Pin Mapping
-
-See firmware configuration files for detailed pin assignments:
-- Digital I/O: Configured in `conf_board.h`
-- ADC: Channels 0-7
-- DAC: Channels 0-1 (DACC0, DACC1)
-- PWM: TBD (TC0 channels)
-
-## Troubleshooting
-
-See [SETUP.md](docs/getting-started/SETUP.md) for detailed troubleshooting.
+## Project layout
+
+| Path | Contents |
+|------|----------|
+| `ATSAM3X8E_FW/` | SAM3X8E firmware (ARM GCC + ASF, GNU Make) |
+| `physerver/` | Rust streaming server + dashboard (Cargo workspace) |
+| &nbsp;&nbsp;`physerver/crates/phycmd-core/` | wire protocol, transports, scheduler, stats |
+| &nbsp;&nbsp;`physerver/crates/phycmd-rust/` | public Rust client crate |
+| &nbsp;&nbsp;`physerver/crates/phycmd-py/` | `pyo3` Python bindings |
+| &nbsp;&nbsp;`physerver/static/` | dashboard (single-page, no build step) |
+| `docs/` | protocol, firmware, deployment, applications |
+| `deploy/` | systemd units, udev rules, policy-routing scripts |
+| `companion_board/panel_sketch/` | front / rear / backplane SVGs for the enclosure |
+| `scripts/` | CLI tools (`phycmd_waveform.py`, `deploy.sh`, …) |
+
+## Roadmap
+
+- **v3.5** — live watchdog + crash-state dump from firmware; host-side auto-recovery over USB reset instead of SAM-BA reflash.
+- **v4** — rule-chain mode (`MODE_RULE_CHAIN`) for composing reactive primitives on-chip without round-tripping to the host.
+- **v4.x** — second supported MCU (SAMD51 / RP2350) with the same wire protocol.
+- **Long term** — pluggable front-end PCB with galvanic isolation and ±10 V amplifiers, designed hand-solder-first.
 
 ## License
 
-MIT
+See [`LICENSE`](LICENSE) — dual-licensed MIT / Apache-2.0. Hardware designs are CC-BY-SA 4.0 unless noted otherwise.
 
----
+## Documentation index
 
-**Status**: ✅ USB/Serial transport system complete - Ready for deployment
-**Version**: 1.0.0
-**Transport**: USB Bulk (10kHz) + USB CDC Serial (1kHz)
-**Last Updated**: 2025-11-22
+A complete, navigable documentation index lives in [`docs/INDEX.md`](docs/INDEX.md). Highlights:
+
+- [Protocol reference](docs/firmware/PROTOCOL.md) — PhyCMD-64 wire format + vendor SETUP requests
+- [Function Generator guide](docs/user-guide/FUNCTION_GENERATOR.md) — all on-chip modes with examples
+- [Deployment playbook](docs/deployment/DEPLOYMENT.md) — PREEMPT\_RT host bring-up
+- [User manual](docs/user-guide/USER_MANUAL.md) — dashboard walkthrough
+- [Example application](docs/applications/LOCKIN_OPTICAL_DEMO.md) — lock-in optical demo, end to end

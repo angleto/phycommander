@@ -78,9 +78,7 @@ pub struct MockTransport {
 
 impl fmt::Debug for MockTransport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MockTransport")
-            .field("device_id", &self.device_id)
-            .finish()
+        f.debug_struct("MockTransport").field("device_id", &self.device_id).finish()
     }
 }
 
@@ -94,11 +92,7 @@ impl MockTransport {
     /// `Arc`. This is how tests inspect/modify the mock while it is
     /// being driven by the scheduler thread.
     pub fn with_state(state: Arc<Mutex<MockState>>) -> Self {
-        Self {
-            state,
-            stats: TransportStats::default(),
-            device_id: "mock".to_string(),
-        }
+        Self { state, stats: TransportStats::default(), device_id: "mock".to_string() }
     }
 
     /// Handle to the shared mock state.
@@ -161,15 +155,8 @@ impl Transport for MockTransport {
         let status = Status {
             digital_in: cmd.digital_out, // loopback
             digital_out: cmd.digital_out,
-            adc: [
-                cmd.dac[0],
-                cmd.dac[1],
-                0, 0, 0, 0, 0, 0,
-            ],
-            flags: StatusFlags {
-                usb_configured: true,
-                ..Default::default()
-            },
+            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0],
+            flags: StatusFlags { usb_configured: true, ..Default::default() },
             seq_num: cmd.seq_num,
             loop_time_us: 10, // pretend the device loop is fast
             uptime_ms: 0,
@@ -231,8 +218,8 @@ impl Transport for MockTransport {
 /// [`MockTransport`]. `submit()` stores the command; `reap()` sleeps
 /// for the configured latency and returns the echoed Status.
 pub struct MockPipelinedTransport {
-    state:       Arc<Mutex<MockState>>,
-    stats:       TransportStats,
+    state: Arc<Mutex<MockState>>,
+    stats: TransportStats,
     pending_cmd: Option<Command>,
 }
 
@@ -250,11 +237,7 @@ impl MockPipelinedTransport {
     }
 
     pub fn with_state(state: Arc<Mutex<MockState>>) -> Self {
-        Self {
-            state,
-            stats: TransportStats::default(),
-            pending_cmd: None,
-        }
+        Self { state, stats: TransportStats::default(), pending_cmd: None }
     }
 
     pub fn state(&self) -> Arc<Mutex<MockState>> {
@@ -305,17 +288,14 @@ impl super::traits::PipelinedTransport for MockPipelinedTransport {
         }
 
         let status = Status {
-            digital_in:  cmd.digital_out,
+            digital_in: cmd.digital_out,
             digital_out: cmd.digital_out,
             adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0],
-            flags: StatusFlags {
-                usb_configured: true,
-                ..Default::default()
-            },
-            seq_num:      cmd.seq_num,
+            flags: StatusFlags { usb_configured: true, ..Default::default() },
+            seq_num: cmd.seq_num,
             loop_time_us: 10,
-            uptime_ms:    0,
-            error_count:  0,
+            uptime_ms: 0,
+            error_count: 0,
         };
 
         {
@@ -436,10 +416,8 @@ mod tests {
 
     #[test]
     fn zero_latency_is_fast() {
-        let state = Arc::new(Mutex::new(MockState {
-            latency: Duration::ZERO,
-            ..Default::default()
-        }));
+        let state =
+            Arc::new(Mutex::new(MockState { latency: Duration::ZERO, ..Default::default() }));
         let mut t = MockTransport::with_state(state);
         let t0 = std::time::Instant::now();
         for _ in 0..1000 {

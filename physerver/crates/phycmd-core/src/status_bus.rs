@@ -34,14 +34,12 @@ pub struct StatusFrame {
     // -----------------------------------------------------------------
     //   Payload
     // -----------------------------------------------------------------
-
     /// The validated, decoded status payload as it came off the wire.
     pub status: Status,
 
     // -----------------------------------------------------------------
     //   Identification
     // -----------------------------------------------------------------
-
     /// Monotonic 64-bit sequence number of the command this status
     /// is a response to. Unlike the 8-bit `wire_seq` (which wraps
     /// every 256 frames), `cmd_seq` is suitable as a globally unique
@@ -64,7 +62,6 @@ pub struct StatusFrame {
     // -----------------------------------------------------------------
     //   Temporal metadata (all on CLOCK_MONOTONIC in nanoseconds)
     // -----------------------------------------------------------------
-
     /// Timestamp at which this tick was *supposed* to start,
     /// i.e. `start_ns + tick_index * period_ns`.
     /// Used with [`tick_sent_ns`] to compute [`jitter_us`].

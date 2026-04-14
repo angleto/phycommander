@@ -10,8 +10,8 @@ use tracing::{info, warn};
 pub struct SharedState {
     // Metadata
     pub version: AtomicU32,
-    pub command_seq: AtomicU64,  // Incremented when command changes
-    pub status_seq: AtomicU64,   // Incremented when status updates
+    pub command_seq: AtomicU64, // Incremented when command changes
+    pub status_seq: AtomicU64,  // Incremented when status updates
 
     // Command data (from client to server to device)
     pub cmd_digital_out: AtomicU16,
@@ -80,16 +80,10 @@ impl IpcServer {
 
         Command {
             digital_out: state.cmd_digital_out.load(Ordering::Acquire),
-            dac: [
-                state.cmd_dac0.load(Ordering::Acquire),
-                state.cmd_dac1.load(Ordering::Acquire),
-            ],
-            pwm: [
-                state.cmd_pwm0.load(Ordering::Acquire),
-                state.cmd_pwm1.load(Ordering::Acquire),
-            ],
+            dac: [state.cmd_dac0.load(Ordering::Acquire), state.cmd_dac1.load(Ordering::Acquire)],
+            pwm: [state.cmd_pwm0.load(Ordering::Acquire), state.cmd_pwm1.load(Ordering::Acquire)],
             flags: crate::protocol::CommandFlags::from_byte(
-                state.cmd_flags.load(Ordering::Acquire)
+                state.cmd_flags.load(Ordering::Acquire),
             ),
             seq_num: 0, // Will be set by serial handler
         }
@@ -206,7 +200,7 @@ impl IpcClient {
                 state.status_adc7.load(Ordering::Acquire),
             ],
             flags: crate::protocol::StatusFlags::from_byte(
-                state.status_flags.load(Ordering::Acquire)
+                state.status_flags.load(Ordering::Acquire),
             ),
             seq_num: state.status_seq_num.load(Ordering::Acquire),
             loop_time_us: state.status_loop_time_us.load(Ordering::Acquire),

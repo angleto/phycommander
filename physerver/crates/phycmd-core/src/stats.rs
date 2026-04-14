@@ -29,15 +29,15 @@ use std::sync::atomic::{AtomicI64, AtomicU32, AtomicU64, Ordering};
 /// (50–200 μs), "bad" (200–1000 μs), and "catastrophic" (>1 ms),
 /// which covers the 10 kHz / 20 kHz target on our hardware.
 pub const JITTER_BUCKET_BOUNDS_US: &[i32] = &[
-    0,      // bucket 0: jitter < 0        (early)
-    10,     // bucket 1: 0..10 μs          (ideal)
-    25,     // bucket 2: 10..25 μs
-    50,     // bucket 3: 25..50 μs
-    100,    // bucket 4: 50..100 μs
-    200,    // bucket 5: 100..200 μs
-    500,    // bucket 6: 200..500 μs
-    1000,   // bucket 7: 500..1000 μs
-    // overflow at index 8 for anything >= 1000 μs
+    0,   // bucket 0: jitter < 0        (early)
+    10,  // bucket 1: 0..10 μs          (ideal)
+    25,  // bucket 2: 10..25 μs
+    50,  // bucket 3: 25..50 μs
+    100, // bucket 4: 50..100 μs
+    200, // bucket 5: 100..200 μs
+    500, // bucket 6: 200..500 μs
+    1000, // bucket 7: 500..1000 μs
+         // overflow at index 8 for anything >= 1000 μs
 ];
 
 /// Number of histogram buckets (= boundaries + 1 overflow).
@@ -121,8 +121,7 @@ impl RtStats {
     pub fn record_ok(&self, latency_us: u32, jitter_us: i32) {
         self.tick_count.fetch_add(1, Ordering::Relaxed);
         self.tick_ok.fetch_add(1, Ordering::Relaxed);
-        self.latency_sum_us
-            .fetch_add(latency_us as u64, Ordering::Relaxed);
+        self.latency_sum_us.fetch_add(latency_us as u64, Ordering::Relaxed);
 
         // latency_max with atomic max
         let mut cur = self.latency_max_us.load(Ordering::Relaxed);
@@ -380,18 +379,18 @@ mod tests {
     fn histogram_bucketing_matches_boundaries() {
         let s = RtStats::new();
         s.record_ok(10, -50); // bucket 0 (early)
-        s.record_ok(10, 0);   // bucket 1 (0..10)
-        s.record_ok(10, 5);   // bucket 1
-        s.record_ok(10, 9);   // bucket 1
-        s.record_ok(10, 10);  // bucket 2 (10..25)
-        s.record_ok(10, 24);  // bucket 2
-        s.record_ok(10, 25);  // bucket 3 (25..50)
-        s.record_ok(10, 49);  // bucket 3
-        s.record_ok(10, 50);  // bucket 4 (50..100)
+        s.record_ok(10, 0); // bucket 1 (0..10)
+        s.record_ok(10, 5); // bucket 1
+        s.record_ok(10, 9); // bucket 1
+        s.record_ok(10, 10); // bucket 2 (10..25)
+        s.record_ok(10, 24); // bucket 2
+        s.record_ok(10, 25); // bucket 3 (25..50)
+        s.record_ok(10, 49); // bucket 3
+        s.record_ok(10, 50); // bucket 4 (50..100)
         s.record_ok(10, 100); // bucket 5 (100..200)
         s.record_ok(10, 250); // bucket 6 (200..500)
         s.record_ok(10, 750); // bucket 7 (500..1000)
-        s.record_ok(10, 1500);// bucket 8 overflow
+        s.record_ok(10, 1500); // bucket 8 overflow
         s.record_ok(10, 50_000); // bucket 8 overflow
 
         let snap = s.snapshot();

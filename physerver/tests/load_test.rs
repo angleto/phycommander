@@ -30,18 +30,11 @@ mod load_tests {
         let elapsed = start.elapsed();
         let avg_time = elapsed.as_nanos() / iterations;
 
-        println!(
-            "Command encoding: {} iterations in {:?}",
-            iterations, elapsed
-        );
+        println!("Command encoding: {} iterations in {:?}", iterations, elapsed);
         println!("Average time per encoding: {} ns", avg_time);
 
         // Should encode in less than 1 microsecond
-        assert!(
-            avg_time < 1000,
-            "Encoding too slow: {} ns (expected < 1000 ns)",
-            avg_time
-        );
+        assert!(avg_time < 1000, "Encoding too slow: {} ns (expected < 1000 ns)", avg_time);
     }
 
     #[test]
@@ -66,18 +59,11 @@ mod load_tests {
         let elapsed = start.elapsed();
         let avg_time = elapsed.as_nanos() / iterations;
 
-        println!(
-            "Status decoding: {} iterations in {:?}",
-            iterations, elapsed
-        );
+        println!("Status decoding: {} iterations in {:?}", iterations, elapsed);
         println!("Average time per decoding: {} ns", avg_time);
 
         // Should decode in less than 2 microseconds
-        assert!(
-            avg_time < 2000,
-            "Decoding too slow: {} ns (expected < 2000 ns)",
-            avg_time
-        );
+        assert!(avg_time < 2000, "Decoding too slow: {} ns (expected < 2000 ns)", avg_time);
     }
 
     #[test]
@@ -98,11 +84,7 @@ mod load_tests {
         println!("Average time per CRC: {} ns", avg_time);
 
         // Should calculate CRC in less than 500 nanoseconds
-        assert!(
-            avg_time < 500,
-            "CRC too slow: {} ns (expected < 500 ns)",
-            avg_time
-        );
+        assert!(avg_time < 500, "CRC too slow: {} ns (expected < 500 ns)", avg_time);
     }
 
     #[test]
@@ -140,18 +122,11 @@ mod load_tests {
         let total_ops = iterations_per_thread * num_threads;
         let ops_per_sec = total_ops as f64 / elapsed.as_secs_f64();
 
-        println!(
-            "Concurrent encoding: {} operations in {:?}",
-            total_ops, elapsed
-        );
+        println!("Concurrent encoding: {} operations in {:?}", total_ops, elapsed);
         println!("Operations per second: {:.0}", ops_per_sec);
 
         // Should handle at least 100k ops/sec across threads
-        assert!(
-            ops_per_sec > 100000.0,
-            "Throughput too low: {:.0} ops/sec",
-            ops_per_sec
-        );
+        assert!(ops_per_sec > 100000.0, "Throughput too low: {:.0} ops/sec", ops_per_sec);
     }
 
     #[test]

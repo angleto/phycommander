@@ -35,3 +35,34 @@ dist/
 # System
 .env
 .env.local
+
+# Python venvs (e.g. phycmd-py maturin dev install)
+.venv/
+__pycache__/
+*.pyc
+
+# Firmware build outputs
+ATSAM3X8E_FW/ATSAM3X8E_FW/build/
+
+# C++ / CMake out-of-tree leftovers
+service/CMakeCache.txt
+service/CMakeFiles/
+service/Makefile
+service/cmake_install.cmake
+service/phybroker/CMakeCache.txt
+service/phybroker/CMakeFiles/
+service/phybroker/Makefile
+service/phybroker/cmake_install.cmake
+service/phybroker/phyclient
+service/phybroker/physervice
+test/cpp_test/iso
+test/cpp_test/iso_test
+test/cpp_test/iso_transf_test
+test/cpp_test/memory_lock
+test/cpp_test/receive_test
+test/cpp_test/receive_test_rtai
+test/cpp_test/sam3u_benchmark
+test/cpp_test/testusb
+
+# Photo originals kept outside git (JPG-converted copies live in docs/images/hardware/)
+phy_picts/

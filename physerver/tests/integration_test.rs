@@ -1,10 +1,9 @@
+use physerver::protocol::crc::crc16_ccitt_table;
+use physerver::protocol::{decode_status, encode_command};
 /// Integration tests for physerver
 ///
 /// These tests verify the complete system integration
-
 use physerver::{Command, CommandFlags, Status, StatusFlags};
-use physerver::protocol::{encode_command, decode_status};
-use physerver::protocol::crc::crc16_ccitt_table;
 
 #[test]
 fn test_protocol_integration() {

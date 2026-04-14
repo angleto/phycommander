@@ -41,8 +41,7 @@ impl SerialTransport {
 
     /// Get available serial ports
     pub fn available_devices() -> Result<Vec<String>> {
-        let ports = serialport::available_ports()
-            .context("Failed to enumerate serial ports")?;
+        let ports = serialport::available_ports().context("Failed to enumerate serial ports")?;
 
         Ok(ports.into_iter().map(|p| p.port_name).collect())
     }
@@ -74,13 +73,9 @@ impl Transport for SerialTransport {
         let start = std::time::Instant::now();
         let bytes = protocol::encode_command(cmd);
 
-        self.port
-            .write_all(&bytes)
-            .context("Failed to write command to serial port")?;
+        self.port.write_all(&bytes).context("Failed to write command to serial port")?;
 
-        self.port
-            .flush()
-            .context("Failed to flush serial port")?;
+        self.port.flush().context("Failed to flush serial port")?;
 
         self.stats.messages_sent += 1;
         self.stats.bytes_sent += MESSAGE_SIZE as u64;
@@ -155,9 +150,7 @@ impl Transport for SerialTransport {
     }
 
     fn set_timeout(&mut self, timeout: Duration) -> Result<()> {
-        self.port
-            .set_timeout(timeout)
-            .context("Failed to set timeout")
+        self.port.set_timeout(timeout).context("Failed to set timeout")
     }
 
     fn max_rate(&self) -> u32 {

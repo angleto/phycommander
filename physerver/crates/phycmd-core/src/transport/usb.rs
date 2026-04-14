@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
 // Arduino Due USB VID/PID
-const VENDOR_ID: u16 = 0x2341;  // Arduino
+const VENDOR_ID: u16 = 0x2341; // Arduino
 const PRODUCT_ID: u16 = 0x003e; // Arduino Due (Programming Port)
 
 // USB endpoints — must match the firmware descriptor layout in
@@ -15,7 +15,7 @@ const PRODUCT_ID: u16 = 0x003e; // Arduino Due (Programming Port)
 //   EP 1 IN  (0x81) — device → host (status frames)
 //   EP 2 OUT (0x02) — host → device (command frames)
 const EP_OUT: u8 = 0x02; // Bulk OUT endpoint
-const EP_IN: u8 = 0x81;  // Bulk IN endpoint
+const EP_IN: u8 = 0x81; // Bulk IN endpoint
 
 // USB configuration
 const INTERFACE_NUM: u8 = 0;
@@ -46,15 +46,10 @@ impl UsbTransport {
         let (device, device_handle) = Self::find_and_open_device()?;
 
         // Get device info
-        let device_desc = device
-            .device_descriptor()
-            .context("Failed to get device descriptor")?;
+        let device_desc = device.device_descriptor().context("Failed to get device descriptor")?;
 
-        let device_info = format!(
-            "USB {:04x}:{:04x}",
-            device_desc.vendor_id(),
-            device_desc.product_id()
-        );
+        let device_info =
+            format!("USB {:04x}:{:04x}", device_desc.vendor_id(), device_desc.product_id());
 
         info!("Opened device: {}", device_info);
 
@@ -90,9 +85,7 @@ impl UsbTransport {
                     device_desc.product_id()
                 );
 
-                let handle = device
-                    .open()
-                    .context("Failed to open USB device")?;
+                let handle = device.open().context("Failed to open USB device")?;
 
                 return Ok((device, handle));
             }
@@ -115,11 +108,7 @@ impl UsbTransport {
             .context("USB bulk write failed")?;
 
         if written != data.len() {
-            anyhow::bail!(
-                "Incomplete USB write: {} bytes of {} sent",
-                written,
-                data.len()
-            );
+            anyhow::bail!("Incomplete USB write: {} bytes of {} sent", written, data.len());
         }
 
         let elapsed = start.elapsed().as_micros() as u64;
@@ -174,7 +163,7 @@ impl Transport for UsbTransport {
                 .read_bulk(
                     EP_IN,
                     &mut self.read_buffer[total_read..],
-                    Duration::from_millis(TIMEOUT_MS)
+                    Duration::from_millis(TIMEOUT_MS),
                 )
                 .context("USB bulk read failed")?;
 
@@ -241,12 +230,11 @@ impl Transport for UsbTransport {
             anyhow::bail!("short read: {read}/{MESSAGE_SIZE}");
         }
 
-        let status = protocol::decode_status(&self.read_buffer)
-            .map_err(|e| {
-                self.stats.crc_errors += 1;
-                self.stats.errors += 1;
-                anyhow::anyhow!("{e}")
-            })?;
+        let status = protocol::decode_status(&self.read_buffer).map_err(|e| {
+            self.stats.crc_errors += 1;
+            self.stats.errors += 1;
+            anyhow::anyhow!("{e}")
+        })?;
 
         self.stats.messages_sent += 1;
         self.stats.messages_received += 1;

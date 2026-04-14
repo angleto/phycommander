@@ -44,17 +44,15 @@
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use phycmd_core::{
-    CommandStaging, RtScheduler, RtSchedulerStopHandle, RtStats, StatusBus,
-};
+use phycmd_core::{CommandStaging, RtScheduler, RtSchedulerStopHandle, RtStats, StatusBus};
 use thiserror::Error;
 use tracing::{debug, warn};
 
 // Re-export the types the caller needs to pass to / receive from
 // this API so they don't have to also depend on `phycmd-core`.
 pub use phycmd_core::{
-    Command, CommandFlags, RtConfig, RtConfigError, RtStatsSnapshot, StagingError,
-    Status, StatusFlags, Transport, TransportStats, WriteMode,
+    Command, CommandFlags, RtConfig, RtConfigError, RtStatsSnapshot, StagingError, Status,
+    StatusFlags, Transport, TransportStats, WriteMode,
 };
 
 // Re-export the PipelinedTransport trait for callers that want to
@@ -64,11 +62,13 @@ pub use phycmd_core::PipelinedTransport;
 // Real transports are optional — they need libudev / libusb at
 // build time. Users can still pass any `Box<dyn Transport>` they
 // built themselves.
+pub use phycmd_core::stats::{JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
+pub use phycmd_core::status_bus::StatusFrame;
 pub use phycmd_core::transport::SerialTransport;
 #[cfg(feature = "usb")]
-pub use phycmd_core::transport::{UsbTransport, UsbLoopbackTransport, PipelinedUsbLoopbackTransport};
-pub use phycmd_core::status_bus::StatusFrame;
-pub use phycmd_core::stats::{JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
+pub use phycmd_core::transport::{
+    PipelinedUsbLoopbackTransport, UsbLoopbackTransport, UsbTransport,
+};
 
 // Re-export the broadcast receiver type subscribers interact with.
 pub type StatusReceiver = tokio::sync::broadcast::Receiver<StatusFrame>;
@@ -104,9 +104,9 @@ pub enum OpenError {
 /// to the same instance, wrap it in an `Arc<PhyCommander>`.
 #[derive(Debug)]
 pub struct PhyCommander {
-    staging:     Arc<CommandStaging>,
-    bus:         Arc<StatusBus>,
-    stats:       Arc<RtStats>,
+    staging: Arc<CommandStaging>,
+    bus: Arc<StatusBus>,
+    stats: Arc<RtStats>,
     stop_handle: RtSchedulerStopHandle,
     join_handle: Option<JoinHandle<anyhow::Result<()>>>,
 }
@@ -123,13 +123,16 @@ impl PhyCommander {
     /// The returned handle will terminate the scheduler and join its
     /// thread on `Drop`. To shut down gracefully without dropping,
     /// call [`PhyCommander::stop`] then [`PhyCommander::join`].
-    pub fn open(
-        config: RtConfig,
-        transport: Box<dyn Transport>,
-    ) -> Result<Self, OpenError> {
+    pub fn open(config: RtConfig, transport: Box<dyn Transport>) -> Result<Self, OpenError> {
         config.validate()?;
         let (staging, bus, stats) = Self::shared_state(&config);
-        let scheduler = RtScheduler::new(config, Arc::clone(&staging), Arc::clone(&bus), Arc::clone(&stats), transport);
+        let scheduler = RtScheduler::new(
+            config,
+            Arc::clone(&staging),
+            Arc::clone(&bus),
+            Arc::clone(&stats),
+            transport,
+        );
         Self::spawn(staging, bus, stats, scheduler)
     }
 
@@ -143,14 +146,20 @@ impl PhyCommander {
     ) -> Result<Self, OpenError> {
         config.validate()?;
         let (staging, bus, stats) = Self::shared_state(&config);
-        let scheduler = RtScheduler::new_pipelined(config, Arc::clone(&staging), Arc::clone(&bus), Arc::clone(&stats), transport);
+        let scheduler = RtScheduler::new_pipelined(
+            config,
+            Arc::clone(&staging),
+            Arc::clone(&bus),
+            Arc::clone(&stats),
+            transport,
+        );
         Self::spawn(staging, bus, stats, scheduler)
     }
 
     fn shared_state(config: &RtConfig) -> (Arc<CommandStaging>, Arc<StatusBus>, Arc<RtStats>) {
         let staging = Arc::new(CommandStaging::new(config.default_write_mode));
-        let bus     = Arc::new(StatusBus::new(config.status_bus_capacity));
-        let stats   = Arc::new(RtStats::new());
+        let bus = Arc::new(StatusBus::new(config.status_bus_capacity));
+        let stats = Arc::new(RtStats::new());
         (staging, bus, stats)
     }
 
@@ -165,13 +174,7 @@ impl PhyCommander {
         let join_handle = thread::Builder::new()
             .name("phycmd-rt".to_string())
             .spawn(move || scheduler.run())?;
-        Ok(Self {
-            staging,
-            bus,
-            stats,
-            stop_handle,
-            join_handle: Some(join_handle),
-        })
+        Ok(Self { staging, bus, stats, stop_handle, join_handle: Some(join_handle) })
     }
 
     // =================================================================
@@ -324,10 +327,7 @@ impl PhyCommander {
 
     /// `true` if the scheduler thread is still running.
     pub fn is_running(&self) -> bool {
-        self.join_handle
-            .as_ref()
-            .map(|h| !h.is_finished())
-            .unwrap_or(false)
+        self.join_handle.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
     }
 }
 
@@ -537,10 +537,7 @@ mod tests {
     #[test]
     fn invalid_config_rejected() {
         let (transport, _mock) = mock_transport_with_latency(50);
-        let bad = RtConfig {
-            rate_hz: 0,
-            ..test_config(1_000)
-        };
+        let bad = RtConfig { rate_hz: 0, ..test_config(1_000) };
         match PhyCommander::open(bad, transport) {
             Err(OpenError::InvalidConfig(_)) => {}
             other => panic!("expected InvalidConfig error, got {other:?}"),

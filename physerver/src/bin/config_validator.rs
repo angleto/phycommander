@@ -1,11 +1,10 @@
 /// Configuration validator utility
 ///
 /// Validates physerver configuration files for correctness
-
 use anyhow::{Context, Result};
+use clap::Parser;
 use physerver::config::Config;
 use std::path::PathBuf;
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Validate PhyServer configuration files", long_about = None)]
@@ -33,12 +32,7 @@ struct ValidationResult {
 
 impl ValidationResult {
     fn new() -> Self {
-        Self {
-            valid: true,
-            errors: Vec::new(),
-            warnings: Vec::new(),
-            info: Vec::new(),
-        }
+        Self { valid: true, errors: Vec::new(), warnings: Vec::new(), info: Vec::new() }
     }
 
     fn error(&mut self, msg: String) {
@@ -151,8 +145,7 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     // Try to load the configuration
-    let config = Config::from_file(&args.config)
-        .context("Failed to load configuration file")?;
+    let config = Config::from_file(&args.config).context("Failed to load configuration file")?;
 
     let mut result = ValidationResult::new();
 

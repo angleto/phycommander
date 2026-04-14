@@ -48,7 +48,7 @@ const ISO_PKT_SIZE: usize = 256;
 // Async transfer parameters. Kept high enough to keep the EHCI iso
 // schedule continuously fed; too few in flight and the host inserts
 // gaps between transfers that show up as artificial jitter.
-const NUM_TRANSFERS: usize = 8;     // depth per direction
+const NUM_TRANSFERS: usize = 8; // depth per direction
 const PKTS_PER_TRANSFER: usize = 8; // one transfer = 1 ms of microframes
 const PROBE_DURATION: Duration = Duration::from_secs(60);
 
@@ -124,10 +124,8 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
     }
 
     let now = Instant::now();
-    let pkt_descs = std::slice::from_raw_parts(
-        xfer.iso_packet_desc.as_ptr(),
-        xfer.num_iso_packets as usize,
-    );
+    let pkt_descs =
+        std::slice::from_raw_parts(xfer.iso_packet_desc.as_ptr(), xfer.num_iso_packets as usize);
 
     for (i, desc) in pkt_descs.iter().enumerate() {
         if desc.status != ffi::constants::LIBUSB_TRANSFER_COMPLETED {
@@ -232,10 +230,8 @@ fn main() -> anyhow::Result<()> {
         for _ in 0..NUM_TRANSFERS {
             // ---- IN transfer ----
             let buf_in = vec![0u8; PKTS_PER_TRANSFER * ISO_PKT_SIZE];
-            let ctx_box_in = Box::new(CallbackCtx {
-                state: Arc::clone(&state_in),
-                stop: Arc::clone(&stop),
-            });
+            let ctx_box_in =
+                Box::new(CallbackCtx { state: Arc::clone(&state_in), stop: Arc::clone(&stop) });
             let xfer_in = alloc_iso_transfer(
                 dev_handle,
                 EP_ISO_IN,
@@ -255,10 +251,8 @@ fn main() -> anyhow::Result<()> {
                 buf_out[off..off + MESSAGE_SIZE].copy_from_slice(&idle_cmd);
                 // bytes [off+64..off+256] left as zeros (padding)
             }
-            let ctx_box_out = Box::new(CallbackCtx {
-                state: Arc::clone(&state_out),
-                stop: Arc::clone(&stop),
-            });
+            let ctx_box_out =
+                Box::new(CallbackCtx { state: Arc::clone(&state_out), stop: Arc::clone(&stop) });
             let xfer_out = alloc_iso_transfer(
                 dev_handle,
                 EP_ISO_OUT,
@@ -374,13 +368,19 @@ fn report(name: &str, st: &DirState, elapsed_s: f64) {
     let crc = st.crc_errors.load(Ordering::Relaxed);
     let total = ok + err + short + crc;
     let expected_per_s = 8000.0; // 8 kHz iso microframes
-    let pct_ok = if total > 0 { ok as f64 / total as f64 * 100.0 } else { 0.0 };
+    let pct_ok = if total > 0 {
+        ok as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
 
     println!("{name}:");
-    println!("  packets ok       : {ok}  ({:.1} /s, expected {:.0} /s, {:.2}% of theoretical)",
-             ok as f64 / elapsed_s,
-             expected_per_s,
-             ok as f64 / elapsed_s / expected_per_s * 100.0);
+    println!(
+        "  packets ok       : {ok}  ({:.1} /s, expected {:.0} /s, {:.2}% of theoretical)",
+        ok as f64 / elapsed_s,
+        expected_per_s,
+        ok as f64 / elapsed_s / expected_per_s * 100.0
+    );
     println!("  packets err      : {err}");
     println!("  packets short    : {short}");
     println!("  CRC errors       : {crc}");
@@ -391,7 +391,17 @@ fn report(name: &str, st: &DirState, elapsed_s: f64) {
         let total: u64 = hist.iter().sum();
         if total > 0 {
             println!("  inter-arrival histogram (µs between IN packets):");
-            let labels = ["<50", "50-100", "100-150", "150-200", "200-300", "300-500", "500-1000", "1000-2000", ">=2000"];
+            let labels = [
+                "<50",
+                "50-100",
+                "100-150",
+                "150-200",
+                "200-300",
+                "300-500",
+                "500-1000",
+                "1000-2000",
+                ">=2000",
+            ];
             for (i, n) in hist.iter().enumerate() {
                 let pct = *n as f64 / total as f64 * 100.0;
                 let bar_w = (pct / 2.0) as usize;

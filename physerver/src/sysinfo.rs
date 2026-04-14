@@ -116,15 +116,7 @@ pub fn read_snapshot_from(root: &Path) -> SysInfoSnapshot {
         || memory.is_some()
         || uptime_seconds.is_some();
 
-    SysInfoSnapshot {
-        available,
-        timestamp_ms,
-        hwmon,
-        cpus,
-        load_avg,
-        memory,
-        uptime_seconds,
-    }
+    SysInfoSnapshot { available, timestamp_ms, hwmon, cpus, load_avg, memory, uptime_seconds }
 }
 
 // --- hwmon ------------------------------------------------------------------
@@ -188,8 +180,8 @@ fn collect_sensors(chip_path: &Path, category: &str, scale: f64, unit: &str) -> 
     indices
         .into_iter()
         .filter_map(|idx| {
-            let raw = fs::read_to_string(chip_path.join(format!("{}{}_input", category, idx)))
-                .ok()?;
+            let raw =
+                fs::read_to_string(chip_path.join(format!("{}{}_input", category, idx))).ok()?;
             let raw_val: f64 = raw.trim().parse().ok()?;
 
             let label = fs::read_to_string(chip_path.join(format!("{}{}_label", category, idx)))
@@ -198,11 +190,7 @@ fn collect_sensors(chip_path: &Path, category: &str, scale: f64, unit: &str) -> 
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| format!("{}{}", category, idx));
 
-            Some(SensorReading {
-                label,
-                value: raw_val * scale,
-                unit: unit.to_string(),
-            })
+            Some(SensorReading { label, value: raw_val * scale, unit: unit.to_string() })
         })
         .collect()
 }
@@ -242,11 +230,7 @@ fn read_cpus(cpu_root: &Path) -> std::io::Result<Vec<CpuInfo>> {
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| String::from("unknown"));
 
-        cpus.push(CpuInfo {
-            cpu,
-            freq_mhz: freq_khz as f64 / 1000.0,
-            governor,
-        });
+        cpus.push(CpuInfo { cpu, freq_mhz: freq_khz as f64 / 1000.0, governor });
     }
 
     Ok(cpus)

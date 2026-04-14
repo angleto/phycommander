@@ -1,7 +1,6 @@
 /// Integration tests for web API
 ///
 /// These tests verify the REST API and WebSocket functionality
-
 use axum::http::StatusCode;
 use physerver::{Command, CommandFlags, Status};
 use serde_json::json;

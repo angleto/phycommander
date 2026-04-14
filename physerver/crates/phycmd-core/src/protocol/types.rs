@@ -20,17 +20,17 @@ pub struct CommandMessage {
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct StatusMessage {
-    pub header: u16,           // 0x55AA
-    pub digital_in: u16,       // GPIO inputs (16 bits)
-    pub digital_out: u16,      // GPIO outputs echo
-    pub adc: [u16; 8],         // ADC channels 0-7
-    pub status_flags: u8,      // Status flags
-    pub seq_num: u8,           // Sequence number echo
-    pub crc: u16,              // CRC-16-CCITT
-    pub loop_time_us: u16,     // Main loop time (µs)
-    pub uptime_ms: u32,        // System uptime (ms)
-    pub error_count: u16,      // Total error count
-    pub reserved: [u8; 30],    // Reserved
+    pub header: u16,        // 0x55AA
+    pub digital_in: u16,    // GPIO inputs (16 bits)
+    pub digital_out: u16,   // GPIO outputs echo
+    pub adc: [u16; 8],      // ADC channels 0-7
+    pub status_flags: u8,   // Status flags
+    pub seq_num: u8,        // Sequence number echo
+    pub crc: u16,           // CRC-16-CCITT
+    pub loop_time_us: u16,  // Main loop time (µs)
+    pub uptime_ms: u32,     // System uptime (ms)
+    pub error_count: u16,   // Total error count
+    pub reserved: [u8; 30], // Reserved
 }
 
 /// High-level command structure (safe, validated)
@@ -108,11 +108,21 @@ impl Default for Status {
 impl CommandFlags {
     pub fn to_byte(&self) -> u8 {
         let mut byte = 0u8;
-        if self.adc_enable { byte |= super::FLAG_ADC_ENABLE; }
-        if self.dac_enable { byte |= super::FLAG_DAC_ENABLE; }
-        if self.pwm_enable { byte |= super::FLAG_PWM_ENABLE; }
-        if self.reset_seq { byte |= super::FLAG_RESET_SEQ; }
-        if self.watchdog_disable { byte |= super::FLAG_WATCHDOG_DISABLE; }
+        if self.adc_enable {
+            byte |= super::FLAG_ADC_ENABLE;
+        }
+        if self.dac_enable {
+            byte |= super::FLAG_DAC_ENABLE;
+        }
+        if self.pwm_enable {
+            byte |= super::FLAG_PWM_ENABLE;
+        }
+        if self.reset_seq {
+            byte |= super::FLAG_RESET_SEQ;
+        }
+        if self.watchdog_disable {
+            byte |= super::FLAG_WATCHDOG_DISABLE;
+        }
         byte
     }
 
@@ -142,13 +152,27 @@ impl StatusFlags {
 
     pub fn to_byte(&self) -> u8 {
         let mut byte = 0u8;
-        if self.adc_active { byte |= super::STATUS_ADC_ACTIVE; }
-        if self.dac_active { byte |= super::STATUS_DAC_ACTIVE; }
-        if self.pwm_active { byte |= super::STATUS_PWM_ACTIVE; }
-        if self.error { byte |= super::STATUS_ERROR_FLAG; }
-        if self.watchdog_triggered { byte |= super::STATUS_WATCHDOG_TRIGGERED; }
-        if self.usb_configured { byte |= super::STATUS_USB_CONFIGURED; }
-        if self.overrun { byte |= super::STATUS_OVERRUN; }
+        if self.adc_active {
+            byte |= super::STATUS_ADC_ACTIVE;
+        }
+        if self.dac_active {
+            byte |= super::STATUS_DAC_ACTIVE;
+        }
+        if self.pwm_active {
+            byte |= super::STATUS_PWM_ACTIVE;
+        }
+        if self.error {
+            byte |= super::STATUS_ERROR_FLAG;
+        }
+        if self.watchdog_triggered {
+            byte |= super::STATUS_WATCHDOG_TRIGGERED;
+        }
+        if self.usb_configured {
+            byte |= super::STATUS_USB_CONFIGURED;
+        }
+        if self.overrun {
+            byte |= super::STATUS_OVERRUN;
+        }
         byte
     }
 }

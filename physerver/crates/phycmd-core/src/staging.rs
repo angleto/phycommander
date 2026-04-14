@@ -59,10 +59,10 @@ use thiserror::Error;
 
 /// Mask covering all 16 `digital_out` bits.
 pub const DIRTY_DIGITAL_OUT_ALL: u32 = 0x0000_FFFF;
-pub const DIRTY_DAC0:  u32 = 1 << 16;
-pub const DIRTY_DAC1:  u32 = 1 << 17;
-pub const DIRTY_PWM0:  u32 = 1 << 18;
-pub const DIRTY_PWM1:  u32 = 1 << 19;
+pub const DIRTY_DAC0: u32 = 1 << 16;
+pub const DIRTY_DAC1: u32 = 1 << 17;
+pub const DIRTY_PWM0: u32 = 1 << 18;
+pub const DIRTY_PWM1: u32 = 1 << 19;
 pub const DIRTY_FLAGS: u32 = 1 << 20;
 
 /// Mask for a single `digital_out` bit (0..16).
@@ -133,7 +133,7 @@ pub enum StagingError {
 /// writers and the RT scheduler.
 pub struct CommandStaging {
     inner: Mutex<StagingInner>,
-    cv:    Condvar,
+    cv: Condvar,
     /// Process-global default `WriteMode`. Can be changed at runtime
     /// via [`set_default_mode`]. Individual writes can still pass an
     /// explicit mode via the `*_with` variants of every setter.
@@ -477,10 +477,7 @@ mod tests {
         // Give the second thread some time to actually block inside
         // wait_while. 50 ms is plenty.
         thread::sleep(Duration::from_millis(50));
-        assert!(
-            !handle.is_finished(),
-            "writer should still be blocked before mark_sent"
-        );
+        assert!(!handle.is_finished(), "writer should still be blocked before mark_sent");
 
         // Now release the waiter.
         let (_, gen) = s.take_snapshot();
@@ -629,9 +626,7 @@ mod tests {
     fn per_call_mode_override_error_on_conflict() {
         let s = CommandStaging::new(WriteMode::Coalesce);
         s.set_dac0(100).unwrap();
-        let err = s
-            .set_dac0_with(WriteMode::ErrorOnConflict, 200)
-            .unwrap_err();
+        let err = s.set_dac0_with(WriteMode::ErrorOnConflict, 200).unwrap_err();
         assert_eq!(err, StagingError::WouldOverwrite);
     }
 

@@ -14,7 +14,6 @@
 ///   cargo test --test selftest gpio -- --ignored     # solo GPIO
 ///   cargo test --test selftest analog -- --ignored   # solo analogico
 ///   PHYCMD_PORT=/dev/ttyACM0 cargo test --test selftest -- --ignored
-
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
@@ -97,9 +96,7 @@ impl FwClient {
         self.port.flush().expect("Errore flush seriale");
 
         let mut resp = [0u8; MSG_SIZE];
-        self.port
-            .read_exact(&mut resp)
-            .expect("Timeout lettura risposta");
+        self.port.read_exact(&mut resp).expect("Timeout lettura risposta");
 
         let digital_in = u16::from_le_bytes([resp[0], resp[1]]);
         let digital_out = u16::from_le_bytes([resp[2], resp[3]]);
@@ -108,11 +105,7 @@ impl FwClient {
             adc[i] = u16::from_le_bytes([resp[4 + i * 2], resp[5 + i * 2]]);
         }
 
-        FwStatus {
-            digital_in,
-            digital_out,
-            adc,
-        }
+        FwStatus { digital_in, digital_out, adc }
     }
 
     /// Invia comando e attendi stabilizzazione
@@ -185,10 +178,7 @@ fn selftest_communication() {
     let avg: f64 = latencies.iter().sum::<f64>() / latencies.len() as f64;
     let min = latencies.iter().cloned().fold(f64::MAX, f64::min);
     let max = latencies.iter().cloned().fold(0.0f64, f64::max);
-    eprintln!(
-        "[comm] Latenza: media={:.1}ms  min={:.1}ms  max={:.1}ms",
-        avg, min, max
-    );
+    eprintln!("[comm] Latenza: media={:.1}ms  min={:.1}ms  max={:.1}ms", avg, min, max);
 }
 
 // ============================================================
@@ -200,11 +190,7 @@ fn selftest_communication() {
 fn selftest_gpio_all_zero() {
     let mut dev = FwClient::open();
     let status = dev.exchange_settle(0x0000, 0, 0);
-    assert_eq!(
-        status.digital_in, 0x0000,
-        "GPIO tutti-0: DIN=0x{:04X}",
-        status.digital_in
-    );
+    assert_eq!(status.digital_in, 0x0000, "GPIO tutti-0: DIN=0x{:04X}", status.digital_in);
 }
 
 #[test]
@@ -212,11 +198,7 @@ fn selftest_gpio_all_zero() {
 fn selftest_gpio_all_one() {
     let mut dev = FwClient::open();
     let status = dev.exchange_settle(0xFFFF, 0, 0);
-    assert_eq!(
-        status.digital_in, 0xFFFF,
-        "GPIO tutti-1: DIN=0x{:04X}",
-        status.digital_in
-    );
+    assert_eq!(status.digital_in, 0xFFFF, "GPIO tutti-1: DIN=0x{:04X}", status.digital_in);
 }
 
 #[test]
@@ -278,12 +260,14 @@ fn selftest_analog_zero_scale() {
     assert!(
         avg[0] < ADC_TOLERANCE as f64,
         "Zero scale ADC0={:.0} (max {})",
-        avg[0], ADC_TOLERANCE
+        avg[0],
+        ADC_TOLERANCE
     );
     assert!(
         avg[1] < ADC_TOLERANCE as f64,
         "Zero scale ADC1={:.0} (max {})",
-        avg[1], ADC_TOLERANCE
+        avg[1],
+        ADC_TOLERANCE
     );
     eprintln!("[analog] Zero: ADC0={:.1}, ADC1={:.1}", avg[0], avg[1]);
 }
@@ -294,16 +278,8 @@ fn selftest_analog_full_scale() {
     let mut dev = FwClient::open();
     let avg = dev.read_adc_avg(DAC_MAX, DAC_MAX, 10);
     let threshold = (DAC_MAX - ADC_TOLERANCE) as f64;
-    assert!(
-        avg[0] > threshold,
-        "Full scale ADC0={:.0} (min {:.0})",
-        avg[0], threshold
-    );
-    assert!(
-        avg[1] > threshold,
-        "Full scale ADC1={:.0} (min {:.0})",
-        avg[1], threshold
-    );
+    assert!(avg[0] > threshold, "Full scale ADC0={:.0} (min {:.0})", avg[0], threshold);
+    assert!(avg[1] > threshold, "Full scale ADC1={:.0} (min {:.0})", avg[1], threshold);
     eprintln!("[analog] Full: ADC0={:.1}, ADC1={:.1}", avg[0], avg[1]);
 }
 
@@ -318,12 +294,16 @@ fn selftest_analog_mid_scale() {
     assert!(
         error0 < ADC_TOLERANCE as f64,
         "Mid scale ADC0={:.0}, errore={:.0} (max {})",
-        avg[0], error0, ADC_TOLERANCE
+        avg[0],
+        error0,
+        ADC_TOLERANCE
     );
     assert!(
         error1 < ADC_TOLERANCE as f64,
         "Mid scale ADC1={:.0}, errore={:.0} (max {})",
-        avg[1], error1, ADC_TOLERANCE
+        avg[1],
+        error1,
+        ADC_TOLERANCE
     );
     eprintln!(
         "[analog] Mid (DAC={}): ADC0={:.1} (err={:.1}), ADC1={:.1} (err={:.1})",
@@ -358,7 +338,8 @@ fn selftest_analog_linearity_ramp() {
     assert!(
         max_error < ADC_TOLERANCE as f64,
         "Errore linearita max={:.0} (tolleranza {})",
-        max_error, ADC_TOLERANCE
+        max_error,
+        ADC_TOLERANCE
     );
     // Ripristina
     dev.exchange(0, 0, 0);
@@ -406,12 +387,14 @@ fn selftest_analog_noise() {
     assert!(
         std0 < ADC_NOISE_MAX_STDDEV,
         "Rumore ADC0 eccessivo: stddev={:.1} (max {})",
-        std0, ADC_NOISE_MAX_STDDEV
+        std0,
+        ADC_NOISE_MAX_STDDEV
     );
     assert!(
         std1 < ADC_NOISE_MAX_STDDEV,
         "Rumore ADC1 eccessivo: stddev={:.1} (max {})",
-        std1, ADC_NOISE_MAX_STDDEV
+        std1,
+        ADC_NOISE_MAX_STDDEV
     );
     // Ripristina
     dev.exchange(0, 0, 0);
@@ -469,10 +452,7 @@ fn selftest_square_wave_max_frequency() {
     let freq_out = num_cycles as f64 / total_secs;
 
     // Conta transizioni input
-    let transitions: usize = states_in
-        .windows(2)
-        .filter(|w| w[0] != w[1])
-        .count();
+    let transitions: usize = states_in.windows(2).filter(|w| w[0] != w[1]).count();
     let freq_in = (transitions as f64 / 2.0) / total_secs;
 
     eprintln!(
@@ -481,17 +461,10 @@ fn selftest_square_wave_max_frequency() {
     );
 
     // La freq misurata puo' differire per il ritardo di un campione
-    assert!(
-        transitions > 0,
-        "Nessuna transizione rilevata su DIN0 (DOUT0->DIN0 connesso?)"
-    );
+    assert!(transitions > 0, "Nessuna transizione rilevata su DIN0 (DOUT0->DIN0 connesso?)");
 
     let error_pct = (freq_in - freq_out).abs() / freq_out * 100.0;
-    assert!(
-        error_pct < 15.0,
-        "Errore frequenza {:.1}% (max 15%)",
-        error_pct
-    );
+    assert!(error_pct < 15.0, "Errore frequenza {:.1}% (max 15%)", error_pct);
 
     // Ripristina
     dev.exchange(0, 0, 0);
@@ -527,16 +500,9 @@ fn selftest_square_wave_target_frequencies() {
             }
         }
 
-        let total_secs = timestamps
-            .last()
-            .unwrap()
-            .duration_since(timestamps[0])
-            .as_secs_f64();
+        let total_secs = timestamps.last().unwrap().duration_since(timestamps[0]).as_secs_f64();
 
-        let transitions: usize = states_in
-            .windows(2)
-            .filter(|w| w[0] != w[1])
-            .count();
+        let transitions: usize = states_in.windows(2).filter(|w| w[0] != w[1]).count();
 
         if transitions > 0 && total_secs > 0.0 {
             let measured_hz = (transitions as f64 / 2.0) / total_secs;
@@ -550,13 +516,12 @@ fn selftest_square_wave_target_frequencies() {
             assert!(
                 error_pct < 20.0,
                 "Onda quadra {}Hz: misurata={:.1}Hz (errore {:.1}%, max 20%)",
-                target_hz, measured_hz, error_pct
+                target_hz,
+                measured_hz,
+                error_pct
             );
         } else {
-            panic!(
-                "Onda quadra {}Hz: nessuna transizione rilevata",
-                target_hz
-            );
+            panic!("Onda quadra {}Hz: nessuna transizione rilevata", target_hz);
         }
     }
 
@@ -593,14 +558,17 @@ fn selftest_square_wave_analog() {
 
     eprintln!(
         "[square_analog] DAC0->ADC0: high={:.0}, low={:.0}, ampiezza={:.0} ({:.2}V)",
-        avg_high, avg_low, amplitude,
+        avg_high,
+        avg_low,
+        amplitude,
         amplitude / DAC_MAX as f64 * 3.3
     );
 
     assert!(
         amplitude > DAC_MAX as f64 * 0.8,
         "Ampiezza onda quadra analogica insufficiente: {:.0} (min {:.0})",
-        amplitude, DAC_MAX as f64 * 0.8
+        amplitude,
+        DAC_MAX as f64 * 0.8
     );
 
     // Ripristina

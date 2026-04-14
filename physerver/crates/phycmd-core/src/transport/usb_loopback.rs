@@ -43,15 +43,15 @@ use std::time::Duration;
 use tracing::{debug, info, warn};
 
 // PhyCommander Vendor Class identification
-const VENDOR_ID:  u16 = 0x2341;
+const VENDOR_ID: u16 = 0x2341;
 const PRODUCT_ID: u16 = 0x003e;
 
 // Bulk endpoint addresses as exposed by the Step 2 firmware
 const EP_OUT: u8 = 0x02;
-const EP_IN:  u8 = 0x81;
+const EP_IN: u8 = 0x81;
 
 const INTERFACE_NUM: u8 = 0;
-const TIMEOUT_MS:    u64 = 50;
+const TIMEOUT_MS: u64 = 50;
 
 /// Raw-echo loopback transport for the Step 2 firmware.
 ///
@@ -60,8 +60,8 @@ const TIMEOUT_MS:    u64 = 50;
 /// that reflect the *sent* command, not anything actually read
 /// from the chip's sensors.
 pub struct UsbLoopbackTransport {
-    handle:      DeviceHandle<GlobalContext>,
-    stats:       TransportStats,
+    handle: DeviceHandle<GlobalContext>,
+    stats: TransportStats,
     read_buffer: [u8; MESSAGE_SIZE],
     device_info: String,
 }
@@ -81,10 +81,7 @@ impl UsbLoopbackTransport {
         info!("UsbLoopbackTransport: opening {:04x}:{:04x}", VENDOR_ID, PRODUCT_ID);
 
         let handle = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID).ok_or_else(|| {
-            anyhow::anyhow!(
-                "PhyCommander device {:04x}:{:04x} not found",
-                VENDOR_ID, PRODUCT_ID
-            )
+            anyhow::anyhow!("PhyCommander device {:04x}:{:04x} not found", VENDOR_ID, PRODUCT_ID)
         })?;
 
         // Detach kernel driver if any (vendor-class shouldn't have one
@@ -177,17 +174,10 @@ impl Transport for UsbLoopbackTransport {
         // (scheduler + RtStats + StatusBus) see identical results
         // on the hardware path as on the mock path.
         Ok(Status {
-            digital_in:  cmd.digital_out,
+            digital_in: cmd.digital_out,
             digital_out: cmd.digital_out,
-            adc: [
-                cmd.dac[0],
-                cmd.dac[1],
-                0, 0, 0, 0, 0, 0,
-            ],
-            flags: StatusFlags {
-                usb_configured: true,
-                ..Default::default()
-            },
+            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0],
+            flags: StatusFlags { usb_configured: true, ..Default::default() },
             seq_num: cmd.seq_num,
             loop_time_us: 0,
             uptime_ms: 0,
@@ -228,9 +218,7 @@ impl Drop for UsbLoopbackTransport {
         }
         info!(
             "UsbLoopbackTransport closed. sent={} recv={} err={}",
-            self.stats.messages_sent,
-            self.stats.messages_received,
-            self.stats.errors
+            self.stats.messages_sent, self.stats.messages_received, self.stats.errors
         );
     }
 }

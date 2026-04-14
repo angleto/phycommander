@@ -1,4 +1,5 @@
 pub mod serial;
+pub mod traits;
 #[cfg(feature = "usb")]
 pub mod usb;
 #[cfg(feature = "usb")]
@@ -7,24 +8,25 @@ pub mod usb_iso;
 pub mod usb_loopback;
 #[cfg(feature = "usb")]
 pub mod usb_loopback_pipelined;
-pub mod traits;
 
 #[cfg(any(test, feature = "test-mock"))]
 pub mod mock;
 
-pub use traits::{Transport, TransportStats, PipelinedTransport};
+#[cfg(any(test, feature = "test-mock"))]
+pub use mock::{MockPipelinedTransport, MockState, MockTransport};
 pub use serial::SerialTransport;
+pub use traits::{PipelinedTransport, Transport, TransportStats};
 #[cfg(feature = "usb")]
 pub use usb::UsbTransport;
 #[cfg(feature = "usb")]
-pub use usb_iso::{IsoTransport, IsoStats, IsoStatsSnapshot,
-                  WaveformDevice, WaveformError, CapabilitiesView, ChannelStateView};
+pub use usb_iso::{
+    CapabilitiesView, ChannelStateView, IsoStats, IsoStatsSnapshot, IsoTransport, WaveformDevice,
+    WaveformError,
+};
 #[cfg(feature = "usb")]
 pub use usb_loopback::UsbLoopbackTransport;
 #[cfg(feature = "usb")]
 pub use usb_loopback_pipelined::PipelinedUsbLoopbackTransport;
-#[cfg(any(test, feature = "test-mock"))]
-pub use mock::{MockTransport, MockState, MockPipelinedTransport};
 
 use crate::protocol::{Command, Status};
 use anyhow::Result;
@@ -57,13 +59,9 @@ pub fn create_transport(
     baud_rate: u32,
 ) -> Result<Box<dyn Transport>> {
     match transport_type {
-        TransportType::Serial => {
-            Ok(Box::new(SerialTransport::new(device_path, baud_rate)?))
-        }
+        TransportType::Serial => Ok(Box::new(SerialTransport::new(device_path, baud_rate)?)),
         #[cfg(feature = "usb")]
-        TransportType::Usb => {
-            Ok(Box::new(UsbTransport::new()?))
-        }
+        TransportType::Usb => Ok(Box::new(UsbTransport::new()?)),
     }
 }
 

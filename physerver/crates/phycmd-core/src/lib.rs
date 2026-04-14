@@ -16,29 +16,31 @@
 //! stats/jitter accounting, pyo3 bindings) live in sibling crates
 //! that depend on this one.
 
-pub mod protocol;
-pub mod transport;
-pub mod rt_setup;
-pub mod staging;
-pub mod status_bus;
-pub mod stats;
 pub mod config;
+pub mod protocol;
+pub mod rt_setup;
 pub mod scheduler;
+pub mod staging;
+pub mod stats;
+pub mod status_bus;
+pub mod transport;
 pub mod waveforms;
 
 // Common re-exports to keep downstream users' imports short.
-pub use protocol::{Command, Status, CommandFlags, StatusFlags, MESSAGE_SIZE};
-pub use protocol::{WaveShape, ChannelKind, InputSrc, PulseEdge,
-                   Capabilities, ChannelState,
-                   WaveBuiltinSpec, WaveArbHeader, WaveLutSpec,
-                   WaveThresholdSpec, WavePulseSpec, WavePidSpec,
-                   channel_id, channel_id_from_name};
-pub use transport::{Transport, TransportStats, TransportType, SerialTransport, PipelinedTransport};
-pub use staging::{CommandStaging, WriteMode, StagingError};
-pub use status_bus::{StatusBus, StatusFrame};
-pub use stats::{RtStats, RtStatsSnapshot, JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
 pub use config::{RtConfig, RtConfigError};
+pub use protocol::{
+    channel_id, channel_id_from_name, Capabilities, ChannelKind, ChannelState, InputSrc, PulseEdge,
+    WaveArbHeader, WaveBuiltinSpec, WaveLutSpec, WavePidSpec, WavePulseSpec, WaveShape,
+    WaveThresholdSpec,
+};
+pub use protocol::{Command, CommandFlags, Status, StatusFlags, MESSAGE_SIZE};
 pub use scheduler::{RtScheduler, RtSchedulerStopHandle};
+pub use staging::{CommandStaging, StagingError, WriteMode};
+pub use stats::{RtStats, RtStatsSnapshot, JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
+pub use status_bus::{StatusBus, StatusFrame};
+pub use transport::{
+    PipelinedTransport, SerialTransport, Transport, TransportStats, TransportType,
+};
 pub use waveforms::{WaveformBank, WaveformBankSnapshot, WaveformShape, WaveformSpec};
 
 #[cfg(feature = "usb")]

@@ -65,23 +65,23 @@ impl RtSchedulerStopHandle {
 // -------------------------------------------------------------------------
 
 pub struct RtScheduler {
-    config:    RtConfig,
-    staging:   Arc<CommandStaging>,
-    bus:       Arc<StatusBus>,
-    stats:     Arc<RtStats>,
+    config: RtConfig,
+    staging: Arc<CommandStaging>,
+    bus: Arc<StatusBus>,
+    stats: Arc<RtStats>,
     transport_sync: Option<Box<dyn Transport>>,
     transport_pipe: Option<Box<dyn PipelinedTransport>>,
-    stop:      Arc<AtomicBool>,
+    stop: Arc<AtomicBool>,
 }
 
 impl RtScheduler {
     /// Construct a scheduler with a synchronous transport
     /// (write+read blocking per tick).
     pub fn new(
-        config:    RtConfig,
-        staging:   Arc<CommandStaging>,
-        bus:       Arc<StatusBus>,
-        stats:     Arc<RtStats>,
+        config: RtConfig,
+        staging: Arc<CommandStaging>,
+        bus: Arc<StatusBus>,
+        stats: Arc<RtStats>,
         transport: Box<dyn Transport>,
     ) -> Self {
         Self {
@@ -98,10 +98,10 @@ impl RtScheduler {
     /// Construct a scheduler with a pipelined transport
     /// (submit/reap overlapped with sleep).
     pub fn new_pipelined(
-        config:    RtConfig,
-        staging:   Arc<CommandStaging>,
-        bus:       Arc<StatusBus>,
-        stats:     Arc<RtStats>,
+        config: RtConfig,
+        staging: Arc<CommandStaging>,
+        bus: Arc<StatusBus>,
+        stats: Arc<RtStats>,
         transport: Box<dyn PipelinedTransport>,
     ) -> Self {
         Self {
@@ -118,9 +118,7 @@ impl RtScheduler {
     /// Return a handle that can be used to request loop termination
     /// from another thread.
     pub fn stop_handle(&self) -> RtSchedulerStopHandle {
-        RtSchedulerStopHandle {
-            flag: Arc::clone(&self.stop),
-        }
+        RtSchedulerStopHandle { flag: Arc::clone(&self.stop) }
     }
 
     /// Run the scheduler loop on the *current* thread until
@@ -153,11 +151,11 @@ impl RtScheduler {
         if self.config.enable_rt {
             let rt_cfg = crate::rt_setup::RtConfig {
                 enable_rt_scheduler: true,
-                rt_priority:         self.config.rt_priority,
-                lock_memory:         self.config.lock_memory,
-                set_cpu_affinity:    self.config.cpu_affinity.is_some(),
-                cpu_core:            self.config.cpu_affinity,
-                set_dma_latency:     self.config.dma_latency_us.is_some(),
+                rt_priority: self.config.rt_priority,
+                lock_memory: self.config.lock_memory,
+                set_cpu_affinity: self.config.cpu_affinity.is_some(),
+                cpu_core: self.config.cpu_affinity,
+                set_dma_latency: self.config.dma_latency_us.is_some(),
             };
             if let Err(e) = crate::rt_setup::apply_rt_optimizations(&rt_cfg) {
                 warn!("failed to apply some RT optimisations: {}", e);
@@ -179,14 +177,14 @@ impl RtScheduler {
 
     fn run_sync(&self, transport: &mut dyn Transport) -> Result<()> {
         let period_ns = self.config.tick_period().as_nanos() as i64;
-        let start_ns  = now_monotonic_ns();
+        let start_ns = now_monotonic_ns();
         info!(
             "RtScheduler running (sync): rate={} Hz, period={} ns",
             self.config.rate_hz, period_ns
         );
 
         let mut tick_index: u64 = 0;
-        let mut cmd_seq:    u64 = 0;
+        let mut cmd_seq: u64 = 0;
 
         loop {
             if self.stop.load(Ordering::Acquire) {
@@ -201,8 +199,8 @@ impl RtScheduler {
             }
 
             let tick_sent_ns = now_monotonic_ns();
-            let jitter_ns    = tick_sent_ns - tick_expected_ns;
-            let jitter_us    = clamp_to_i32(jitter_ns / 1_000);
+            let jitter_ns = tick_sent_ns - tick_expected_ns;
+            let jitter_us = clamp_to_i32(jitter_ns / 1_000);
 
             let missed_prior = if jitter_ns > period_ns {
                 let n = (jitter_ns / period_ns) as u64;
@@ -226,9 +224,15 @@ impl RtScheduler {
                     self.stats.record_ok(latency_us, jitter_us);
                     let wire_seq = status.seq_num;
                     self.bus.publish(StatusFrame {
-                        status, cmd_seq, wire_seq, tick_index,
-                        tick_expected_ns, tick_sent_ns, tick_recv_ns,
-                        latency_us, jitter_us,
+                        status,
+                        cmd_seq,
+                        wire_seq,
+                        tick_index,
+                        tick_expected_ns,
+                        tick_sent_ns,
+                        tick_recv_ns,
+                        latency_us,
+                        jitter_us,
                         missed_ticks_prior: missed_prior,
                     });
                 }
@@ -262,26 +266,26 @@ impl RtScheduler {
 
     fn run_pipelined(&self, transport: &mut dyn PipelinedTransport) -> Result<()> {
         let period_ns = self.config.tick_period().as_nanos() as i64;
-        let start_ns  = now_monotonic_ns();
+        let start_ns = now_monotonic_ns();
         info!(
             "RtScheduler running (pipelined): rate={} Hz, period={} ns",
             self.config.rate_hz, period_ns
         );
 
         let mut tick_index: u64 = 0;
-        let mut cmd_seq:    u64 = 0;
+        let mut cmd_seq: u64 = 0;
 
         // State for the 1-tick-behind reap pattern. `None` means
         // no transfer is in flight (true at the very first tick and
         // after a submit failure).
         struct InFlight {
-            write_gen:        u64,
+            write_gen: u64,
             tick_submitted_ns: i64,
             tick_expected_ns: i64,
-            cmd_seq:          u64,
-            tick_index:       u64,
-            missed_prior:     u32,
-            jitter_us:        i32,
+            cmd_seq: u64,
+            tick_index: u64,
+            missed_prior: u32,
+            jitter_us: i32,
         }
         let mut in_flight: Option<InFlight> = None;
 
@@ -295,9 +299,8 @@ impl RtScheduler {
                             let ifr = in_flight.take().unwrap();
                             self.staging.mark_sent(ifr.write_gen);
                             let tick_recv_ns = now_monotonic_ns();
-                            let latency_us = clamp_to_u32(
-                                (tick_recv_ns - ifr.tick_submitted_ns) / 1_000,
-                            );
+                            let latency_us =
+                                clamp_to_u32((tick_recv_ns - ifr.tick_submitted_ns) / 1_000);
                             self.stats.record_ok(latency_us, ifr.jitter_us);
                             let wire_seq = status.seq_num;
                             self.bus.publish(StatusFrame {
@@ -350,9 +353,8 @@ impl RtScheduler {
                     Ok(status) => {
                         let tick_recv_ns = now_monotonic_ns();
                         self.staging.mark_sent(ifr.write_gen);
-                        let latency_us = clamp_to_u32(
-                            (tick_recv_ns - ifr.tick_submitted_ns) / 1_000,
-                        );
+                        let latency_us =
+                            clamp_to_u32((tick_recv_ns - ifr.tick_submitted_ns) / 1_000);
                         self.stats.record_ok(latency_us, ifr.jitter_us);
                         let wire_seq = status.seq_num;
                         self.bus.publish(StatusFrame {
@@ -428,19 +430,12 @@ fn now_monotonic_ns() -> i64 {
 /// `io::Error` with the POSIX errno on any other failure.
 #[cfg(target_os = "linux")]
 fn sleep_until_abs_monotonic(target_ns: i64) -> std::io::Result<()> {
-    let ts = libc::timespec {
-        tv_sec:  target_ns / 1_000_000_000,
-        tv_nsec: target_ns % 1_000_000_000,
-    };
+    let ts =
+        libc::timespec { tv_sec: target_ns / 1_000_000_000, tv_nsec: target_ns % 1_000_000_000 };
     // SAFETY: `&ts` is a valid pointer to an initialised `timespec`.
     // clock_nanosleep is a thread-safe libc call.
     let rc = unsafe {
-        libc::clock_nanosleep(
-            libc::CLOCK_MONOTONIC,
-            libc::TIMER_ABSTIME,
-            &ts,
-            std::ptr::null_mut(),
-        )
+        libc::clock_nanosleep(libc::CLOCK_MONOTONIC, libc::TIMER_ABSTIME, &ts, std::ptr::null_mut())
     };
     if rc == 0 {
         Ok(())
@@ -479,14 +474,24 @@ fn sleep_until_abs_monotonic(target_ns: i64) -> std::io::Result<()> {
 
 #[inline]
 fn clamp_to_u32(v: i64) -> u32 {
-    if v < 0 { 0 } else if v > u32::MAX as i64 { u32::MAX } else { v as u32 }
+    if v < 0 {
+        0
+    } else if v > u32::MAX as i64 {
+        u32::MAX
+    } else {
+        v as u32
+    }
 }
 
 #[inline]
 fn clamp_to_i32(v: i64) -> i32 {
-    if v < i32::MIN as i64 { i32::MIN }
-    else if v > i32::MAX as i64 { i32::MAX }
-    else { v as i32 }
+    if v < i32::MIN as i64 {
+        i32::MIN
+    } else if v > i32::MAX as i64 {
+        i32::MAX
+    } else {
+        v as i32
+    }
 }
 
 // =========================================================================
@@ -525,9 +530,9 @@ mod tests {
             ..Default::default()
         }));
         let transport = Box::new(MockTransport::with_state(Arc::clone(&mock_state)));
-        let staging   = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
-        let bus       = Arc::new(StatusBus::new(1024));
-        let stats     = Arc::new(RtStats::new());
+        let staging = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
+        let bus = Arc::new(StatusBus::new(1024));
+        let stats = Arc::new(RtStats::new());
 
         let config = RtConfig {
             rate_hz,
@@ -563,11 +568,7 @@ mod tests {
         assert!(result.is_ok());
 
         let snap = stats.snapshot();
-        assert!(
-            snap.tick_ok > 10,
-            "expected ≥10 ticks in 50ms at 1kHz, got {}",
-            snap.tick_ok
-        );
+        assert!(snap.tick_ok > 10, "expected ≥10 ticks in 50ms at 1kHz, got {}", snap.tick_ok);
     }
 
     #[test]
@@ -658,11 +659,7 @@ mod tests {
         h.join().unwrap().unwrap();
 
         let snap = stats.snapshot();
-        assert!(
-            snap.missed_ticks > 0,
-            "expected missed ticks, got {}",
-            snap.missed_ticks
-        );
+        assert!(snap.missed_ticks > 0, "expected missed ticks, got {}", snap.missed_ticks);
         // The number of OK ticks should be bounded by
         // elapsed / mock_latency ≈ 100ms / 500us = 200 at most.
         assert!(snap.tick_ok <= 250);
@@ -677,9 +674,9 @@ mod tests {
             ..Default::default()
         }));
         let transport = Box::new(MockTransport::with_state(Arc::clone(&mock_state)));
-        let staging   = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
-        let bus       = Arc::new(StatusBus::new(1024));
-        let stats     = Arc::new(RtStats::new());
+        let staging = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
+        let bus = Arc::new(StatusBus::new(1024));
+        let stats = Arc::new(RtStats::new());
 
         let config = RtConfig {
             rate_hz: 1_000,
@@ -777,10 +774,7 @@ mod tests {
             "too many exchanges — scheduler is storming the transport ({})",
             mock.call_count
         );
-        assert!(
-            snap.missed_ticks > 0,
-            "expected missed ticks under overload"
-        );
+        assert!(snap.missed_ticks > 0, "expected missed ticks under overload");
     }
 
     // =================================================================
@@ -805,8 +799,8 @@ mod tests {
         }));
         let transport = Box::new(MockPipelinedTransport::with_state(Arc::clone(&mock_state)));
         let staging = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
-        let bus     = Arc::new(StatusBus::new(1024));
-        let stats   = Arc::new(RtStats::new());
+        let bus = Arc::new(StatusBus::new(1024));
+        let stats = Arc::new(RtStats::new());
 
         let config = RtConfig {
             rate_hz,

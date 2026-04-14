@@ -39,8 +39,8 @@
 //! The CRC-16-CCITT in the PhyCMD-64 protocol still catches in-flight
 //! bit-errors, exposed as [`IsoStats::iso_in_crc_errors`].
 
-use crate::protocol::{decode_status, encode_command, Command, MESSAGE_SIZE};
 use crate::protocol::wave_types::*;
+use crate::protocol::{decode_status, encode_command, Command, MESSAGE_SIZE};
 use crate::staging::CommandStaging;
 use crate::stats::RtStats;
 use crate::status_bus::{StatusBus, StatusFrame};
@@ -355,10 +355,8 @@ impl IsoTransport {
             start: Instant::now(),
         });
 
-        let waveform_dev = Arc::new(WaveformDevice {
-            dev_handle,
-            _ctx_keepalive: Arc::clone(&inner),
-        });
+        let waveform_dev =
+            Arc::new(WaveformDevice { dev_handle, _ctx_keepalive: Arc::clone(&inner) });
 
         let inner_for_thread = Arc::clone(&inner);
         let io_thread = std::thread::Builder::new()
@@ -389,7 +387,11 @@ impl IsoTransport {
     /// libusb EP0 control transfers and must NOT be called from the
     /// iso I/O thread.
     pub fn waveform_dev(&self) -> Arc<WaveformDevice> {
-        Arc::clone(self.waveform_dev.as_ref().expect("WaveformDevice exists while IsoTransport is alive"))
+        Arc::clone(
+            self.waveform_dev
+                .as_ref()
+                .expect("WaveformDevice exists while IsoTransport is alive"),
+        )
     }
 
     /// Shared handle to the waveform generator. The web layer mutates
@@ -492,10 +494,7 @@ fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
         for _ in 0..NUM_TRANSFERS {
             // IN
             let buf_in = vec![0u8; PKTS_PER_TRANSFER * ISO_PKT_SIZE];
-            let cb_in = Box::new(CallbackCtx {
-                inner: Arc::clone(&inner),
-                dir_in: true,
-            });
+            let cb_in = Box::new(CallbackCtx { inner: Arc::clone(&inner), dir_in: true });
             let xfer_in = alloc_iso_transfer(
                 dev_handle,
                 EP_ISO_IN,
@@ -515,10 +514,7 @@ fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
                 buf_out[off..off + MESSAGE_SIZE].copy_from_slice(&default_cmd);
                 // bytes [off+64..off+256] stay zero (padding contract)
             }
-            let cb_out = Box::new(CallbackCtx {
-                inner: Arc::clone(&inner),
-                dir_in: false,
-            });
+            let cb_out = Box::new(CallbackCtx { inner: Arc::clone(&inner), dir_in: false });
             let xfer_out = alloc_iso_transfer(
                 dev_handle,
                 EP_ISO_OUT,
@@ -618,10 +614,8 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
         return;
     }
 
-    let pkt_descs = std::slice::from_raw_parts(
-        xfer.iso_packet_desc.as_ptr(),
-        xfer.num_iso_packets as usize,
-    );
+    let pkt_descs =
+        std::slice::from_raw_parts(xfer.iso_packet_desc.as_ptr(), xfer.num_iso_packets as usize);
 
     if ctx.dir_in {
         // Compute inter-URB jitter once per transfer. Expected period
@@ -680,8 +674,7 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
         let dac1_w = *inner.waveforms.dac1.read();
         let pwm0_w = *inner.waveforms.pwm0.read();
         let pwm1_w = *inner.waveforms.pwm1.read();
-        let any_active =
-            dac0_w.enabled || dac1_w.enabled || pwm0_w.enabled || pwm1_w.enabled;
+        let any_active = dac0_w.enabled || dac1_w.enabled || pwm0_w.enabled || pwm1_w.enabled;
 
         // When detailed telemetry is enabled, bump wire seq_num per
         // packet (8 kHz) and stamp the send timestamp so the IN
@@ -691,25 +684,41 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
         let detail = inner.telemetry_detail_enabled.load(Ordering::Relaxed);
         let t0 = if any_active {
             inner.waveforms.next_packet_idx(PKTS_PER_TRANSFER as u64)
-        } else { 0 };
+        } else {
+            0
+        };
         const SR_HZ: f32 = (PKTS_PER_TRANSFER * 1000) as f32; // 8000 Hz on HS
-        let now_ns = if detail { inner.start.elapsed().as_nanos() as i64 } else { 0 };
+        let now_ns = if detail {
+            inner.start.elapsed().as_nanos() as i64
+        } else {
+            0
+        };
         for p in 0..PKTS_PER_TRANSFER {
             let off = p * ISO_PKT_SIZE;
-            if off + MESSAGE_SIZE > buf.len() { break; }
+            if off + MESSAGE_SIZE > buf.len() {
+                break;
+            }
             let mut cmd = base_cmd.clone();
             if detail {
-                let wire_seq = inner.out_seq_counter
-                    .fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+                let wire_seq =
+                    inner.out_seq_counter.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
                 inner.out_seq_sent_ns[wire_seq as usize].store(now_ns, Ordering::Relaxed);
                 cmd.seq_num = wire_seq;
             }
             if any_active {
                 let t = t0 + p as u64;
-                if dac0_w.enabled { cmd.dac[0] = dac0_w.sample(t, SR_HZ); }
-                if dac1_w.enabled { cmd.dac[1] = dac1_w.sample(t, SR_HZ); }
-                if pwm0_w.enabled { cmd.pwm[0] = pwm0_w.sample(t, SR_HZ); }
-                if pwm1_w.enabled { cmd.pwm[1] = pwm1_w.sample(t, SR_HZ); }
+                if dac0_w.enabled {
+                    cmd.dac[0] = dac0_w.sample(t, SR_HZ);
+                }
+                if dac1_w.enabled {
+                    cmd.dac[1] = dac1_w.sample(t, SR_HZ);
+                }
+                if pwm0_w.enabled {
+                    cmd.pwm[0] = pwm0_w.sample(t, SR_HZ);
+                }
+                if pwm1_w.enabled {
+                    cmd.pwm[1] = pwm1_w.sample(t, SR_HZ);
+                }
             }
             let encoded = encode_command(&cmd);
             buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
@@ -778,7 +787,7 @@ unsafe fn handle_in_packet(
         tick_expected_ns: now_ns,
         tick_sent_ns: now_ns,
         tick_recv_ns: now_ns,
-        latency_us: 0,   // populated by the iso stats path below, not this per-frame view
+        latency_us: 0, // populated by the iso stats path below, not this per-frame view
         jitter_us: 0,
         missed_ticks_prior: 0,
     };
@@ -796,8 +805,7 @@ unsafe fn handle_in_packet(
     // with the flag off seq_num is 0 anyway so the lookup would
     // always miss.
     let latency_us: u32 = if inner.telemetry_detail_enabled.load(Ordering::Relaxed) {
-        let sent_ns = inner.out_seq_sent_ns[wire_seq_echo as usize]
-            .load(Ordering::Relaxed);
+        let sent_ns = inner.out_seq_sent_ns[wire_seq_echo as usize].load(Ordering::Relaxed);
         if sent_ns > 0 && now_ns >= sent_ns {
             (((now_ns - sent_ns) / 1_000) as u32).min(u32::MAX / 2)
         } else {
@@ -884,10 +892,18 @@ pub struct ChannelStateView {
 
 fn shape_name(s: u8) -> &'static str {
     match s {
-        0  => "off",       1  => "dc",        2  => "sine",      3  => "square",
-        4  => "triangle",  5  => "sawtooth",  6  => "arbitrary",
-        16 => "lut",       17 => "threshold", 18 => "pulse_trig", 19 => "pid",
-        _  => "unknown",
+        0 => "off",
+        1 => "dc",
+        2 => "sine",
+        3 => "square",
+        4 => "triangle",
+        5 => "sawtooth",
+        6 => "arbitrary",
+        16 => "lut",
+        17 => "threshold",
+        18 => "pulse_trig",
+        19 => "pid",
+        _ => "unknown",
     }
 }
 
@@ -915,13 +931,13 @@ impl WaveformDevice {
         let n = unsafe {
             ffi::libusb_control_transfer(
                 self.dev_handle,
-                0xC0,                  // bmRequestType: vendor IN device
+                0xC0, // bmRequestType: vendor IN device
                 b_request,
-                0,                     // wValue
+                0, // wValue
                 w_index,
                 buf.as_mut_ptr(),
                 length,
-                1000,                  // timeout ms
+                1000, // timeout ms
             )
         };
         if n < 0 {
@@ -939,7 +955,7 @@ impl WaveformDevice {
         let n = unsafe {
             ffi::libusb_control_transfer(
                 self.dev_handle,
-                0x40,                  // bmRequestType: vendor OUT device
+                0x40, // bmRequestType: vendor OUT device
                 b_request,
                 0,
                 w_index,
@@ -956,27 +972,32 @@ impl WaveformDevice {
             });
         }
         if (n as usize) != data.len() {
-            return Err(WaveformError::PayloadSize {
-                expected: data.len(),
-                got: n as usize,
-            });
+            return Err(WaveformError::PayloadSize { expected: data.len(), got: n as usize });
         }
         Ok(())
     }
 
     pub fn caps(&self) -> Result<CapabilitiesView, WaveformError> {
         let raw = self.ctrl_in(VREQ_GEN_GET_CAPS, 0, 32)?;
-        if raw.len() < 32 { return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() }); }
+        if raw.len() < 32 {
+            return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() });
+        }
         // SAFETY: Capabilities is repr(C, packed) and exactly 32 bytes; layout matches the wire.
         let c: Capabilities = unsafe { std::ptr::read_unaligned(raw.as_ptr() as *const _) };
         Ok(CapabilitiesView {
             protocol_version: c.protocol_version,
-            firmware_major:   c.firmware_major,
-            firmware_minor:   c.firmware_minor,
-            num_dac: c.num_dac, num_pwm: c.num_pwm, num_dout: c.num_dout,
-            num_din: c.num_din, num_adc: c.num_adc,
-            modes_dac: c.modes_dac, modes_pwm: c.modes_pwm, modes_dout: c.modes_dout,
-            modes_din: c.modes_din, modes_adc: c.modes_adc,
+            firmware_major: c.firmware_major,
+            firmware_minor: c.firmware_minor,
+            num_dac: c.num_dac,
+            num_pwm: c.num_pwm,
+            num_dout: c.num_dout,
+            num_din: c.num_din,
+            num_adc: c.num_adc,
+            modes_dac: c.modes_dac,
+            modes_pwm: c.modes_pwm,
+            modes_dout: c.modes_dout,
+            modes_din: c.modes_din,
+            modes_adc: c.modes_adc,
             max_dac_sample_rate_hz: c.max_dac_sample_rate_hz,
             max_arb_buffer_samples: c.max_arb_buffer_samples,
         })
@@ -986,7 +1007,9 @@ impl WaveformDevice {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
         let raw = self.ctrl_in(VREQ_GEN_GET_STATE, id, 32)?;
-        if raw.len() < 32 { return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() }); }
+        if raw.len() < 32 {
+            return Err(WaveformError::PayloadSize { expected: 32, got: raw.len() });
+        }
         let s: ChannelState = unsafe { std::ptr::read_unaligned(raw.as_ptr() as *const _) };
         Ok(ChannelStateView {
             channel_kind: s.channel_kind,
@@ -1029,47 +1052,92 @@ impl WaveformDevice {
     pub fn play_builtin(&self, channel: &str, spec: &WaveBuiltinSpec) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
-        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WaveBuiltinSpec>()) };
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                spec as *const _ as *const u8,
+                std::mem::size_of::<WaveBuiltinSpec>(),
+            )
+        };
         self.ctrl_out(VREQ_GEN_PLAY_BUILTIN, id, bytes)
     }
 
-    pub fn play_arbitrary(&self, channel: &str, header: &WaveArbHeader, samples: &[i16]) -> Result<(), WaveformError> {
+    pub fn play_arbitrary(
+        &self,
+        channel: &str,
+        header: &WaveArbHeader,
+        samples: &[i16],
+    ) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
         let mut payload = Vec::with_capacity(8 + samples.len() * 2);
-        payload.extend_from_slice(unsafe { std::slice::from_raw_parts(header as *const _ as *const u8, 8) });
-        for s in samples { payload.extend_from_slice(&s.to_le_bytes()); }
+        payload.extend_from_slice(unsafe {
+            std::slice::from_raw_parts(header as *const _ as *const u8, 8)
+        });
+        for s in samples {
+            payload.extend_from_slice(&s.to_le_bytes());
+        }
         self.ctrl_out(VREQ_GEN_PLAY_ARBITRARY, id, &payload)
     }
 
-    pub fn play_lut(&self, channel: &str, header: &WaveLutSpec, entries: &[i16]) -> Result<(), WaveformError> {
+    pub fn play_lut(
+        &self,
+        channel: &str,
+        header: &WaveLutSpec,
+        entries: &[i16],
+    ) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
         let mut payload = Vec::with_capacity(12 + entries.len() * 2);
-        payload.extend_from_slice(unsafe { std::slice::from_raw_parts(header as *const _ as *const u8, 12) });
-        for e in entries { payload.extend_from_slice(&e.to_le_bytes()); }
+        payload.extend_from_slice(unsafe {
+            std::slice::from_raw_parts(header as *const _ as *const u8, 12)
+        });
+        for e in entries {
+            payload.extend_from_slice(&e.to_le_bytes());
+        }
         self.ctrl_out(VREQ_GEN_PLAY_LUT, id, &payload)
     }
 
-    pub fn play_threshold(&self, channel: &str, spec: &WaveThresholdSpec) -> Result<(), WaveformError> {
+    pub fn play_threshold(
+        &self,
+        channel: &str,
+        spec: &WaveThresholdSpec,
+    ) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
-        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WaveThresholdSpec>()) };
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                spec as *const _ as *const u8,
+                std::mem::size_of::<WaveThresholdSpec>(),
+            )
+        };
         self.ctrl_out(VREQ_GEN_PLAY_THRESHOLD, id, bytes)
     }
 
-    pub fn play_pulse_trig(&self, channel: &str, spec: &WavePulseSpec) -> Result<(), WaveformError> {
+    pub fn play_pulse_trig(
+        &self,
+        channel: &str,
+        spec: &WavePulseSpec,
+    ) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
-        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WavePulseSpec>()) };
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                spec as *const _ as *const u8,
+                std::mem::size_of::<WavePulseSpec>(),
+            )
+        };
         self.ctrl_out(VREQ_GEN_PLAY_PULSE_TRIG, id, bytes)
     }
 
     pub fn play_pid(&self, channel: &str, spec: &WavePidSpec) -> Result<(), WaveformError> {
         let id = channel_id_from_name(channel)
             .ok_or_else(|| WaveformError::UnknownChannel(channel.to_string()))?;
-        let bytes = unsafe { std::slice::from_raw_parts(spec as *const _ as *const u8, std::mem::size_of::<WavePidSpec>()) };
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                spec as *const _ as *const u8,
+                std::mem::size_of::<WavePidSpec>(),
+            )
+        };
         self.ctrl_out(VREQ_GEN_PLAY_PID, id, bytes)
     }
 }
-

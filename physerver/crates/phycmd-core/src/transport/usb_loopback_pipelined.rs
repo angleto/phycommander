@@ -18,11 +18,11 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tracing::{debug, info, trace, warn};
 
-const VENDOR_ID:  u16 = 0x2341;
+const VENDOR_ID: u16 = 0x2341;
 const PRODUCT_ID: u16 = 0x003e;
-const EP_OUT:     u8  = 0x02;
-const EP_IN:      u8  = 0x81;
-const INTERFACE:  u8  = 0;
+const EP_OUT: u8 = 0x02;
+const EP_IN: u8 = 0x81;
+const INTERFACE: u8 = 0;
 const IO_TIMEOUT: Duration = Duration::from_millis(50);
 
 // -------------------------------------------------------------------------
@@ -31,7 +31,7 @@ const IO_TIMEOUT: Duration = Duration::from_millis(50);
 
 struct IoRequest {
     encoded: [u8; MESSAGE_SIZE],
-    cmd:     Command,
+    cmd: Command,
 }
 
 // -------------------------------------------------------------------------
@@ -39,9 +39,9 @@ struct IoRequest {
 // -------------------------------------------------------------------------
 
 fn io_helper(
-    handle:  DeviceHandle<GlobalContext>,
-    rx_cmd:  Receiver<IoRequest>,
-    tx_res:  Sender<Result<Status>>,
+    handle: DeviceHandle<GlobalContext>,
+    rx_cmd: Receiver<IoRequest>,
+    tx_res: Sender<Result<Status>>,
 ) {
     let mut stats_sent: u64 = 0;
     let mut stats_recv: u64 = 0;
@@ -61,17 +61,14 @@ fn io_helper(
         // Synchronous USB exchange — this is the only place in the
         // system where we block on kernel I/O.
         let result = (|| -> Result<Status> {
-            let written = handle
-                .write_bulk(EP_OUT, &req.encoded, IO_TIMEOUT)
-                .context("write_bulk")?;
+            let written =
+                handle.write_bulk(EP_OUT, &req.encoded, IO_TIMEOUT).context("write_bulk")?;
             if written != MESSAGE_SIZE {
                 anyhow::bail!("short write: {written}/{MESSAGE_SIZE}");
             }
             stats_sent += 1;
 
-            let read = handle
-                .read_bulk(EP_IN, &mut read_buf, IO_TIMEOUT)
-                .context("read_bulk")?;
+            let read = handle.read_bulk(EP_IN, &mut read_buf, IO_TIMEOUT).context("read_bulk")?;
             if read != MESSAGE_SIZE {
                 anyhow::bail!("short read: {read}/{MESSAGE_SIZE}");
             }
@@ -90,17 +87,14 @@ fn io_helper(
             // Synthesise Status from the echoed command (same logic
             // as the sync UsbLoopbackTransport).
             Ok(Status {
-                digital_in:  req.cmd.digital_out,
+                digital_in: req.cmd.digital_out,
                 digital_out: req.cmd.digital_out,
                 adc: [req.cmd.dac[0], req.cmd.dac[1], 0, 0, 0, 0, 0, 0],
-                flags: StatusFlags {
-                    usb_configured: true,
-                    ..Default::default()
-                },
-                seq_num:      req.cmd.seq_num,
+                flags: StatusFlags { usb_configured: true, ..Default::default() },
+                seq_num: req.cmd.seq_num,
                 loop_time_us: 0,
-                uptime_ms:    0,
-                error_count:  0,
+                uptime_ms: 0,
+                error_count: 0,
             })
         })();
 
@@ -112,10 +106,7 @@ fn io_helper(
         }
     }
 
-    debug!(
-        "io_helper exiting: {} sent, {} received",
-        stats_sent, stats_recv
-    );
+    debug!("io_helper exiting: {} sent, {} received", stats_sent, stats_recv);
 
     // Release the USB interface on exit.
     let _ = handle.release_interface(INTERFACE);
@@ -126,12 +117,12 @@ fn io_helper(
 // -------------------------------------------------------------------------
 
 pub struct PipelinedUsbLoopbackTransport {
-    tx_cmd:      Sender<IoRequest>,
-    rx_res:      Receiver<Result<Status>>,
-    io_thread:   Option<JoinHandle<()>>,
-    stats:       TransportStats,
+    tx_cmd: Sender<IoRequest>,
+    rx_res: Receiver<Result<Status>>,
+    io_thread: Option<JoinHandle<()>>,
+    stats: TransportStats,
     device_info: String,
-    in_flight:   bool,
+    in_flight: bool,
 }
 
 impl fmt::Debug for PipelinedUsbLoopbackTransport {
@@ -146,18 +137,11 @@ impl fmt::Debug for PipelinedUsbLoopbackTransport {
 impl PipelinedUsbLoopbackTransport {
     /// Open the PhyCommander device and spawn the I/O helper thread.
     pub fn new() -> Result<Self> {
-        info!(
-            "PipelinedUsbLoopbackTransport: opening {:04x}:{:04x}",
-            VENDOR_ID, PRODUCT_ID
-        );
+        info!("PipelinedUsbLoopbackTransport: opening {:04x}:{:04x}", VENDOR_ID, PRODUCT_ID);
 
-        let handle = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "device {:04x}:{:04x} not found",
-                    VENDOR_ID, PRODUCT_ID
-                )
-            })?;
+        let handle = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID).ok_or_else(|| {
+            anyhow::anyhow!("device {:04x}:{:04x} not found", VENDOR_ID, PRODUCT_ID)
+        })?;
 
         let _ = handle.set_auto_detach_kernel_driver(true);
         handle
@@ -167,10 +151,7 @@ impl PipelinedUsbLoopbackTransport {
         let (tx_cmd, rx_cmd) = bounded::<IoRequest>(1);
         let (tx_res, rx_res) = bounded::<Result<Status>>(1);
 
-        let device_info = format!(
-            "USB-pipelined {:04x}:{:04x}",
-            VENDOR_ID, PRODUCT_ID
-        );
+        let device_info = format!("USB-pipelined {:04x}:{:04x}", VENDOR_ID, PRODUCT_ID);
 
         let io_thread = thread::Builder::new()
             .name("phycmd-usb-io".to_string())
@@ -198,10 +179,7 @@ impl PipelinedTransport for PipelinedUsbLoopbackTransport {
             );
         }
         let encoded = protocol::encode_command(cmd);
-        let req = IoRequest {
-            encoded,
-            cmd: cmd.clone(),
-        };
+        let req = IoRequest { encoded, cmd: cmd.clone() };
         self.tx_cmd
             .send(req)
             .map_err(|_| anyhow::anyhow!("I/O helper thread is dead"))?;
@@ -213,18 +191,15 @@ impl PipelinedTransport for PipelinedUsbLoopbackTransport {
         if !self.in_flight {
             anyhow::bail!("reap called with no in-flight transfer");
         }
-        let result = self
-            .rx_res
-            .recv_timeout(timeout)
-            .map_err(|e| match e {
-                crossbeam_channel::RecvTimeoutError::Timeout => {
-                    self.stats.timeout_errors += 1;
-                    anyhow::anyhow!("reap timed out after {timeout:?}")
-                }
-                crossbeam_channel::RecvTimeoutError::Disconnected => {
-                    anyhow::anyhow!("I/O helper thread died")
-                }
-            })?;
+        let result = self.rx_res.recv_timeout(timeout).map_err(|e| match e {
+            crossbeam_channel::RecvTimeoutError::Timeout => {
+                self.stats.timeout_errors += 1;
+                anyhow::anyhow!("reap timed out after {timeout:?}")
+            }
+            crossbeam_channel::RecvTimeoutError::Disconnected => {
+                anyhow::anyhow!("I/O helper thread died")
+            }
+        })?;
 
         self.in_flight = false;
 
@@ -269,10 +244,7 @@ impl PipelinedTransport for PipelinedUsbLoopbackTransport {
         self.device_info.clone()
     }
     fn is_connected(&self) -> bool {
-        self.io_thread
-            .as_ref()
-            .map(|h| !h.is_finished())
-            .unwrap_or(false)
+        self.io_thread.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
     }
 }
 
@@ -282,9 +254,9 @@ impl Drop for PipelinedUsbLoopbackTransport {
         // recv() loop. Then join it (with a generous timeout in case
         // it's stuck in a slow USB transfer).
         drop(self.tx_cmd.clone()); // drop the sender
-        // Actually we need to move tx_cmd out. But we can't in Drop.
-        // The real move-out happens when `Self` is dropped — the
-        // Sender field is dropped automatically, closing the channel.
+                                   // Actually we need to move tx_cmd out. But we can't in Drop.
+                                   // The real move-out happens when `Self` is dropped — the
+                                   // Sender field is dropped automatically, closing the channel.
         if let Some(h) = self.io_thread.take() {
             // Give the helper up to 500 ms to finish its current
             // transfer and notice the closed channel.
@@ -292,9 +264,7 @@ impl Drop for PipelinedUsbLoopbackTransport {
         }
         info!(
             "PipelinedUsbLoopbackTransport dropped: sent={} recv={} err={}",
-            self.stats.messages_sent,
-            self.stats.messages_received,
-            self.stats.errors
+            self.stats.messages_sent, self.stats.messages_received, self.stats.errors
         );
     }
 }

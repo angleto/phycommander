@@ -36,24 +36,16 @@ impl SerialPortHandler {
 
         info!("Serial port opened successfully");
 
-        Ok(Self {
-            port,
-            read_buffer: [0u8; MESSAGE_SIZE],
-            stats: SerialStats::default(),
-        })
+        Ok(Self { port, read_buffer: [0u8; MESSAGE_SIZE], stats: SerialStats::default() })
     }
 
     /// Send a command to the device
     pub fn send_command(&mut self, cmd: &Command) -> Result<()> {
         let bytes = protocol::encode_command(cmd);
 
-        self.port
-            .write_all(&bytes)
-            .context("Failed to write command to serial port")?;
+        self.port.write_all(&bytes).context("Failed to write command to serial port")?;
 
-        self.port
-            .flush()
-            .context("Failed to flush serial port")?;
+        self.port.flush().context("Failed to flush serial port")?;
 
         self.stats.messages_sent += 1;
         debug!("Sent command: seq={}", cmd.seq_num);
@@ -72,8 +64,10 @@ impl SerialPortHandler {
         match protocol::decode_status(&self.read_buffer) {
             Ok(status) => {
                 self.stats.messages_received += 1;
-                debug!("Received status: seq={}, loop_time={}µs",
-                       status.seq_num, status.loop_time_us);
+                debug!(
+                    "Received status: seq={}, loop_time={}µs",
+                    status.seq_num, status.loop_time_us
+                );
                 Ok(status)
             }
             Err(e) => {
@@ -110,14 +104,12 @@ impl SerialPortHandler {
 
     /// Set read timeout
     pub fn set_timeout(&mut self, timeout: Duration) -> Result<()> {
-        self.port.set_timeout(timeout)
-            .context("Failed to set timeout")
+        self.port.set_timeout(timeout).context("Failed to set timeout")
     }
 
     /// Get available ports
     pub fn available_ports() -> Result<Vec<String>> {
-        let ports = serialport::available_ports()
-            .context("Failed to enumerate serial ports")?;
+        let ports = serialport::available_ports().context("Failed to enumerate serial ports")?;
 
         Ok(ports.into_iter().map(|p| p.port_name).collect())
     }
@@ -146,11 +138,13 @@ impl SerialPortHandler {
 
 impl Drop for SerialPortHandler {
     fn drop(&mut self) {
-        info!("Closing serial port. Stats: sent={}, received={}, crc_errors={}, timeout_errors={}",
-              self.stats.messages_sent,
-              self.stats.messages_received,
-              self.stats.crc_errors,
-              self.stats.timeout_errors);
+        info!(
+            "Closing serial port. Stats: sent={}, received={}, crc_errors={}, timeout_errors={}",
+            self.stats.messages_sent,
+            self.stats.messages_received,
+            self.stats.crc_errors,
+            self.stats.timeout_errors
+        );
     }
 }
 

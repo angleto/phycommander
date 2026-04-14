@@ -39,7 +39,7 @@ You get an Intel mini-PC, an Arduino Due, a handful of protection components, an
 
 ### A bit of history
 
-PhyCMD started in **2014**. The reference Intel DN2800MT mini-PC, the aluminium chassis, the steel front panel (hand-drawn in AutoCAD — see [`docs/hardware/FrontPanel_2014.dwg`](docs/hardware/FrontPanel_2014.dwg)), and the DB-25 I/O harness all date back to that build. The original software stack was a custom C/C++ bulk-USB service. The Rust `physerver`, the on-chip function generator firmware, the iso-USB transport at 8 kHz, and the browser dashboard you see in these screenshots are a 2026 rewrite that slotted into the existing hardware without a single connector change.
+PhyCMD started in **2014**. The reference Intel DN2800MT mini-PC, the aluminium chassis, the steel front panel (hand-drawn in AutoCAD — see [`docs/hardware/FrontPanel_2014.dwg`](docs/hardware/FrontPanel_2014.dwg)), the DB-25 I/O harness, and the SAM3X8E firmware's I/O core all date back to that build. The original host software was a small custom C/C++ bulk-USB broker. In 2026 the project was extended on both sides without changing the hardware: the firmware kept its proven I/O layer and grew an on-chip function generator + a switch from bulk to isochronous USB at 8 kHz; the host-side broker was replaced by the new Rust `physerver` and the browser dashboard you see in these screenshots.
 
 <p align="center">
   <img src="docs/images/hardware/IMG_0436.jpg" alt="Front panel: 9 × DB-25 female + 3 red push-buttons" width="720"/>

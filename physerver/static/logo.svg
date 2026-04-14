@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none"
      stroke="#667eea" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
-  <title>PhyCommander — Φ monogram with command prompt</title>
-  <!-- Prompt caret: '>' pointing right. Invites a command. -->
-  <polyline points="24,42 54,60 24,78"/>
-  <!-- Φ body: circle + vertical bar threading through it. -->
-  <circle cx="116" cy="60" r="28"/>
-  <line x1="116" y1="26" x2="116" y2="94"/>
+  <title>PhyCommander — Φ emits a command/signal</title>
+  <!-- Φ body: circle + vertical bar threading through it, on the left. -->
+  <circle cx="44" cy="60" r="28"/>
+  <line x1="44" y1="26" x2="44" y2="94"/>
+  <!-- '>' as a signal arrow emanating from the physical world on the right. -->
+  <polyline points="106,42 136,60 106,78"/>
 </svg>

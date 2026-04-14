@@ -382,6 +382,9 @@
         <!-- RT scheduler stats (collapsible, closed by default) -->
         <details class="panel wide" id="rtStatsPanel" data-title="RT Scheduler Stats">
             <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#555;text-transform:uppercase;letter-spacing:.5px;padding:4px 0;border-bottom:2px solid #667eea;user-select:none;">RT Scheduler Stats</summary>
+            <div style="margin-top:10px;display:flex;justify-content:flex-end;">
+                <button id="resetTelemetryBtn" class="fngen-btn" style="font-size:11px;">Reset telemetry</button>
+            </div>
             <div id="rtStatsDisplay" style="margin-top:10px;"><div class="sysinfo-unavailable">Loading...</div></div>
         </details>
 
@@ -1226,7 +1229,7 @@ function renderRtStats(d) {
     }
 
     const total = d.jitter_histogram.reduce((a, b) => a + b, 0);
-    const labels = ['<0us','0-10','10-25','25-50','50-100','100-200','200-500','500-1000','>=1000'];
+    const labels = ['<0','0-10','10-25','25-50','50-100','100-200','200-500','500-1000','>=1000'];
     const histColors = ['#9966ff','#4bc0c0','#4bc0c0','#7bc67e','#ffce56','#ff9f40','#ff6384','#c62828','#c62828'];
 
     let histHtml = '';
@@ -1298,7 +1301,7 @@ function renderRtStats(d) {
                 <div class="sysinfo-row"><span class="label">max</span><span class="value">${d.latency_max_us.toLocaleString()} us</span></div>
             </div>
             <div class="sysinfo-section">
-                <h3>Jitter (server tick deadline)</h3>
+                <h3>Jitter (iso URB cadence, 1 ms expected)</h3>
                 <div class="sysinfo-row"><span class="label">mean abs</span><span class="value">${d.mean_abs_jitter_us.toFixed(1)} us</span></div>
                 <div class="sysinfo-row"><span class="label">min</span><span class="value">${d.jitter_min_us} us</span></div>
                 <div class="sysinfo-row"><span class="label">max</span><span class="value">${d.jitter_max_us.toLocaleString()} us</span></div>
@@ -1316,6 +1319,21 @@ async function pollRtStats() {
         if (r.ok) renderRtStats(await r.json());
     } catch(e) {}
 }
+
+document.getElementById('resetTelemetryBtn').onclick = async () => {
+    const btn = document.getElementById('resetTelemetryBtn');
+    const orig = btn.textContent;
+    btn.disabled = true;
+    try {
+        const r = await fetch('/api/reset_telemetry', { method: 'POST' });
+        btn.textContent = r.ok ? '✓ Reset' : '✗ Failed';
+        lastRtSnap = null;      // so the live-Hz delta restarts cleanly
+        pollRtStats();
+    } catch (e) {
+        btn.textContent = '✗ Error';
+    }
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1000);
+};
 
 // ========== Error reset ==========
 document.getElementById('errorsBox').onclick = async () => {

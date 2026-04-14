@@ -1,0 +1,42 @@
+[Unit]
+Description=PhyServer - Physical Commander Server
+After=network.target
+Wants=network-online.target
+# Allow plenty of crash-restart attempts during the first 5 minutes
+# (USB enumeration race after a host reboot, Due not yet present, etc.).
+StartLimitIntervalSec=300
+StartLimitBurst=100
+
+[Service]
+Type=simple
+
+# Runs as the dedicated `angelo` user (member of the `dialout` group
+# for tty access and the `realtime` group for memlock / nice limits).
+# The udev rule in deploy/udev/99-phycmd64.rules grants libusb access
+# to the Arduino Due native interface for the same user.
+User=angelo
+Group=dialout
+SupplementaryGroups=realtime
+
+ExecStart=/usr/local/bin/physerver --config /etc/physerver/config.toml
+Restart=always
+RestartSec=2
+
+Environment="RUST_LOG=info"
+
+WorkingDirectory=/var/lib/physerver
+
+# Real-time prerequisites — match /etc/security/limits.d/realtime.conf:
+#   @realtime  -  rtprio  99
+#   @realtime  -  memlock unlimited
+#   @realtime  -  nice    -20
+LimitMEMLOCK=infinity
+LimitNICE=-20
+
+# Capabilities: priority bumping, locking pages in RAM, and toggling
+# the kernel's iso scheduler bits. CAP_SYS_ADMIN is broader than
+# strictly required; tighten if your distro / SELinux policy permits.
+AmbientCapabilities=CAP_SYS_NICE CAP_IPC_LOCK CAP_SYS_ADMIN
+
+[Install]
+WantedBy=multi-user.target

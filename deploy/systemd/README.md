@@ -7,14 +7,24 @@ Network and PhyCommander service units installed on the test host
 
 | file | dest on target | purpose |
 |---|---|---|
+| `physerver.service` | `/etc/systemd/system/` | the PhyCommander streaming server itself — runs as `angelo:dialout`, ambient `CAP_SYS_NICE` / `CAP_IPC_LOCK` / `CAP_SYS_ADMIN`, restart-always |
 | `phycmd-network-setup.sh` | `/usr/local/bin/` | applies source-based policy routing for dual-homed eno0/wlp2s0 (same /24) to avoid asymmetric routing |
 | `phycmd-network-setup.service` | `/etc/systemd/system/` | one-shot unit that runs the script after `network-online.target` and `wifi-ensure-connection.service` |
 | `phycmd-wifi-keepalive.sh` | `/usr/local/bin/` | long-running loop (30s interval) that restarts `netplan-wpa-wlp2s0` when the Realtek RTL8821CE disassociates, and re-applies policy routing after reconnect |
 | `phycmd-wifi-keepalive.service` | `/etc/systemd/system/` | long-running unit wrapping the keepalive script with `Restart=always` |
+| `../udev/99-phycmd64.rules` | `/etc/udev/rules.d/` | grants libusb access to the Due native interface for non-root users + creates the `/dev/arduino_due_prog` symlink |
 
 ## Install
 
 ```bash
+# physerver service + udev rule (mandatory for any build)
+sudo install -m 644 physerver.service /etc/systemd/system/
+sudo install -m 644 ../udev/99-phycmd64.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+sudo systemctl daemon-reload
+sudo systemctl enable --now physerver.service
+
+# Network plumbing (only if your host is dual-homed like the reference box)
 sudo install -m 755 phycmd-network-setup.sh   /usr/local/bin/
 sudo install -m 755 phycmd-wifi-keepalive.sh  /usr/local/bin/
 sudo install -m 644 phycmd-network-setup.service   /etc/systemd/system/

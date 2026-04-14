@@ -1,9 +1,8 @@
 /// Criterion benchmarks for protocol operations
-
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use physerver::{Command, CommandFlags};
-use physerver::protocol::{encode_command, decode_status};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use physerver::protocol::crc::crc16_ccitt_table;
+use physerver::protocol::{decode_status, encode_command};
+use physerver::{Command, CommandFlags};
 
 fn bench_encode_command(c: &mut Criterion) {
     let cmd = Command {
@@ -20,9 +19,7 @@ fn bench_encode_command(c: &mut Criterion) {
         seq_num: 42,
     };
 
-    c.bench_function("encode_command", |b| {
-        b.iter(|| encode_command(black_box(&cmd)))
-    });
+    c.bench_function("encode_command", |b| b.iter(|| encode_command(black_box(&cmd))));
 }
 
 fn bench_decode_status(c: &mut Criterion) {
@@ -33,9 +30,7 @@ fn bench_decode_status(c: &mut Criterion) {
     data[24] = (crc & 0xFF) as u8;
     data[25] = (crc >> 8) as u8;
 
-    c.bench_function("decode_status", |b| {
-        b.iter(|| decode_status(black_box(&data)).unwrap())
-    });
+    c.bench_function("decode_status", |b| b.iter(|| decode_status(black_box(&data)).unwrap()));
 }
 
 fn bench_crc_calculation(c: &mut Criterion) {

@@ -13,7 +13,7 @@
 		(company "phycommander")
 		(comment 1 "Skeleton — outline + 4 M3 mounting holes only.")
 		(comment 2 "User to add D-Sub headers (top) + Arduino mating headers (bottom).")
-		(comment 3 "See pcb/README.md for placement and pinout guidance.")
+		(comment 3 "See companion_board/pcb/README.md for placement and pinout guidance.")
 	)
 	(layers
 		(0 "F.Cu" signal)

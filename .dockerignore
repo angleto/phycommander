@@ -28,7 +28,7 @@ physerver/benches/
 ATSAM3X8E_FW/
 
 # Misc
-panel_sketch/
+companion_board/
 service/
 
 # Logs

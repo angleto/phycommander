@@ -26,7 +26,7 @@ The skeleton is INTENTIONALLY minimal so you can drive the rest in KiCad's GUI:
 
 ### Step 1 — Open project (1 min)
 ```
-$ cd pcb/
+$ cd companion_board/pcb/
 $ open pcb_backplane_v3.kicad_pro
 ```
 Or just double-click the `.kicad_pro` file in Finder. KiCad will show the project manager. Open the PCB by clicking the PCB icon.
@@ -78,7 +78,7 @@ These plug DOWN into the Arduino Due's female headers. Use **Flip** (`F` shortcu
 
 Two options:
 
-**(A) Schematic-driven**: Open Eeschema, create a `.kicad_sch` file, place all 15 connector symbols, draw net labels (DIN0..15, DOUT0..15, ADC0..7, DAC0/1, +3V3, +5V, GND, etc.) per the pinout in [`docs/technical/PCB_BACKPLANE_PINOUT.md`](../docs/technical/PCB_BACKPLANE_PINOUT.md). Then `Tools → Update PCB from Schematic` to push nets to the PCB.
+**(A) Schematic-driven**: Open Eeschema, create a `.kicad_sch` file, place all 15 connector symbols, draw net labels (DIN0..15, DOUT0..15, ADC0..7, DAC0/1, +3V3, +5V, GND, etc.) per the pinout in [`docs/technical/PCB_BACKPLANE_PINOUT.md`](../../docs/technical/PCB_BACKPLANE_PINOUT.md). Then `Tools → Update PCB from Schematic` to push nets to the PCB.
 
 **(B) PCB-direct**: In PCBnew, click each pad and assign nets manually via the properties dialog. Faster for this skeleton's ~50 net mapping.
 
@@ -139,8 +139,8 @@ and ensure `Connector_PinHeader_2.54mm` is enabled (default install: `${KICAD8_F
 
 ## Reference docs in this repo
 
-- [`docs/technical/PCB_BACKPLANE_PINOUT.md`](../docs/technical/PCB_BACKPLANE_PINOUT.md) — full pinout, BOM, signal routing strategy
-- [`docs/technical/DEVICE_PINOUT.md`](../docs/technical/DEVICE_PINOUT.md) — front + rear panel context
+- [`docs/technical/PCB_BACKPLANE_PINOUT.md`](../../docs/technical/PCB_BACKPLANE_PINOUT.md) — full pinout, BOM, signal routing strategy
+- [`docs/technical/DEVICE_PINOUT.md`](../../docs/technical/DEVICE_PINOUT.md) — front + rear panel context
 - [`panel_sketch/pcb_backplane_top.svg`](../panel_sketch/pcb_backplane_top.svg) — visual placement reference (top side)
 - [`panel_sketch/pcb_backplane_bottom.svg`](../panel_sketch/pcb_backplane_bottom.svg) — visual placement reference (bottom side)
 

@@ -323,8 +323,28 @@ static inline void dac_write_pair(uint16_t dac0, uint16_t dac1)
  * run at different rates), so we cache the last-command outcome here. */
 static volatile bool s_last_cmd_valid = true;
 
+/* Last command handler's wall-clock execution time, in microseconds.
+ * Reported to the host via status_msg_t.loop_time_us so the dashboard
+ * can show what fraction of a 125-us microframe we spend inside the
+ * apply path. Measured with the DWT cycle counter — enabled once at
+ * boot via enable_dwt_cyccnt(). */
+static volatile uint16_t s_last_loop_time_us = 0;
+
+static inline uint32_t dwt_cyccnt(void)   { return DWT->CYCCNT; }
+
+static void enable_dwt_cyccnt(void)
+{
+	/* Enable trace + DWT, then the cycle counter. SAM3X (Cortex-M3
+	 * r2p0) doesn't expose the DWT_LAR unlock register, so we skip
+	 * it — TRCENA + CYCCNTENA is enough for this core. */
+	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+	DWT->CYCCNT = 0;
+	DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
 void apply_command_frame(const uint8_t *rx_buf)
 {
+	uint32_t t0 = dwt_cyccnt();
 	const command_msg_t *cmd = (const command_msg_t *)rx_buf;
 
 	bool cmd_valid = (cmd->header == COMMAND_HEADER) &&
@@ -360,6 +380,12 @@ void apply_command_frame(const uint8_t *rx_buf)
 		s_last_seq = 0;
 
 	s_last_cmd_valid = true;
+
+	/* Measure handler duration. CYCCNT is 32-bit @ CPU clock; at 84 MHz
+	 * wrap is every ~51 s which is way longer than any apply call. */
+	uint32_t dt_cyc = dwt_cyccnt() - t0;
+	uint32_t dt_us  = dt_cyc / 84u;           /* 84 MHz MCK on SAM3X */
+	s_last_loop_time_us = dt_us > 0xFFFFu ? 0xFFFFu : (uint16_t)dt_us;
 }
 
 void build_status_frame(uint8_t *tx_buf)
@@ -385,9 +411,10 @@ void build_status_frame(uint8_t *tx_buf)
 	if (!s_last_cmd_valid) sf |= STATUS_ERROR_FLAG;
 	stat->status_flags = sf;
 
-	stat->seq_num     = s_last_seq;
-	stat->uptime_ms   = s_uptime_ms;
-	stat->error_count = s_error_count;
+	stat->seq_num       = s_last_seq;
+	stat->loop_time_us  = s_last_loop_time_us;
+	stat->uptime_ms     = s_uptime_ms;
+	stat->error_count   = s_error_count;
 
 	/* CRC over first 24 bytes of the status frame */
 	stat->crc = crc16_ccitt(tx_buf, CRC_OVER_STAT_BYTES);
@@ -414,6 +441,11 @@ int main(void)
 
 	/* SysTick at 1 kHz for uptime_ms */
 	SysTick_Config(sysclk_get_main_hz() / 1000);
+
+	/* DWT cycle counter — used by apply_command_frame to fill
+	 * status.loop_time_us. No-op on production runs since the
+	 * counter just wraps freely. */
+	enable_dwt_cyccnt();
 
 	/* Disable the SAM3X watchdog (WDT_MR is write-once). */
 	WDT->WDT_MR = WDT_MR_WDDIS;

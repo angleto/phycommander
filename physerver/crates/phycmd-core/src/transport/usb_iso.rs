@@ -52,7 +52,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use std::os::raw::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -126,6 +126,19 @@ pub struct IsoStats {
 }
 
 impl IsoStats {
+    /// Zero every counter. Intended for the `/api/reset_telemetry`
+    /// REST endpoint so the dashboard can restart measurements on
+    /// demand without rebooting the service.
+    pub fn reset(&self) {
+        self.iso_in_pkts_ok.store(0, Ordering::Relaxed);
+        self.iso_in_errors.store(0, Ordering::Relaxed);
+        self.iso_in_short.store(0, Ordering::Relaxed);
+        self.iso_in_crc_errors.store(0, Ordering::Relaxed);
+        self.iso_out_pkts_ok.store(0, Ordering::Relaxed);
+        self.iso_out_errors.store(0, Ordering::Relaxed);
+        self.commands_taken.store(0, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> IsoStatsSnapshot {
         IsoStatsSnapshot {
             iso_in_pkts_ok: self.iso_in_pkts_ok.load(Ordering::Relaxed),
@@ -197,6 +210,25 @@ struct IsoInner {
     /// `StatusFrame`s — it is not the wire seq_num, which is only
     /// 8-bit and only incremented on apply).
     seq_counter: AtomicU64,
+
+    /// Rolling wire seq_num written into outgoing commands. Wraps at
+    /// 256 (u8). Bumped once per OUT transfer (1 kHz) so the firmware
+    /// echoes a changing seq and we can detect command drops and
+    /// measure USB round-trip latency in the IN callback.
+    out_seq_counter: AtomicU8,
+
+    /// Per-seq send timestamps (nanoseconds since `start`). The IN
+    /// callback correlates status.seq_num against this ring to
+    /// compute per-packet round-trip latency.
+    out_seq_sent_ns: [AtomicI64; 256],
+
+    /// Timestamp of the previous IN URB completion. Used to compute
+    /// inter-URB jitter against the expected 1 ms transfer period
+    /// (8 microframes × 125 us). Measured at URB granularity because
+    /// libusb batches per-packet callbacks for an entire URB into a
+    /// single burst — inter-packet deltas are not physically
+    /// meaningful (all ~0, with a 1 ms gap between URBs).
+    last_urb_ns: AtomicI64,
 
     /// I/O thread start instant — used to compute `tick_expected_ns`
     /// and `tick_sent_ns` on each published StatusFrame in a way that
@@ -308,6 +340,9 @@ impl IsoTransport {
             iso_stats: Arc::clone(&iso_stats),
             waveforms: Arc::clone(&waveforms),
             seq_counter: AtomicU64::new(0),
+            out_seq_counter: AtomicU8::new(0),
+            out_seq_sent_ns: std::array::from_fn(|_| AtomicI64::new(0)),
+            last_urb_ns: AtomicI64::new(0),
             start: Instant::now(),
         });
 
@@ -566,8 +601,21 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
     );
 
     if ctx.dir_in {
+        // Compute inter-URB jitter once per transfer. Expected period
+        // = 1 ms (PKTS_PER_TRANSFER=8 microframes × 125 us). Same
+        // jitter value is fed to all 8 packets' record_ok so the
+        // histogram stays at per-packet (8 kHz) granularity but the
+        // timing metric reflects the real URB cadence.
+        let urb_now_ns = inner.start.elapsed().as_nanos() as i64;
+        let prev_urb_ns = inner.last_urb_ns.swap(urb_now_ns, Ordering::Relaxed);
+        let urb_jitter_us: i32 = if prev_urb_ns == 0 {
+            0
+        } else {
+            let delta_us = (urb_now_ns - prev_urb_ns) / 1_000;
+            (delta_us as i32) - 1000
+        };
         for (i, desc) in pkt_descs.iter().enumerate() {
-            handle_in_packet(inner, xfer.buffer, i, desc);
+            handle_in_packet(inner, xfer.buffer, i, urb_jitter_us, desc);
         }
     } else {
         // OUT direction: count completions, then refill buffer with
@@ -612,33 +660,32 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
         let any_active =
             dac0_w.enabled || dac1_w.enabled || pwm0_w.enabled || pwm1_w.enabled;
 
-        if !any_active {
-            let encoded = encode_command(&base_cmd);
-            for p in 0..PKTS_PER_TRANSFER {
-                let off = p * ISO_PKT_SIZE;
-                if off + MESSAGE_SIZE <= buf.len() {
-                    buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
-                    // padding [off+64..off+256] left zeroed at boot.
-                }
-            }
-        } else {
-            // Reserve PKTS_PER_TRANSFER consecutive packet indices for
-            // this transfer; that is the time base for the per-packet
-            // waveform sample and stays consistent across reconnects.
-            let t0 = inner.waveforms.next_packet_idx(PKTS_PER_TRANSFER as u64);
-            const SR_HZ: f32 = (PKTS_PER_TRANSFER * 1000) as f32; // 8000 Hz on HS
-            for p in 0..PKTS_PER_TRANSFER {
-                let off = p * ISO_PKT_SIZE;
-                if off + MESSAGE_SIZE > buf.len() { break; }
-                let mut cmd = base_cmd.clone();
+        // Bump the wire seq_num PER PACKET so each of the 8 microframe
+        // commands in this transfer carries a unique identifier. This
+        // gives 8 kHz effective round-trip visibility (matching the
+        // real USB microframe rate) instead of the 1 kHz per-URB rate.
+        let t0 = if any_active {
+            inner.waveforms.next_packet_idx(PKTS_PER_TRANSFER as u64)
+        } else { 0 };
+        const SR_HZ: f32 = (PKTS_PER_TRANSFER * 1000) as f32; // 8000 Hz on HS
+        let now_ns = inner.start.elapsed().as_nanos() as i64;
+        for p in 0..PKTS_PER_TRANSFER {
+            let off = p * ISO_PKT_SIZE;
+            if off + MESSAGE_SIZE > buf.len() { break; }
+            let wire_seq = inner.out_seq_counter
+                .fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+            inner.out_seq_sent_ns[wire_seq as usize].store(now_ns, Ordering::Relaxed);
+            let mut cmd = base_cmd.clone();
+            cmd.seq_num = wire_seq;
+            if any_active {
                 let t = t0 + p as u64;
                 if dac0_w.enabled { cmd.dac[0] = dac0_w.sample(t, SR_HZ); }
                 if dac1_w.enabled { cmd.dac[1] = dac1_w.sample(t, SR_HZ); }
                 if pwm0_w.enabled { cmd.pwm[0] = pwm0_w.sample(t, SR_HZ); }
                 if pwm1_w.enabled { cmd.pwm[1] = pwm1_w.sample(t, SR_HZ); }
-                let encoded = encode_command(&cmd);
-                buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
             }
+            let encoded = encode_command(&cmd);
+            buf[off..off + MESSAGE_SIZE].copy_from_slice(&encoded);
         }
         inner.iso_stats.commands_taken.fetch_add(1, Ordering::Relaxed);
         inner.staging.mark_sent(gen);
@@ -657,6 +704,7 @@ unsafe fn handle_in_packet(
     inner: &IsoInner,
     base: *mut u8,
     pkt_index: usize,
+    urb_jitter_us: i32,
     desc: &ffi::libusb_iso_packet_descriptor,
 ) {
     if desc.status != ffi::constants::LIBUSB_TRANSFER_COMPLETED {
@@ -694,24 +742,46 @@ unsafe fn handle_in_packet(
     // counter so subscribers can detect gaps.
     let now_ns = inner.start.elapsed().as_nanos() as i64;
     let cmd_seq = inner.seq_counter.fetch_add(1, Ordering::Relaxed) + 1;
+    let wire_seq_echo = status.seq_num;
     let frame = StatusFrame {
         status,
         cmd_seq,
-        wire_seq: 0, // not meaningful for iso (firmware seq advances only on apply)
+        wire_seq: wire_seq_echo,
         tick_index: cmd_seq,
         tick_expected_ns: now_ns,
         tick_sent_ns: now_ns,
         tick_recv_ns: now_ns,
-        latency_us: 0,
+        latency_us: 0,   // populated by the iso stats path below, not this per-frame view
         jitter_us: 0,
         missed_ticks_prior: 0,
     };
     inner.bus.publish(frame);
 
+    // Jitter was computed once per URB by the xfer_cb caller and
+    // passed in; reuse it for every packet so the histogram stays at
+    // per-packet granularity without the bogus inter-packet ~0 delta
+    // that comes from libusb's batched callback delivery.
+    let jitter_us = urb_jitter_us;
+
+    // Round-trip latency: firmware echoes the seq_num of the last
+    // command it applied. Look up when we sent that seq and diff.
+    // If the firmware hasn't applied a new command yet (seq stuck
+    // at 0 at boot, or we've already serviced this echo), latency
+    // stays 0 so it doesn't drag the mean.
+    let latency_us: u32 = {
+        let sent_ns = inner.out_seq_sent_ns[wire_seq_echo as usize]
+            .load(Ordering::Relaxed);
+        if sent_ns > 0 && now_ns >= sent_ns {
+            (((now_ns - sent_ns) / 1_000) as u32).min(u32::MAX / 2)
+        } else {
+            0
+        }
+    };
+
     // Also count it as a "tick" for the existing /api/rt_stats
     // endpoint so the dashboard shows live throughput without
     // dashboard changes (8 kHz successful packets ≈ 8 kHz tick rate).
-    inner.stats.record_ok(0, 0);
+    inner.stats.record_ok(latency_us, jitter_us);
 }
 
 // =========================================================================

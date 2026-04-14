@@ -125,6 +125,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/sysinfo", get(get_sysinfo))
         .route("/api/rt_stats", get(get_rt_stats))
         .route("/api/reset_errors", post(reset_errors))
+        .route("/api/reset_telemetry", post(reset_telemetry))
         .route("/api/waveform", get(get_waveforms))
         .route("/api/waveform/:channel", post(set_waveform))
         .route("/api/waveform/:channel", axum::routing::delete(disable_waveform))
@@ -190,6 +191,29 @@ async fn reset_errors(State(state): State<Arc<AppState>>) -> Response {
     state.error_baseline_initialized.store(true, Ordering::Relaxed);
     info!("error_count baseline reset to raw={}", current_raw);
     (StatusCode::OK, format!("Errors reset (raw counter was {})", current_raw))
+        .into_response()
+}
+
+/// POST /api/reset_telemetry — zero the RT-scheduler stats and iso
+/// packet counters so the dashboard can start fresh without a
+/// service restart. Also re-applies the error_count baseline so the
+/// two meters agree on "since now".
+async fn reset_telemetry(State(state): State<Arc<AppState>>) -> Response {
+    let mut cleared = Vec::new();
+    if let Some(stats) = state.rt_stats.get() {
+        stats.reset();
+        cleared.push("rt_stats");
+    }
+    if let Some(iso) = state.iso_stats.get() {
+        iso.reset();
+        cleared.push("iso_stats");
+    }
+    let current_raw = state.current_status.read().await.error_count;
+    state.error_baseline.store(current_raw, Ordering::Relaxed);
+    state.error_baseline_initialized.store(true, Ordering::Relaxed);
+    cleared.push("error_baseline");
+    info!("telemetry reset: {}", cleared.join(", "));
+    (StatusCode::OK, format!("Telemetry reset ({})", cleared.join(", ")))
         .into_response()
 }
 

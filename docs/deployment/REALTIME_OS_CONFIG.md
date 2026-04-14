@@ -1079,6 +1079,141 @@ sudo systemctl status physerver
 
 ---
 
+## PhyCommander reference deployment
+
+This section is the bridge between the generic RT-Linux setup above and
+"the box actually runs PhyCommander". It documents the choices made on
+the project's reference host (Intel **DN2800MT**, Atom N2800,
+4 GiB RAM, Ubuntu 24.04 LTS + PREEMPT_RT, kernel `6.8.x-realtime`)
+and points at the canonical files in [`deploy/`](../../deploy/).
+
+### 1. Real-time prerequisites
+
+```bash
+# Real-time kernel + tooling
+sudo apt install linux-realtime rt-tests util-linux
+
+# Verify
+uname -r              # → 6.8.0-1031-realtime (or similar)
+cat /sys/kernel/realtime  # → 1
+```
+
+### 2. Boot parameters (cmdline)
+
+The reference host isolates **CPUs 2 and 3** for the iso transport
+thread, leaving CPUs 0–1 for the OS, web server, and background work.
+Add to `/etc/default/grub`:
+
+```bash
+GRUB_CMDLINE_LINUX_DEFAULT="quiet splash isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3 nmi_watchdog=0"
+```
+
+then `sudo update-grub && sudo reboot`.
+
+The corresponding `physerver` config keeps the iso I/O thread pinned
+to those cores (see [`physerver/config.example.toml`](../../physerver/config.example.toml)
+under `[realtime]`).
+
+### 3. Real-time security limits
+
+```bash
+sudo tee /etc/security/limits.d/realtime.conf <<'EOF'
+@realtime  -  rtprio   99
+@realtime  -  memlock  unlimited
+@realtime  -  nice     -20
+EOF
+
+sudo groupadd -f realtime
+sudo usermod -aG realtime,dialout angelo
+# Log out / log back in for group changes to take effect.
+```
+
+The systemd unit below requests the same limits (`LimitMEMLOCK=infinity`,
+`LimitNICE=-20`) so the service starts cleanly even before the user
+session has loaded.
+
+### 4. udev rule for the Arduino Due
+
+Without this rule, opening the Due native interface from libusb fails
+with `LIBUSB_ERROR_ACCESS` unless physerver runs as root.
+
+```bash
+sudo install -m 644 deploy/udev/99-phycmd64.rules /etc/udev/rules.d/
+sudo udevadm control --reload && sudo udevadm trigger
+```
+
+The same rule also creates the `/dev/arduino_due_prog` symlink that
+the `bossac` flash flow relies on.
+
+### 5. systemd service for `physerver`
+
+```bash
+sudo cp target/release/physerver /usr/local/bin/
+sudo install -m 644 deploy/systemd/physerver.service /etc/systemd/system/
+
+# Minimal config — the example file is annotated.
+sudo install -d /etc/physerver /var/lib/physerver
+sudo install -m 644 physerver/config.example.toml /etc/physerver/config.toml
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now physerver.service
+sudo systemctl status physerver
+```
+
+The unit:
+
+- runs as `angelo:dialout` with supplementary group `realtime`
+- requests `CAP_SYS_NICE`, `CAP_IPC_LOCK`, `CAP_SYS_ADMIN` (RT prio +
+  page locking + iso scheduler bits)
+- has `Restart=always, RestartSec=2` so it self-recovers from USB
+  enumeration races on host reboot
+- inherits a generous `StartLimitBurst=100/300s` so first-boot
+  flapping doesn't burn out the burst
+
+See [`deploy/systemd/README.md`](../../deploy/systemd/README.md) for
+the full file inventory and rationale.
+
+### 6. Optional: dual-homed network plumbing
+
+The reference box has both `eno0` (192.168.0.22) and `wlp2s0`
+(192.168.0.21) on the same /24. Without source-based policy routing
+the kernel picks a single default route regardless of source IP —
+reply packets leave the wrong NIC and inbound TCP/ICMP breaks on the
+secondary. The optional services in `deploy/systemd/`
+(`phycmd-network-setup.service` + `phycmd-wifi-keepalive.service`)
+handle this; install only if your topology is similarly multi-homed.
+
+### 7. Smoke test
+
+```bash
+# 1. Iso link
+curl -s http://localhost:8080/api/rt_stats | jq '.tick_count, .iso.iso_in_pkts_ok'
+# Both should advance by ~8000/s.
+
+# 2. Iso jitter
+curl -s http://localhost:8080/api/rt_stats | jq '{jit_min:.jitter_min_us, jit_max:.jitter_max_us, jit_mean:.mean_abs_jitter_us}'
+# On a healthy PREEMPT_RT host: |min|,|max| < 200 µs, mean_abs < 50 µs.
+
+# 3. Reboot + auto-recovery
+sudo reboot
+# After the host comes back: physerver active, iso flowing — no
+# manual intervention required (subject to the udev rule + systemd
+# unit above being installed).
+```
+
+### 8. Hardware note: xHCI gives more headroom than EHCI
+
+The reference DN2800MT only exposes EHCI (USB 2.0) controllers. EHCI
+caps cleanly at the 8 kHz HS-iso microframe rate and can stay there
+indefinitely. A host with **xHCI** (USB 3.x controllers, present in
+basically any board newer than ~2014) schedules iso URBs more
+aggressively and gives extra throughput / jitter headroom — useful if
+you push PhyCommander beyond the default 8 kHz refresh cap, or if you
+want lower URB-cadence jitter (`mean_abs` typically halves on xHCI
+hosts).
+
+---
+
 ## Additional Resources
 
 ### Related Documentation
@@ -1099,7 +1234,7 @@ sudo systemctl status physerver
 ### Support
 
 For issues or questions:
-- **GitHub Issues**: https://github.com/angleto/phycmd/issues
+- **GitHub Issues**: https://github.com/angleto/phycommander/issues
 - **Documentation**: See [INDEX.md](../INDEX.md) for all guides
 
 ---

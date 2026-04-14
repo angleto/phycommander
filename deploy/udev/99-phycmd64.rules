@@ -1,0 +1,17 @@
+# PhyCommander firmware — Arduino Due native interface (vendor class +
+# isochronous EPs used by the iso transport in physerver, plus the
+# legacy bulk EPs the older C++ broker used to talk to).
+#
+# Grants ungated access to the device for any logged-in seat user
+# (uaccess) and a permissive default mode for systemd-run services
+# (the physerver unit runs as `angelo:dialout`, so MODE=0666 keeps it
+# usable when the seat-based ACL doesn't apply, e.g. headless boot).
+#
+# VID/PID match the descriptors in
+#   ATSAM3X8E_FW/ATSAM3X8E_FW/src/udi_vendor.c
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="003e", MODE="0666", TAG+="uaccess"
+
+# Persistent symlink for the SAM-BA programming port. This is the
+# CDC-ACM exposed by the on-board ATmega16U2 — the 1200-baud trick on
+# this device puts the SAM3X into SAM-BA mode for `bossac`.
+KERNEL=="ttyACM[0-9]*", ATTRS{idVendor}=="2341", ATTRS{idProduct}=="003d", SYMLINK+="arduino_due_prog", TAG+="uaccess"

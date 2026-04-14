@@ -229,7 +229,7 @@ For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing
 
 ## License & authorship
 
-PhyCMD is © 2014-2026 **Angelo Leto** ([@angleto](https://github.com/angleto), `angelo@leto.blue`).
+PhyCMD is © 2014-2026 **Angelo Leto** ([@angleto](https://github.com/angleto)).
 
 - **Software** (firmware, Rust server, dashboard, scripts): dual-licensed **MIT OR Apache-2.0** — pick whichever fits your use case. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
 - **Hardware designs, panel CAD, photos, and long-form prose docs**: **CC-BY-SA 4.0** — attribution + share-alike. See [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0).

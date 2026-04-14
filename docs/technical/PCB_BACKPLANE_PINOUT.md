@@ -1,8 +1,10 @@
-# PCB Backplane — I/O Distribution Board
+# PCB Backplane — Arduino Due Shield (v3)
 
-Distribution PCB that fans out all Arduino Due ATSAM3X8E I/O signals to nine front-panel D-Sub connectors at three voltage levels (3.3 V CMOS native, 5 V TTL buffered, 24 V open-collector). Designed for hand assembly with through-hole / DIP components.
+Passive Arduino Due shield that fans out all I/O signals to nine D-Sub front-panel connectors. Plugs directly onto the Due — no wire harness. Double-sided home-fab compatible (UV bromograph + photosensitized board + through-hole rivets for vias).
 
-See also: `panel_sketch/pcb_backplane.svg` for the physical layout.
+See also:
+- `panel_sketch/pcb_backplane_top.svg` — top layer print master (1:1 scale)
+- `panel_sketch/pcb_backplane_bottom.svg` — bottom layer print master (1:1 scale, MIRROR before printing on film)
 
 ---
 
@@ -10,512 +12,500 @@ See also: `panel_sketch/pcb_backplane.svg` for the physical layout.
 
 | Parameter | Value |
 |---|---|
-| PCB outline | 152.28 × 53.30 mm (1.5 × Arduino Due length × Due width) |
-| Layers | 2 (top routing + bottom ground pour with split AGND/DGND) |
-| Thickness | 1.6 mm FR-4 standard |
-| Mounting holes | 4 × M3 (Ø 3.2 mm) at corners, 3 mm from edges |
-| Front-panel connectors | 9 × IDC box headers (right-angle, 2.54 mm pitch) — 3 × DB9, 3 × DB15, 3 × DB25 |
-| Arduino interface | 2 × female pin header 1×25 (2.54 mm pitch), one per long edge |
-| Power input | 1 × 5.08 mm pitch screw terminal, 2-pin (+12 V from host PSU) |
-| Total pin distribution | 147 (3×9 + 3×15 + 3×25) — fully populated, signals duplicated by voltage level |
+| PCB outline | **101.60 × 53.34 mm** (Arduino Due footprint exact, per official datasheet A000062 §8.1) |
+| Layers | **2** (top + bottom), home-fab via UV bromograph + photosensitized board |
+| Vias | Manual through-hole **rivets** (drill + insert + solder both sides) — no plated holes |
+| Board thickness | 1.6 mm FR-4 standard |
+| Mounting holes | 4 × M3, Ø 3.2 mm, **at Arduino Due's exact 4 hole positions** (no shift, no calculation) |
+| Top side | 9 × D-Sub male pin headers (2.54 mm pitch, 2-row, vertical) facing UP — for ribbon cables to front panel |
+| Bottom side | Arduino mating male pin headers (~7 mm standard pin length, **not stackable**) facing DOWN — plug into Due's female headers |
+| Total signal pins distributed | 147 (3×9 + 3×15 + 3×25) — all populated |
 
-The board fits inside a chassis already housing the Arduino Due; the Due is mounted separately and wired to the two single-row pin strips on the long edges of this PCB.
+### 1.1 Mounting hole positions
 
----
+Arduino Due native pattern. Coordinates derived from two sources cross-referenced:
+1. Official Arduino Due datasheet A000062 §8.1 mechanical drawing (PDF dimensions)
+2. KiCad official `Arduino_UNO_R3_WithMountingHoles.kicad_mod` footprint (UNO R3 = shield-compatible reference)
 
-## 2. Power architecture
+| Hole | X (mm) | Y (mm) | Confidence | Source |
+|---|---|---|---|---|
+| **M1** (top-left) | **15.24** | **2.54** | ✓ verified | Datasheet quoted dimensions |
+| **M4** (top-right) | **90.17** | **2.54** | ✓ verified | Datasheet (M1 + 74.93 mm horizontal span, quoted) |
+| **M2** (bottom-left) | 15.24 | 50.80 | ★ best estimate | Symmetric to M1; matches UNO R3 KiCad pattern (`y = pin-row + 48.26 mm`) |
+| **M3** (middle-right) | 66.04 | 35.56 | ★ best estimate | KiCad UNO R3 pattern (`y = pin-row + 33.02 mm`); x extrapolated for Due length |
+
+Hole drill diameter: **Ø 3.18 mm** per datasheet (Ø 3.20 mm clearance also acceptable for M3).
+
+> **Verification recommended**: M1 and M4 are datasheet-verified. M2 and M3 are best-estimate based on the standard UNO R3 shield-compatible pattern (extrapolated for the Due's longer body). Before final fab, verify in KiCad by importing either:
+> - The KiCad official `Arduino_UNO_R3_WithMountingHoles` footprint (gives 4 shield-compatible holes — but UNO is shorter than Due, so x-coord for top-right and middle-right needs scaling)
+> - Or a community-maintained Arduino Due footprint (e.g., from SnapEDA, Ultra Librarian, or the original Eagle reference design from Arduino's website)
+>
+> The KiCad official library does NOT include a dedicated `Arduino_Mega_R3` or `Arduino_Due` footprint — only UNO R3. This is a known gap.
+
+The shield plugs onto the Due via the male-pin headers; the 4 M3 mounting holes provide additional mechanical fixation (M3 standoffs through both shield and Due into the chassis).
+
+### 1.2 Top side — D-Sub layout (3×3 grid)
 
 ```
-   +12V (PSU)        ┌──────────────┐    +24V rail
-   ───┬──────────────┤ XL6009 boost ├──────────┐
-      │              └──────────────┘          │
-      │              ┌──────────────┐    +5V rail
-      ├──────────────┤ LM2596 buck  ├──────────┤
-      │              └──────────────┘          │
-      │                                        │
-      └─→ +12V rail (direct, for relays/PSU loads)
-                                               │
-   +3.3V from Arduino Due (Strip B) ───────────┤
-                                               │
-   GND (PSU + Due)  ──────────────────────────┴── DGND plane
-                                                     │
-                              AGND (analog)  ────────┴── single-point star at strip A
+  ┌──────────────────────────────────────────────────────────────┐
+  │  ●M1                                                  ●M4    │ y=2.54
+  │  [    DB25 #1    ] [  DB15 #1  ] [ DB9#1 ]                   │ row1, y=18..26
+  │  [    DB25 #2    ] [  DB15 #2  ] [ DB9#2 ]                   │ row2, y=32..40
+  │                                            ●M3                │ y=35.56
+  │  [    DB25 #3    ] [  DB15 #3  ] [ DB9#3 ]                   │ row3, y=49..57
+  │  ●M2                                                          │ y=50.80
+  └──────────────────────────────────────────────────────────────┘
+  x=0  15            48 52        74  80    94                 101.52
 ```
 
-- **+12 V in**: from host motherboard ATX/Pico-PSU, ~1 A typical
-- **+5 V**: generated by LM2596 prebuilt module (efficient, 1–3 A capable, ~22 × 17 mm)
-- **+24 V**: generated by XL6009 prebuilt boost module (~600 mA at 24 V, ~25 × 18 mm)
-- **+3.3 V**: routed in from the Arduino Due via Strip B, NOT generated on this board
-- **AGND / DGND split**: separate copper pours under analog vs digital sections, joined at a single 0 Ω jumper near Strip A. Mandatory to keep ADC noise floor low.
+Connector columns positioned to clear the mounting holes. Row 3 ends at y=57 mm, leaving 4.3 mm bottom margin (acceptable for an M3 hole at y=50.80).
 
-> The XL6009 module has an onboard adjustment potentiometer; calibrate to 24.0 V before connecting any loads.
+### 1.3 Bottom side — Arduino Due mating headers
 
----
+Male pin headers facing DOWN, mating with Arduino Due's female socket headers. Standard 7 mm pin length (non-stackable shield — nothing plugs on top).
 
-## 3. Bill of Materials
+| Header | Type | Position on Due | Used pins |
+|---|---|---|---|
+| POWER | 1×8 male | south edge, west side | RESET, 3V3, 5V, GND, GND (5 of 8 used) |
+| ANALOG | 1×8 male | south edge, east of POWER | A0–A7 (all 8 = ADC 0–7) |
+| COMM | 1×10 male | north edge, west side | D8 (future), AREF, SDA, SCL (4 of 10 used) |
+| DIGITAL | 1×8 male | north edge, east of COMM | D0=UART_RX, D1=UART_TX (2 of 8 used) |
+| 2×18 dual block | 2×18 male | east side of board | D22–D53 = DIN 0–15 + DOUT 0–15 (32 of 36 pin positions) |
+| DAC/CAN | 1×6 male | east edge of board | DAC0, DAC1, CANRX, CANTX (4 of 6 used) |
 
-| Ref | Part | Package | Qty | Notes |
-|---|---|---|---|---|
-| U1, U2 | ULN2803A | DIP-18 | 2 | 8-channel Darlington open-collector driver, sinks ≤500 mA per channel, 50 V max — drives the 16 DOUT_O.C. lines for 24 V loads |
-| U3, U4 | 74HCT245N | DIP-20 | 2 | Octal bus transceiver, 3.3 V → 5 V output buffer with TTL inputs (DIR pin tied to drive 3.3V→5V); each handles 8 DOUT |
-| OK1–OK8 | PC817 | DIP-4 | 8 | Single-channel optoisolator for 24 V DIN inputs (DIN8–DIN15 second voltage path) |
-| M1 | LM2596 buck module (prebuilt) | Module 22×17 mm | 1 | 12 V → 5 V, ≥1 A. Through-hole pads, set output to 5.00 V via onboard pot |
-| M2 | XL6009 boost module (prebuilt) | Module 25×18 mm | 1 | 12 V → 24 V, ≥600 mA. Set output to 24.0 V via onboard pot |
-| J1 | Phoenix MKDS 1.5/2-5.08 (or equiv.) | TH 5.08 mm 2-pin | 1 | +12 V input from PSU |
-| J2 | IDC box header 2×13 right-angle | TH 2.54 mm | 3 | DB25 #1, #2, #3 |
-| J3 | IDC box header 2×8 right-angle | TH 2.54 mm | 3 | DB15 #1, #2, #3 |
-| J4 | IDC box header 2×5 right-angle | TH 2.54 mm | 3 | DB9 #1, #2, #3 |
-| J5, J6 | Pin header female 1×25 | TH 2.54 mm | 2 | Strip A (sensing) and Strip B (control) — Arduino Due interface |
-| J7 | Jumper 2-pin | TH 2.54 mm | 1 | AGND-DGND star point bridge (populate with 0 Ω jumper or wire) |
-| R1–R32 | 1.7 kΩ + 3.3 kΩ resistors 1/4 W axial | TH | 32 | DIN level dividers, one pair per DIN0–DIN15 (5 V → 3.3 V on the 5 V DIN paths) |
-| R33–R48 | 4.7 kΩ resistor 1/4 W axial | TH | 16 | DOUT pull-ups for ULN2803 inputs (optional, populate if needed) |
-| R49–R56 | 220 Ω resistor 1/4 W axial | TH | 8 | LED current limiters and PC817 input bias |
-| C1–C16 | 100 nF ceramic disc | TH 5.08 mm | 16 | IC decoupling, one per IC + one per D-Sub power pin group |
-| C17–C20 | 10 µF / 35 V electrolytic | TH radial | 4 | Bulk decoupling on 12 V, 5 V, 24 V, 3.3 V rails |
-| C21, C22 | 100 µF / 35 V electrolytic | TH radial | 2 | Input/output bulk for buck/boost modules (in addition to module's own caps) |
-| LED1–LED4 | 5 mm LED green | TH | 4 | Power-good indicators: 3.3 V, 5 V, 12 V, 24 V |
-| TP1–TP6 | Test point loops | TH | 6 | 12 V, 5 V, 3.3 V, 24 V, AGND, DGND — for scope/DMM probing |
+Total bottom-side pins: ~63 pin positions (8+8+10+8+36+6 = 76 holes drilled, ~63 actually carrying signals).
 
-**Total active components**: 12 ICs (2 × ULN, 2 × HCT, 8 × PC817) + 2 prebuilt power modules. All hand-solderable.
+Position coordinates are approximate in `panel_sketch/pcb_backplane_bottom.svg`. **Verify against Arduino Due mechanical drawing before final fabrication** — see the official Due reference for exact header positions.
 
 ---
 
-## 4. Arduino Due interface — Strip A and Strip B wiring
+## 2. Bill of Materials
 
-Each strip is a 1×25 female pin header on the long edge of the PCB. The user wires each pin to the corresponding Arduino Due pin via discrete wires (silicone, AWG 24–26) or short Dupont jumpers. Pin 1 is at the corner closest to the screw terminal.
+| Ref | Part | Qty | Notes |
+|---|---|---|---|
+| J1–J3 | Male pin header 2×13, 2.54 mm pitch, vertical, ~7 mm pin | 3 | DB25 #1/#2/#3 (top side) |
+| J4–J6 | Male pin header 2×8, 2.54 mm pitch, ~7 mm pin | 3 | DB15 #1/#2/#3 (top side) |
+| J7–J9 | Male pin header 2×5, 2.54 mm pitch, ~7 mm pin | 3 | DB9 #1/#2/#3 (top side) |
+| H-PWR | Male pin header 1×8, 2.54 mm, **standard 7 mm pin** (non-stackable) | 1 | POWER mate (bottom side) |
+| H-ANA | Male pin header 1×8, 7 mm pin | 1 | ANALOG mate (bottom side) |
+| H-COM | Male pin header 1×10, 7 mm pin | 1 | COMM mate (bottom side) — included for future UART/I2C/SDA/SCL/AREF |
+| H-DIG | Male pin header 1×8, 7 mm pin | 1 | DIGITAL D0–D7 mate (bottom side) |
+| H-D22 | Male pin header 2×18, 7 mm pin | 1 | 2×18 D22–D53 block mate (bottom side) — main DIN/DOUT routing source |
+| H-DAC | Male pin header 1×6, 7 mm pin | 1 | DAC/CAN mate (bottom side) |
+| Rivets | 0.6–1.0 mm copper / brass mini rivets | 20–40 | Manual through-hole vias, soldered both sides |
 
-### Strip A (top long edge) — SENSING
+**Total cost**: ~€10–15 per board (connectors only). Home-fab PCB substrate adds ~€2 per board. **No active components** (no ICs, no level shifters, no power converters).
 
-| Strip pin | Signal | SAM3X port (firmware ref) | Direction | Notes |
+**Cable from PCB to panel**: 9× IDC ribbon cable, 26/16/10 conductor → D-Sub solder-cup, ~10–15 cm each. 9 cables total (one per D-Sub).
+
+**Pin length note**: standard 7 mm pin lengths chosen because **the shield is final** — nothing plugs on top. If you ever want to stack other shields above this one, swap to "stackable" 12 mm pin headers (requires longer mating sockets on the upper shield).
+
+---
+
+## 3. Signal architecture
+
+```
+  ┌────────────────────────────────────────┐
+  │     phycommander Linux host (Intel)    │
+  │     physerver via USB CDC              │
+  └─────────────┬──────────────────────────┘
+                │ USB-B
+                ▼
+  ┌────────────────────────────────────────┐
+  │  Arduino Due (ATSAM3X8E)               │
+  │  Female header sockets ↑↑↑             │
+  └─────────────┬──────────────────────────┘
+                │ male pins down (~7 mm), shield plugs on top
+                ▼
+  ┌────────────────────────────────────────┐
+  │  Backplane PCB v3 (this document)      │  101.52 × 53.30 mm
+  │  - Bottom: Arduino mating headers      │  2 layers + rivet vias
+  │  - Top: 9 × D-Sub male pin headers     │  Pure passive routing
+  └─────────────┬──────────────────────────┘
+                │ 9 × IDC ribbon cables ↑
+                ▼
+  ┌────────────────────────────────────────┐
+  │  Front panel (3×3 D-Sub female grid)   │
+  │  user-facing                           │
+  └────────────────────────────────────────┘
+```
+
+All signals are 3.3 V CMOS native (Arduino Due output level). External application-specific add-ons (level shifters, opto-isolation, signal conditioning) plug into the front-panel D-Subs as needed.
+
+---
+
+## 4. Arduino Due pin → backplane signal mapping
+
+For each Arduino mating header on the bottom side, the table shows which Arduino pin (Due naming) carries which phycommander signal.
+
+### 4.1 POWER header (1×8, bottom-left)
+
+| Header pin | Arduino pin | Signal | Routed to |
+|---|---|---|---|
+| 1 | IOREF | (3.3 V ref) | not used (NC on shield) |
+| 2 | RESET | RESET | NC on shield (Arduino reset is wired direct to front button — see §8) |
+| 3 | 3V3 | +3.3 V | shield's +3.3 V net (powers all D-Sub +3.3V pins) |
+| 4 | 5V | +5 V | shield's +5 V net (powers DB25#3, DB9#3 +5V pins) |
+| 5 | GND | GND | shield's main GND net |
+| 6 | GND | GND | shield's main GND net (parallel) |
+| 7 | VIN | (~7-12V) | not used |
+| 8 | NC | — | not used |
+
+### 4.2 ANALOG header (1×8, bottom-east of POWER)
+
+| Header pin | Arduino pin | Signal | Routed to |
+|---|---|---|---|
+| 1 | A0 | ADC0 | DB25#1 pin 17, DB15#1 pin 9, DB9#1 pin 1 |
+| 2 | A1 | ADC1 | DB25#1 pin 18, DB15#1 pin 10, DB9#1 pin 2 |
+| 3 | A2 | ADC2 | DB25#1 pin 19, DB15#2 pin 9, DB9#1 pin 3 |
+| 4 | A3 | ADC3 | DB25#1 pin 20, DB15#2 pin 10, DB9#1 pin 4 |
+| 5 | A4 | ADC4 | DB25#1 pin 21, DB15#3 pin 1 |
+| 6 | A5 | ADC5 | DB25#1 pin 22, DB15#3 pin 2 |
+| 7 | A6 | ADC6 | DB25#1 pin 23, DB15#3 pin 3 |
+| 8 | A7 | ADC7 | DB25#1 pin 24, DB15#3 pin 4 |
+
+### 4.3 COMM header (1×10, top-west)
+
+| Header pin | Arduino pin | Signal | Routed to |
+|---|---|---|---|
+| 1 | D8 | (PWM future) | NC for now (firmware doesn't drive PWM yet) |
+| 2 | D9 | (PWM future) | NC |
+| 3 | D10 | (PWM future / SS) | NC |
+| 4 | D11 | (PWM future) | NC |
+| 5 | D12 | (digital, future) | NC |
+| 6 | D13 | (LED, future) | NC |
+| 7 | GND | GND | shield's main GND net |
+| 8 | AREF | AREF | DB25#2 pin 24, DB25#3 pin —, DB15#3 pin 13, DB9#1 pin 7 |
+| 9 | D20 (SDA1) | I2C_SDA | DB25#3 pin 22, DB9#3 pin 6 |
+| 10 | D21 (SCL1) | I2C_SCL | DB25#3 pin 23, DB9#3 pin 7 |
+
+### 4.4 DIGITAL D0–D7 header (1×8, top-east of COMM)
+
+| Header pin | Arduino pin | Signal | Routed to |
+|---|---|---|---|
+| 1 | D0 (RX0) | UART_RX | DB25#3 pin 18, DB9#3 pin 2 |
+| 2 | D1 (TX0) | UART_TX | DB25#3 pin 17, DB9#3 pin 1 |
+| 3 | D2 | NC | |
+| 4 | D3 | NC | |
+| 5 | D4 | NC | |
+| 6 | D5 | NC | |
+| 7 | D6 | NC | |
+| 8 | D7 | NC | |
+
+### 4.5 2×18 dual block (D22–D53, east edge) — main DIN/DOUT source
+
+This block carries all 16 DIN and 16 DOUT signals. Pin numbering convention for the 2×18 block:
+- "Front" row (closer to board edge): even D-pins → DIN signals
+- "Back" row (closer to board interior): odd D-pins → DOUT signals
+
+| Pair # | Front pin (DIN) | Arduino | Back pin (DOUT) | Arduino |
 |---|---|---|---|---|
-| 1 | DIN0 | PB26 | IN | Pull-up enabled in firmware |
-| 2 | DIN1 | PA15 | IN | |
-| 3 | DIN2 | PD1 | IN | |
-| 4 | DIN3 | PD3 | IN | |
-| 5 | DIN4 | PD9 | IN | |
-| 6 | DIN5 | PD10 | IN | |
-| 7 | DIN6 | PC2 | IN | |
-| 8 | DIN7 | PC4 | IN | |
-| 9 | DIN8 | PC6 | IN | |
-| 10 | DIN9 | PC8 | IN | |
-| 11 | DIN10 | PA19 | IN | |
-| 12 | DIN11 | PC19 | IN | |
-| 13 | DIN12 | PC17 | IN | |
-| 14 | DIN13 | PC15 | IN | |
-| 15 | DIN14 | PC13 | IN | |
-| 16 | DIN15 | PB21 | IN | |
-| 17 | ADC0 | PA16 / Due A0 | IN | 0–3.3 V, 12-bit |
-| 18 | ADC1 | PA24 / Due A1 | IN | |
-| 19 | ADC2 | PA23 / Due A2 | IN | |
-| 20 | ADC3 | PA22 / Due A3 | IN | |
-| 21 | ADC4 | PA6 / Due A4 | IN | |
-| 22 | ADC5 | PA4 / Due A5 | IN | |
-| 23 | ADC6 | PA3 / Due A6 | IN | |
-| 24 | ADC7 | PA2 / Due A7 | IN | |
-| 25 | AGND | Due GND (analog corner) | — | Wire to nearest GND on Due bottom-edge POWER header |
+| 1 | DIN0 | D22 (PB26) | DOUT0 | D23 (PA14) |
+| 2 | DIN1 | D24 (PA15) | DOUT1 | D25 (PD0) |
+| 3 | DIN2 | D26 (PD1) | DOUT2 | D27 (PD2) |
+| 4 | DIN3 | D28 (PD3) | DOUT3 | D29 (PD6) |
+| 5 | DIN4 | D30 (PD9) | DOUT4 | D31 (PA7) |
+| 6 | DIN5 | D32 (PD10) | DOUT5 | D33 (PC1) |
+| 7 | DIN6 | D34 (PC2) | DOUT6 | D35 (PC3) |
+| 8 | DIN7 | D36 (PC4) | DOUT7 | D37 (PC5) |
+| 9 | DIN8 | D38 (PC6) | DOUT8 | D39 (PC7) |
+| 10 | DIN9 | D40 (PC8) | DOUT9 | D41 (PC9) |
+| 11 | DIN10 | D42 (PA19) | DOUT10 | D43 (PA20) |
+| 12 | DIN11 | D44 (PC19) | DOUT11 | D45 (PC18) |
+| 13 | DIN12 | D46 (PC17) | DOUT12 | D47 (PC16) |
+| 14 | DIN13 | D48 (PC15) | DOUT13 | D49 (PC14) |
+| 15 | DIN14 | D50 (PC13) | DOUT14 | D51 (PC12) |
+| 16 | DIN15 | D52 (PB21) | DOUT15 | D53 (PB14) |
+| 17 | NC | — | NC | — |
+| 18 | NC | — | NC | — |
 
-### Strip B (bottom long edge) — CONTROL
+> The pair 17/18 (corresponding to D54/D55 if they existed — they don't on Due) are unused. The shield can still drill those holes but leave them floating.
 
-| Strip pin | Signal | SAM3X port (firmware ref) | Direction | Notes |
-|---|---|---|---|---|
-| 1 | DOUT0 | PA14 | OUT | |
-| 2 | DOUT1 | PD0 | OUT | |
-| 3 | DOUT2 | PD2 | OUT | |
-| 4 | DOUT3 | PD6 | OUT | |
-| 5 | DOUT4 | PA7 | OUT | |
-| 6 | DOUT5 | PC1 | OUT | |
-| 7 | DOUT6 | PC3 | OUT | |
-| 8 | DOUT7 | PC5 | OUT | |
-| 9 | DOUT8 | PC7 | OUT | |
-| 10 | DOUT9 | PC9 | OUT | |
-| 11 | DOUT10 | PA20 | OUT | |
-| 12 | DOUT11 | PC18 | OUT | |
-| 13 | DOUT12 | PC16 | OUT | |
-| 14 | DOUT13 | PC14 | OUT | |
-| 15 | DOUT14 | PC12 | OUT | |
-| 16 | DOUT15 | PB14 | OUT | |
-| 17 | DAC0 | Due DAC0 (PB15) | OUT | 0.55–2.75 V analog, 12-bit |
-| 18 | DAC1 | Due DAC1 (PB16) | OUT | |
-| 19 | PWM0 | PC21 | OUT | Future — currently not driven by firmware |
-| 20 | PWM1 | PC22 | OUT | Future |
-| 21 | PWM2 | PC23 | OUT | Future |
-| 22 | +5V | Due 5V pin | PWR | Optional path; main 5 V comes from M1 buck |
-| 23 | +3.3V | Due 3.3V pin | PWR | **Required** — this is how the board gets its 3.3 V rail |
-| 24 | AREF | Due AREF | REF | Analog voltage reference |
-| 25 | DGND | Due GND (digital corner) | — | Wire to nearest GND on Due top-edge COMM header |
+**Routing strategy**: from this block, the 16 DIN signals need to fan out to DB25#1 + the mixed DB15s + DB9#2; the 16 DOUT signals fan out to DB25#2 + DB25#3 + the mixed DB15s + DB9#2. Many traces; double-sided routing recommended.
 
-> **Note**: Strip A AGND and Strip B DGND are connected on this PCB only at the J7 jumper near Strip A. On the Due side they're the same physical net, but use the analog corner of the Due for AGND wiring and the digital corner for DGND wiring to keep return currents separate at the source.
+### 4.6 DAC/CAN header (1×6, east edge)
+
+| Header pin | Arduino pin | Signal | Routed to |
+|---|---|---|---|
+| 1 | DAC0 (D66) | DAC0 | DB25#2 pin 17, DB15#1 pin 11, DB15#3 pin 5, DB9#1 pin 5 |
+| 2 | DAC1 (D67) | DAC1 | DB25#2 pin 18, DB15#1 pin 12, DB15#3 pin 6, DB9#1 pin 6 |
+| 3 | CANRX (D68) | NC | (firmware doesn't use CAN yet) |
+| 4 | CANTX (D69) | NC | |
+| 5 | (varies) | NC or GND | |
+| 6 | (varies) | NC or GND | |
+
+> Header pinout for the DAC/CAN small block varies slightly by Due revision. Verify with the mechanical drawing.
 
 ---
 
 ## 5. D-Sub connector pinouts
 
-Each D-Sub connector is fed via a right-angle IDC box header on the PCB, then a flat ribbon cable to the actual D-Sub solder-cup connector mounted on the front panel. The mapping below uses **D-Sub pin numbers** (1 to N), not IDC pin numbers — the ribbon assembly is responsible for the 1-to-1 wire mapping.
+Each D-Sub connector connects to its corresponding 2-row male pin header on the top side via an IDC ribbon cable, then to a panel-mount female D-Sub on the front panel. Pin numbers below are **D-Sub pin numbers** (1–N), not IDC pin numbers.
 
-Each connector is dedicated to a single voltage level so external cables and instruments can be unambiguously matched. Color codes in the SVG schematic match these voltage levels.
+### 5.1 DB25 #1 — FULL SENSING (pure Strip-A signals: 16 DIN + 8 ADC + AGND)
 
-### 5.1 DB25 #1 — SENSING (3.3 V CMOS native)
-
-Direct unbuffered access to all sensing inputs. Use this connector for any 3.3 V instrument or for low-noise analog measurements.
-
-| Pin | Signal | Type |
+| Pin | Signal | Note |
 |---|---|---|
-| 1 | DIN0 | Digital in 3.3 V |
-| 2 | DIN1 | Digital in 3.3 V |
-| 3 | DIN2 | Digital in 3.3 V |
-| 4 | DIN3 | Digital in 3.3 V |
-| 5 | DIN4 | Digital in 3.3 V |
-| 6 | DIN5 | Digital in 3.3 V |
-| 7 | DIN6 | Digital in 3.3 V |
-| 8 | DIN7 | Digital in 3.3 V |
-| 9 | DIN8 | Digital in 3.3 V |
-| 10 | DIN9 | Digital in 3.3 V |
-| 11 | DIN10 | Digital in 3.3 V |
-| 12 | DIN11 | Digital in 3.3 V |
-| 13 | DIN12 | Digital in 3.3 V |
-| 14 | DIN13 | Digital in 3.3 V |
-| 15 | DIN14 | Digital in 3.3 V |
-| 16 | DIN15 | Digital in 3.3 V |
-| 17 | ADC0 | Analog in 0–3.3 V |
-| 18 | ADC1 | Analog in 0–3.3 V |
-| 19 | ADC2 | Analog in 0–3.3 V |
-| 20 | ADC3 | Analog in 0–3.3 V |
-| 21 | ADC4 | Analog in 0–3.3 V |
-| 22 | ADC5 | Analog in 0–3.3 V |
-| 23 | ADC6 | Analog in 0–3.3 V |
-| 24 | ADC7 | Analog in 0–3.3 V |
-| 25 | AGND | Analog ground |
+| 1 | DIN0 | 3.3 V CMOS digital in |
+| 2 | DIN1 | |
+| 3 | DIN2 | |
+| 4 | DIN3 | |
+| 5 | DIN4 | |
+| 6 | DIN5 | |
+| 7 | DIN6 | |
+| 8 | DIN7 | |
+| 9 | DIN8 | |
+| 10 | DIN9 | |
+| 11 | DIN10 | |
+| 12 | DIN11 | |
+| 13 | DIN12 | |
+| 14 | DIN13 | |
+| 15 | DIN14 | |
+| 16 | DIN15 | |
+| 17 | ADC0 | 0–3.3 V analog in |
+| 18 | ADC1 | |
+| 19 | ADC2 | |
+| 20 | ADC3 | |
+| 21 | ADC4 | |
+| 22 | ADC5 | |
+| 23 | ADC6 | |
+| 24 | ADC7 | |
+| 25 | AGND | analog ground |
 
-> ⚠ DIN0–DIN15 on this connector are direct GPIO — do not exceed 3.6 V on these pins or you damage the SAM3X. For 5 V or 24 V sources use the buffered/optoisolated paths on the other connectors.
+### 5.2 DB25 #2 — FULL CONTROL (16 DOUT + 2 DAC + 3 PWM + power)
 
-### 5.2 DB25 #2 — CONTROL 24 V open-collector
+| Pin | Signal |
+|---|---|
+| 1–16 | DOUT 0..15 |
+| 17 | DAC0 |
+| 18 | DAC1 |
+| 19 | PWM0 (future) |
+| 20 | PWM1 (future) |
+| 21 | PWM2 (future) |
+| 22 | +5 V |
+| 23 | +3.3 V |
+| 24 | AREF |
+| 25 | GND |
 
-All 16 DOUT routed via ULN2803A. Each pin is a sink (active LOW from outside view): when the Arduino DOUT goes high, the ULN sinks the corresponding pin to GND through a 2 V Vce(sat). Drive relays, solenoids, indicators, or industrial 24 V loads.
+### 5.3 DB25 #3 — CONTROL-DUP + COMMS
 
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DOUT0_O.C. | Open-collector sink |
-| 2 | DOUT1_O.C. | Open-collector sink |
-| 3 | DOUT2_O.C. | Open-collector sink |
-| 4 | DOUT3_O.C. | Open-collector sink |
-| 5 | DOUT4_O.C. | Open-collector sink |
-| 6 | DOUT5_O.C. | Open-collector sink |
-| 7 | DOUT6_O.C. | Open-collector sink |
-| 8 | DOUT7_O.C. | Open-collector sink |
-| 9 | DOUT8_O.C. | Open-collector sink |
-| 10 | DOUT9_O.C. | Open-collector sink |
-| 11 | DOUT10_O.C. | Open-collector sink |
-| 12 | DOUT11_O.C. | Open-collector sink |
-| 13 | DOUT12_O.C. | Open-collector sink |
-| 14 | DOUT13_O.C. | Open-collector sink |
-| 15 | DOUT14_O.C. | Open-collector sink |
-| 16 | DOUT15_O.C. | Open-collector sink |
-| 17 | +24 V | Power out (≤600 mA total) |
-| 18 | +24 V | Power out (≤600 mA total) |
-| 19 | +24 V | Power out (≤600 mA total) |
-| 20 | GND | Power return |
-| 21 | GND | Power return |
-| 22 | GND | Power return |
-| 23 | GND | Power return |
-| 24 | GND | Power return |
-| 25 | RESET | Active-low reset to Due (optional, useful for chained boards) |
+| Pin | Signal |
+|---|---|
+| 1–16 | DOUT 0..15 (duplicate of DB25 #2) |
+| 17 | UART_TX |
+| 18 | UART_RX |
+| 19 | SPI_MOSI (firmware TBD) |
+| 20 | SPI_MISO (firmware TBD) |
+| 21 | SPI_SCK (firmware TBD) |
+| 22 | I2C_SDA |
+| 23 | I2C_SCL |
+| 24 | +5 V |
+| 25 | GND |
 
-> Wire each external load between the +24 V pin and the corresponding DOUT_O.C. pin. The ULN's freewheeling diodes (COM pin tied to +24 V) protect against inductive kickback automatically.
+### 5.4 DB15 #1 — Mixed ch 0–3
 
-### 5.3 DB25 #3 — CONTROL 5 V TTL buffered
+| Pin | Signal |
+|---|---|
+| 1–4 | DIN 0..3 |
+| 5–8 | DOUT 0..3 |
+| 9 | ADC0 |
+| 10 | ADC1 |
+| 11 | DAC0 |
+| 12 | DAC1 |
+| 13 | +3.3 V |
+| 14 | AGND |
+| 15 | GND |
 
-All 16 DOUT through 74HCT245 buffers (3.3 V → 5 V). Plus the analog outputs and future PWM. Use this connector to drive 5 V CMOS / TTL chips, LCD modules, stepper drivers, etc.
+### 5.5 DB15 #2 — Mixed ch 4–7 + PWM
 
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DOUT0_5V | Digital out 5 V (≤25 mA) |
-| 2 | DOUT1_5V | Digital out 5 V |
-| 3 | DOUT2_5V | Digital out 5 V |
-| 4 | DOUT3_5V | Digital out 5 V |
-| 5 | DOUT4_5V | Digital out 5 V |
-| 6 | DOUT5_5V | Digital out 5 V |
-| 7 | DOUT6_5V | Digital out 5 V |
-| 8 | DOUT7_5V | Digital out 5 V |
-| 9 | DOUT8_5V | Digital out 5 V |
-| 10 | DOUT9_5V | Digital out 5 V |
-| 11 | DOUT10_5V | Digital out 5 V |
-| 12 | DOUT11_5V | Digital out 5 V |
-| 13 | DOUT12_5V | Digital out 5 V |
-| 14 | DOUT13_5V | Digital out 5 V |
-| 15 | DOUT14_5V | Digital out 5 V |
-| 16 | DOUT15_5V | Digital out 5 V |
-| 17 | DAC0 | Analog out 0.55–2.75 V |
-| 18 | DAC1 | Analog out 0.55–2.75 V |
-| 19 | PWM0 | PWM (future, currently floating) |
-| 20 | PWM1 | PWM (future) |
-| 21 | PWM2 | PWM (future) |
-| 22 | +5 V | Power out (≤500 mA from M1) |
-| 23 | +3.3 V | Power out (≤200 mA — via Due regulator) |
-| 24 | GND | Digital ground |
-| 25 | AREF | Analog reference |
+| Pin | Signal |
+|---|---|
+| 1–4 | DIN 4..7 |
+| 5–8 | DOUT 4..7 |
+| 9 | ADC2 |
+| 10 | ADC3 |
+| 11 | PWM0 (future) |
+| 12 | PWM1 (future) |
+| 13 | PWM2 (future) |
+| 14 | +3.3 V |
+| 15 | GND |
 
-### 5.4 DB15 #1 — Mixed 5 V (channels 0–7)
+### 5.6 DB15 #3 — Analog focus + DIN 8–11
 
-Compact 8-channel 5 V port for prototyping rigs that need both buffered I/O on the same connector. DOUT routed through 74HCT245 (3.3 V → 5 V), DIN routed through resistor dividers (5 V → 3.3 V). The DIN0–DIN3 here are the same physical signals as on DB25 #1 but with a 5 V tolerant input path.
+| Pin | Signal |
+|---|---|
+| 1–4 | ADC 4..7 |
+| 5 | DAC0 |
+| 6 | DAC1 |
+| 7 | DIN8 |
+| 8 | DIN9 |
+| 9 | DIN10 |
+| 10 | DIN11 |
+| 11 | DOUT8 |
+| 12 | DOUT9 |
+| 13 | AREF |
+| 14 | +3.3 V |
+| 15 | AGND |
 
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DOUT0_5V | Digital out 5 V |
-| 2 | DOUT1_5V | Digital out 5 V |
-| 3 | DOUT2_5V | Digital out 5 V |
-| 4 | DOUT3_5V | Digital out 5 V |
-| 5 | DOUT4_5V | Digital out 5 V |
-| 6 | DOUT5_5V | Digital out 5 V |
-| 7 | DOUT6_5V | Digital out 5 V |
-| 8 | DOUT7_5V | Digital out 5 V |
-| 9 | DIN0 (5 V tol) | Digital in via R-divider |
-| 10 | DIN1 (5 V tol) | Digital in via R-divider |
-| 11 | DIN2 (5 V tol) | Digital in via R-divider |
-| 12 | DIN3 (5 V tol) | Digital in via R-divider |
-| 13 | +5 V | Power out |
-| 14 | +3.3 V | Power out |
-| 15 | GND | Ground |
+### 5.7 DB9 #1 — Quick Analog
 
-### 5.5 DB15 #2 — Mixed 24 V (channels 0–7)
+| Pin | Signal |
+|---|---|
+| 1–4 | ADC 0..3 |
+| 5 | DAC0 |
+| 6 | DAC1 |
+| 7 | AREF |
+| 8 | +3.3 V |
+| 9 | AGND |
 
-Compact 8-channel 24 V port. DOUT through ULN2803, DIN through PC817 optoisolators.
+### 5.8 DB9 #2 — Quick Digital high-channel
 
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DOUT0_O.C. | Open-collector sink |
-| 2 | DOUT1_O.C. | Open-collector sink |
-| 3 | DOUT2_O.C. | Open-collector sink |
-| 4 | DOUT3_O.C. | Open-collector sink |
-| 5 | DOUT4_O.C. | Open-collector sink |
-| 6 | DOUT5_O.C. | Open-collector sink |
-| 7 | DOUT6_O.C. | Open-collector sink |
-| 8 | DOUT7_O.C. | Open-collector sink |
-| 9 | DIN8_OPTO | Optoisolated 24 V input → DIN8 |
-| 10 | DIN9_OPTO | Optoisolated 24 V input → DIN9 |
-| 11 | DIN10_OPTO | Optoisolated 24 V input → DIN10 |
-| 12 | DIN11_OPTO | Optoisolated 24 V input → DIN11 |
-| 13 | +24 V | Power out |
-| 14 | +24 V | Power out |
-| 15 | GND | Ground |
+| Pin | Signal |
+|---|---|
+| 1–4 | DIN 12..15 |
+| 5–8 | DOUT 12..15 |
+| 9 | GND |
 
-> The DIN8–DIN11 inputs on this connector go through PC817 optos with a 4.7 kΩ series resistor on the LED side, biased for 18–30 V input swing. The phototransistor side is wired to the corresponding DIN line (active low at the SAM3X pin).
+### 5.9 DB9 #3 — Quick Serial
 
-### 5.6 DB15 #3 — Analog / Mixed 3.3 V
-
-Analog-focused port with both DACs, half the ADCs, and 3.3 V raw digital lines. For sensitive measurement setups.
-
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DAC0 | Analog out 0.55–2.75 V |
-| 2 | DAC1 | Analog out 0.55–2.75 V |
-| 3 | ADC0 | Analog in 0–3.3 V |
-| 4 | ADC1 | Analog in 0–3.3 V |
-| 5 | ADC2 | Analog in 0–3.3 V |
-| 6 | ADC3 | Analog in 0–3.3 V |
-| 7 | DOUT0 | Digital out 3.3 V (raw) |
-| 8 | DOUT1 | Digital out 3.3 V (raw) |
-| 9 | DOUT2 | Digital out 3.3 V (raw) |
-| 10 | DOUT3 | Digital out 3.3 V (raw) |
-| 11 | PWM0 | PWM future |
-| 12 | PWM1 | PWM future |
-| 13 | AREF | Analog reference |
-| 14 | +3.3 V | Power out |
-| 15 | AGND | Analog ground |
-
-### 5.7 DB9 #1 — Quick Analog (3.3 V)
-
-Compact analog probe port. 4 ADCs + 2 DACs + reference + power.
-
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | ADC0 | Analog in |
-| 2 | ADC1 | Analog in |
-| 3 | ADC2 | Analog in |
-| 4 | ADC3 | Analog in |
-| 5 | DAC0 | Analog out |
-| 6 | DAC1 | Analog out |
-| 7 | AREF | Analog reference |
-| 8 | +3.3 V | Power out |
-| 9 | AGND | Analog ground |
-
-### 5.8 DB9 #2 — Quick Power 24 V
-
-4-channel high-power port for the most common loads (relays, solenoids, motors, lamps).
-
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | DOUT0_O.C. | Open-collector sink |
-| 2 | DOUT1_O.C. | Open-collector sink |
-| 3 | DOUT2_O.C. | Open-collector sink |
-| 4 | DOUT3_O.C. | Open-collector sink |
-| 5 | +24 V | Power out |
-| 6 | +24 V | Power out |
-| 7 | +12 V | Power out (direct from PSU input) |
-| 8 | GND | Ground |
-| 9 | GND | Ground |
-
-### 5.9 DB9 #3 — Quick Serial / Communications (5 V)
-
-UART, SPI and I2C exposed for connecting external chips, displays, sensors. All buses level-shifted to 5 V via 74HCT245 (or jumper-selectable to 3.3 V — see assembly notes).
-
-| Pin | Signal | Type |
-|---|---|---|
-| 1 | UART0_TX | UART transmit (5 V or 3.3 V) |
-| 2 | UART0_RX | UART receive |
-| 3 | SPI_MOSI | SPI master out |
-| 4 | SPI_MISO | SPI master in |
-| 5 | SPI_SCK | SPI clock |
-| 6 | I2C_SDA | I2C data |
-| 7 | I2C_SCL | I2C clock |
-| 8 | +5 V | Power out |
-| 9 | GND | Ground |
-
-> ⚠ UART and SPI/I2C lines are NOT currently exposed by the firmware. They're routed on the PCB so future firmware revisions can use them without hardware changes. For now, leave these pins unconnected on the Due strip side, or wire them manually if you've added firmware support.
+| Pin | Signal |
+|---|---|
+| 1 | UART_TX |
+| 2 | UART_RX |
+| 3 | SPI_MOSI |
+| 4 | SPI_MISO |
+| 5 | SPI_SCK |
+| 6 | I2C_SDA |
+| 7 | I2C_SCL |
+| 8 | +5 V |
+| 9 | GND |
 
 ---
 
 ## 6. Signal duplication summary
 
-Showing where each Arduino signal appears across the 9 connectors and at which voltage level. "Core" signals (DOUT0–3, DIN0–3, ADC0–3, DAC0/1) are duplicated 3–6 times by design.
+| Signal | DB25-1 | DB25-2 | DB25-3 | DB15-1 | DB15-2 | DB15-3 | DB9-1 | DB9-2 | DB9-3 | Total |
+|---|---|---|---|---|---|---|---|---|---|---|
+| DIN 0–3 | ✓ | | | ✓ | | | | | | 2× |
+| DIN 4–7 | ✓ | | | | ✓ | | | | | 2× |
+| DIN 8–11 | ✓ | | | | | ✓ | | | | 2× |
+| DIN 12–15 | ✓ | | | | | | | ✓ | | 2× |
+| DOUT 0–3 | | ✓ | ✓ | ✓ | | | | | | 3× |
+| DOUT 4–7 | | ✓ | ✓ | | ✓ | | | | | 3× |
+| DOUT 8–9 | | ✓ | ✓ | | | ✓ | | | | 3× |
+| DOUT 10–11 | | ✓ | ✓ | | | | | | | 2× |
+| DOUT 12–15 | | ✓ | ✓ | | | | | ✓ | | 3× |
+| ADC 0–1 | ✓ | | | ✓ | | | ✓ | | | 3× |
+| ADC 2–3 | ✓ | | | | ✓ | | ✓ | | | 3× |
+| ADC 4–7 | ✓ | | | | | ✓ | | | | 2× |
+| DAC 0–1 | | ✓ | | ✓ | | ✓ | ✓ | | | 4× |
+| PWM 0–2 | | ✓ | | | ✓ | | | | | 2× (future) |
+| UART/SPI/I2C | | | ✓ | | | | | | ✓ | 2× |
+| +5 V | | ✓ | ✓ | | | | | | ✓ | 3× |
+| +3.3 V | | ✓ | | ✓ | ✓ | ✓ | ✓ | | | 5× |
+| AREF | | ✓ | | | | ✓ | ✓ | | | 3× |
+| GND (any) | ✓ | ✓ | ✓ | ✓ (both) | ✓ | ✓ (both) | ✓ | ✓ | ✓ | all |
 
-| Signal | DB25#1 | DB25#2 | DB25#3 | DB15#1 | DB15#2 | DB15#3 | DB9#1 | DB9#2 | DB9#3 |
-|---|---|---|---|---|---|---|---|---|---|
-| DOUT0 | — | 24V | 5V | 5V | 24V | 3V3 | — | 24V | — |
-| DOUT1 | — | 24V | 5V | 5V | 24V | 3V3 | — | 24V | — |
-| DOUT2 | — | 24V | 5V | 5V | 24V | 3V3 | — | 24V | — |
-| DOUT3 | — | 24V | 5V | 5V | 24V | 3V3 | — | 24V | — |
-| DOUT4–7 | — | 24V | 5V | 5V | 24V | — | — | — | — |
-| DOUT8–15 | — | 24V | 5V | — | — | — | — | — | — |
-| DIN0 | 3V3 | — | — | 5V | — | — | — | — | — |
-| DIN1–3 | 3V3 | — | — | 5V | — | — | — | — | — |
-| DIN4–7 | 3V3 | — | — | — | — | — | — | — | — |
-| DIN8–11 | 3V3 | — | — | — | 24V opto | — | — | — | — |
-| DIN12–15 | 3V3 | — | — | — | — | — | — | — | — |
-| ADC0–3 | 3V3 | — | — | — | — | 3V3 | 3V3 | — | — |
-| ADC4–7 | 3V3 | — | — | — | — | — | — | — | — |
-| DAC0/1 | — | — | 3V3 | — | — | 3V3 | 3V3 | — | — |
-| PWM0 | — | — | future | — | — | future | — | — | — |
-| PWM1 | — | — | future | — | — | future | — | — | — |
-| PWM2 | — | — | future | — | — | — | — | — | — |
-| UART/SPI/I2C | — | future | — | — | — | — | — | — | future |
-
-The 16 DOUT signals appear on at most 6 different physical pins each (one per voltage level on the relevant connectors). The 16 DIN signals appear on 1–2 connectors each. Analog signals appear on 1–3 connectors. **All 147 D-Sub pins are populated**, satisfying the "fill every front-panel pin" requirement.
+All 147 front-panel pins populated. All DIN and DOUT appear on at least 2 ports.
 
 ---
 
-## 7. Routing and signal integrity guidelines
+## 7. Routing guidelines (double-sided home-fab)
 
-For the layout designer (you, in KiCad later — or you can hand-route on the SVG):
+Two layers (top + bottom copper), connected via manual rivets at via locations. Vastly more routing flexibility than a single-layer design.
 
 ### 7.1 Layer assignment
 
-- **Top layer**: signal traces, all components on top, no ground pour
-- **Bottom layer**: split ground pour — AGND under the analog section (Strip A pin 17–25, DB25#1 pins 17–25, DB15#3 pins 1–6 + 13–15, DB9#1 entire), DGND everywhere else. **Single 0 Ω jumper J7** at the analog/digital boundary near Strip A pin 25 — this is the star point.
+- **Top layer (copper side facing user, away from Due)**: signal traces from D-Sub male headers, plus power/ground distribution where needed
+- **Bottom layer (copper side facing Due)**: signal traces from Arduino mating headers, plus the other half of the routing
+- **Vias (rivets)**: any signal that needs to cross from top to bottom (or vice versa) goes through a small drilled hole with a copper rivet soldered on both sides
 
-### 7.2 Trace widths
+### 7.2 Component side assignment
 
-| Net | Trace width |
+- **Top side (above PCB)**: D-Sub male pin headers, mounted with pins facing up. Pads soldered on bottom layer (so the trace can leave from the bottom layer side).
+- **Bottom side (below PCB, facing Due)**: Arduino mating male pin headers, mounted with pins facing down toward the Due. Pads soldered on top layer (so the trace leaves on the top layer side).
+
+This means signals from Arduino mating headers naturally enter on the TOP layer, and signals to D-Sub headers naturally enter on the BOTTOM layer. They pass each other through rivets.
+
+### 7.3 Trace widths
+
+| Net | Width (mm) | Why |
+|---|---|---|
+| Digital signal (DIN, DOUT, UART, SPI, I2C) | 0.3 | sufficient at 3.3 V, ≤ 20 mA |
+| Analog (ADC, DAC, AREF) | 0.3 | low current, high impedance |
+| Power (+3.3 V, +5 V) | 0.5 | ~200 mA max |
+| GND | 0.6 or wider | always use wide / poured |
+
+### 7.4 Ground strategy
+
+- Top layer: mostly signal traces, no large GND pour needed
+- Bottom layer: GND pour in unused areas (acts as quiet reference plane)
+- AGND merged with main GND (no separate analog ground plane on this small board — accept slight noise impact)
+- For applications needing better analog isolation, build a daughter board with proper AGND/DGND split
+
+### 7.5 Rivet (via) count estimate
+
+| Signal class | Rivets needed |
 |---|---|
-| Signal (digital + analog) | 0.30 mm (12 mil) |
-| 3.3 V, 5 V power | 0.50 mm (20 mil) |
-| 12 V, 24 V power | 0.80 mm (32 mil) |
-| GND (where not poured) | 0.80 mm |
+| Each DIN/DOUT trace from 2×18 to D-Sub (16+16 = 32 signals × ~1 via each) | ~30 |
+| ADC traces from ANALOG header | ~5 |
+| DAC traces | ~3 |
+| Power rails (+3V3, +5V, GND from POWER header) | ~5–10 |
+| **Total rivets** | **~40–50** |
 
-### 7.3 Decoupling rules
+Drill bit: 0.6–0.8 mm. Rivet: 1 mm OD copper, ~1.6 mm long, flared on both sides. Soldered at each end. Plan for ~1 minute per rivet during assembly = 45–60 minutes total rivet work. Tedious but routine for home-fab.
 
-- 100 nF ceramic within 5 mm of every IC's VCC pin (one cap per ULN2803, per 74HCT245)
-- 10 µF electrolytic on every power rail (3.3 V, 5 V, 12 V, 24 V) near the entry point of each rail to the board
-- 100 µF electrolytic on input and output of LM2596 and XL6009 modules (in addition to the modules' onboard caps — they help with transient response under load)
-- 100 nF ceramic on every D-Sub power pin to GND, near the box header
+### 7.6 Single trace strategy: D22–D53 fan-out
 
-### 7.4 Analog isolation
+The 2×18 block at the east edge of the bottom side is the source of all 32 DIN/DOUT signals. Best routing strategy:
+1. Each D22–D53 signal exits the bottom-side header pad
+2. Routes on the **bottom layer** westward across the PCB
+3. At the destination D-Sub column, transitions to **top layer** via rivet
+4. Top layer trace reaches the D-Sub male pin
+5. For multi-destination signals (e.g., DOUT0 on DB25#2 + DB25#3 + DB15#1), use T-branches on the bottom layer before transitioning up
 
-- Keep ADC traces ≥ 2 mm from any DOUT/DIN trace
-- Route DAC traces under their own AGND pour, not over digital signal traces
-- AREF is the most sensitive node — short, direct trace from Strip B pin 24 to AREF pins on connectors, no vias if possible
-
-### 7.5 ULN2803 drive
-
-- Tie ULN2803 COM pin (pin 10) to +24 V — this enables the internal flyback diodes
-- Tie ULN2803 GND (pin 9) directly to DGND, not via vias
-- Add a 4.7 kΩ pull-down on each ULN input pin (R33–R48) so the output stays inactive during Due reset / firmware upload
-
-### 7.6 74HCT245 wiring
-
-- DIR pin tied to **VCC (5 V)** = direction A→B (3.3 V side → 5 V side)
-- /OE pin tied to **GND** = always enabled
-- VCC = 5 V (from M1 buck), GND = DGND
-- Inputs (A side) on the 3.3 V Strip B traces, outputs (B side) on the 5 V DOUT traces to the connectors
-
-### 7.7 PC817 opto wiring
-
-For each DIN_OPTO channel:
-- LED anode → series 4.7 kΩ → connector pin (24 V input)
-- LED cathode → connector GND pin
-- Phototransistor collector → corresponding DIN_3V3 trace (also pulled up to 3.3 V via 10 kΩ)
-- Phototransistor emitter → DGND
-
-### 7.8 12 V input protection
-
-Add a SS34 or 1N5819 Schottky diode in series on the 12 V input for reverse-polarity protection (the user said the 12 V comes from an ATX, but field-swappable terminals can be miswired). Through-hole DO-201 package, ~5×5 mm.
+This keeps most signal routing on one layer (bottom), simplifying the top layer to mostly local D-Sub-to-rivet connections.
 
 ---
 
-## 8. Assembly notes
+## 8. Arduino reset button (not on this PCB)
 
-### 8.1 Soldering order (recommended)
+Same as v2: the front-panel top pushbutton (Arduino Reset + 3.3V powered LED) is wired **directly** from the Due's POWER header to the button, bypassing this PCB. 4-wire harness:
 
-1. **Passives first**: all resistors, ceramic caps, then electrolytics
-2. **IC sockets** (DIP-18 for ULN2803, DIP-20 for 74HCT245, DIP-4 for PC817 — sockets are highly recommended for hand-built boards so you can swap a fried chip without desoldering)
-3. **Power modules**: LM2596 and XL6009 — solder the 4 pin pads
-4. **Power LED + resistors**
-5. **Connectors**: 12 V screw terminal first, then the 9 IDC box headers, then the 2 Due strips
-6. **Flux and clean**, then **insert ICs into sockets**
+| Wire | From (Due POWER header) | To (front button top) |
+|---|---|---|
+| RESET | RESET pin | Button NO contact |
+| GND | GND | Button COM contact |
+| +3.3 V | +3.3 V (via 220 Ω series) | LED anode |
+| GND | GND | LED cathode |
 
-### 8.2 First-power-on sequence
-
-1. With NO chips in sockets, NO Due connected:
-   - Apply 12 V to J1
-   - Verify +12 V LED on
-   - Adjust LM2596 pot until +5 V rail measures 5.00 ± 0.05 V; verify +5 V LED on
-   - Adjust XL6009 pot until +24 V rail measures 24.0 ± 0.2 V; verify +24 V LED on
-   - Power down
-2. Insert ULN2803 and 74HCT245 chips into their sockets (mind orientation!)
-3. Wire the Due to Strip A and Strip B per section 4
-4. Power on Due (USB) and 12 V supply
-5. Verify +3.3 V LED on (powered from Due via Strip B pin 23)
-6. Verify all rails on test points TP1–TP6
-7. Test each DOUT by toggling from firmware and reading the corresponding 5 V and 24 V outputs
-
-### 8.3 Jumpers and options
-
-- **J7**: AGND-DGND star point. Populate with a 0 Ω resistor or wire jumper. This is the only connection between the two ground pours. Removing J7 fully isolates the analog section (useful if you have an external AGND source).
-- **R33–R48** (ULN2803 pull-downs): populate only if you observe spurious activations during Due reset.
-- **+5 V source for DB9#3**: by default driven by M1 buck (5 V from board). To switch to Due's onboard 5 V instead, cut the trace at JP1 and bridge to Strip B pin 22.
+LED lit = Arduino has +3.3 V power. Does not indicate firmware health (could add heartbeat in firmware later — wire LED to spare GPIO instead).
 
 ---
 
-## 9. Future extensions
+## 9. Migration from v2
 
-- **PWM**: when the firmware adds PWM output on PC21/PC22/PC23, the signals will appear automatically on DB25#3 pins 19–21 and DB15#3 pins 11–12. No PCB rework.
-- **CAN**: PA0/PA1 (CAN0) can be added to DB9#3 if needed; currently those pins are unallocated. Requires a CAN transceiver IC (TJA1050 or similar — DIP-8 available).
-- **Isolated ADC**: if you need to measure floating sources, add a small isolation amplifier daughterboard between the source and ADC pins. The 3.3 V SENSING port (DB25#1) is the natural place to plug it in.
-- **Higher-current 24 V**: replace XL6009 module with a beefier boost (LM2587 in TO-220 form factor), or feed +24 V from external source via a second screw terminal.
+| Aspect | v2 | v3 |
+|---|---|---|
+| Form factor | 140 × 80 mm standalone PCB | 101.52 × 53.30 mm Arduino Due shield |
+| Layers | 1 (single-layer home-fab) | 2 (double-sided home-fab + rivets) |
+| Connection to Due | wire harness (50 wires from Due to backplane Strips) | direct plug (male pins down into Due female sockets) |
+| Mounting holes | 4 × M3 at "Due virtual overlay shifted up 20 mm" pattern | 4 × M3 at Arduino Due exact native positions |
+| Strips A/B | 25 solder-through holes per strip on right edge | replaced with Arduino Due mating headers on bottom side |
+| BOM | 9 box headers + 50 holes | 9 box headers (top) + 6 mating headers (bottom, ~63 pins total) + ~40 rivets |
+| Assembly time | longer (50 wires to solder) | shorter (just plug-in + ribbon cables) |
+
+Migration steps for someone holding a v2 PCB:
+1. Don't bother — v2 is obsolete. Order/fab the v3 board fresh
+2. Front-panel D-Sub pinouts unchanged → existing front panel cables stay
+3. Arduino Due wiring becomes plug-in (remove Strip A/B wire harness)
 
 ---
 
-## 10. Quick-reference card
+## 10. Version history
 
-| Need to connect... | Use connector |
-|---|---|
-| 3.3 V CMOS digital input | DB25 #1 (pins 1–16) |
-| 0–3.3 V analog input | DB25 #1 (17–24), DB15 #3, DB9 #1 |
-| 5 V TTL input | DB15 #1 (pins 9–12) — only ch 0–3 |
-| 24 V industrial input | DB15 #2 (pins 9–12) — only ch 8–11, optoisolated |
-| 5 V TTL output | DB25 #3, DB15 #1 |
-| 24 V relay/solenoid output | DB25 #2, DB15 #2, DB9 #2 |
-| Analog output (DAC) | DB25 #3 (17–18), DB15 #3, DB9 #1 |
-| UART/SPI/I2C | DB9 #3 (firmware support pending) |
-| 5 V power for external load | DB25 #3 pin 22, DB15 #1 pin 13, DB9 #3 pin 8 |
-| 24 V power for external load | DB25 #2 pins 17–19, DB15 #2 pins 13–14, DB9 #2 pins 5–6 |
-| 12 V power for external load | DB9 #2 pin 7 |
+| Version | Date | Changes |
+|---|---|---|
+| v1 | 2026-04-11 | Active design with onboard level shifters (ULN2803, 74HCT245), opto DIN, LM2596/XL6009 power modules, 152×53 mm 2-layer DIP. |
+| v2 | 2026-04-14 | Passive standalone PCB, 140×80 mm single-layer home-fab, no active components, Arduino Due connected via wire harness from edge strips. |
+| v3 | 2026-04-14 | **Arduino Due shield**: 101.52 × 53.30 mm exact Due footprint, double-sided home-fab with through-hole rivets for vias. Bottom side has Arduino mating male pin headers (POWER 1×8, ANALOG 1×8, COMM 1×10, DIGITAL 1×8, 2×18 D22–D53, DAC 1×6) at standard 7 mm pin length (non-stackable). Top side keeps 9 D-Sub male pin headers in 3×3 grid. Mounting at Due native M3 positions. Plugs directly onto Due — no wire harness. |

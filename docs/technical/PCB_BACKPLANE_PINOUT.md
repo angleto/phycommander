@@ -3,8 +3,8 @@
 Passive Arduino Due shield that fans out all I/O signals to nine D-Sub front-panel connectors. Plugs directly onto the Due — no wire harness. Double-sided home-fab compatible (UV bromograph + photosensitized board + through-hole rivets for vias).
 
 See also:
-- `panel_sketch/pcb_backplane_top.svg` — top layer print master (1:1 scale)
-- `panel_sketch/pcb_backplane_bottom.svg` — bottom layer print master (1:1 scale, MIRROR before printing on film)
+- `companion_board/panel_sketch/pcb_backplane_top.svg` — top layer print master (1:1 scale)
+- `companion_board/panel_sketch/pcb_backplane_bottom.svg` — bottom layer print master (1:1 scale, MIRROR before printing on film)
 
 ---
 
@@ -75,7 +75,7 @@ Male pin headers facing DOWN, mating with Arduino Due's female socket headers. S
 
 Total bottom-side pins: ~63 pin positions (8+8+10+8+36+6 = 76 holes drilled, ~63 actually carrying signals).
 
-Position coordinates are approximate in `panel_sketch/pcb_backplane_bottom.svg`. **Verify against Arduino Due mechanical drawing before final fabrication** — see the official Due reference for exact header positions.
+Position coordinates are approximate in `companion_board/panel_sketch/pcb_backplane_bottom.svg`. **Verify against Arduino Due mechanical drawing before final fabrication** — see the official Due reference for exact header positions.
 
 ---
 

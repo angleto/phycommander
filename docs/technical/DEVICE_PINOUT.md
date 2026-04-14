@@ -373,9 +373,9 @@ Pending decisions, the following are "ready to do" now:
 - [ ] Decide on internal vs external PSU (decides whether IEC C14 is appropriate)
 - [ ] Source 4 × DB9 panel-mount connectors (solder cup, metal body with flange — ~€3 each) if not already in stock
 - [ ] Draft CAD for the new rear plate once decisions above are made
-- [ ] Update `panel_sketch/rear_panel.svg` to match the final decided layout
+- [ ] Update `companion_board/panel_sketch/rear_panel.svg` to match the final decided layout
 
-Once the user confirms the desiderata, the SVG in `panel_sketch/rear_panel.svg` will be rewritten to match this proposed layout.
+Once the user confirms the desiderata, the SVG in `companion_board/panel_sketch/rear_panel.svg` will be rewritten to match this proposed layout.
 
 ---
 

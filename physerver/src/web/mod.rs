@@ -45,6 +45,9 @@ pub struct AppState {
     /// the iso stats; absent in bulk mode where there is no shared
     /// libusb dev_handle.
     pub waveform_dev: std::sync::OnceLock<Arc<phycmd_core::transport::WaveformDevice>>,
+    /// Handle to the iso transport itself. Used by the telemetry-detail
+    /// toggle endpoint; absent in bulk mode.
+    pub iso_transport: std::sync::OnceLock<Arc<phycmd_core::transport::IsoTransport>>,
 }
 
 impl AppState {
@@ -61,6 +64,7 @@ impl AppState {
             iso_stats: std::sync::OnceLock::new(),
             waveforms: std::sync::OnceLock::new(),
             waveform_dev: std::sync::OnceLock::new(),
+            iso_transport: std::sync::OnceLock::new(),
         }
     }
 
@@ -83,6 +87,10 @@ impl AppState {
 
     pub fn set_waveform_dev(&self, dev: Arc<phycmd_core::transport::WaveformDevice>) {
         let _ = self.waveform_dev.set(dev);
+    }
+
+    pub fn set_iso_transport(&self, t: Arc<phycmd_core::transport::IsoTransport>) {
+        let _ = self.iso_transport.set(t);
     }
 
     /// Apply the error_count baseline to a raw Status: subtract the
@@ -126,6 +134,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/rt_stats", get(get_rt_stats))
         .route("/api/reset_errors", post(reset_errors))
         .route("/api/reset_telemetry", post(reset_telemetry))
+        .route("/api/telemetry/detail", get(get_telemetry_detail))
+        .route("/api/telemetry/detail", post(set_telemetry_detail))
         .route("/api/waveform", get(get_waveforms))
         .route("/api/waveform/:channel", post(set_waveform))
         .route("/api/waveform/:channel", axum::routing::delete(disable_waveform))
@@ -192,6 +202,23 @@ async fn reset_errors(State(state): State<Arc<AppState>>) -> Response {
     info!("error_count baseline reset to raw={}", current_raw);
     (StatusCode::OK, format!("Errors reset (raw counter was {})", current_raw))
         .into_response()
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct TelemetryDetailFlag { enabled: bool }
+
+async fn get_telemetry_detail(State(state): State<Arc<AppState>>) -> Response {
+    let on = state.iso_transport.get().map(|t| t.telemetry_detail()).unwrap_or(false);
+    Json(TelemetryDetailFlag { enabled: on }).into_response()
+}
+async fn set_telemetry_detail(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<TelemetryDetailFlag>,
+) -> Response {
+    match state.iso_transport.get() {
+        Some(t) => { t.set_telemetry_detail(req.enabled); Json(TelemetryDetailFlag { enabled: req.enabled }).into_response() },
+        None    => (StatusCode::SERVICE_UNAVAILABLE, "iso transport not active").into_response(),
+    }
 }
 
 /// POST /api/reset_telemetry — zero the RT-scheduler stats and iso

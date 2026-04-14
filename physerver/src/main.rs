@@ -320,14 +320,15 @@ async fn main() -> Result<()> {
         //   the USB microframe rate (8 kHz HS) and commands are taken
         //   from `staging` once per OUT transfer (every ~1 ms).
         // -------------------------------------------------------------
-        let iso = phycmd_core::transport::IsoTransport::new(
+        let iso = Arc::new(phycmd_core::transport::IsoTransport::new(
             Arc::clone(&staging),
             Arc::clone(&bus),
             Arc::clone(&stats),
-        ).context("Failed to start IsoTransport")?;
+        ).context("Failed to start IsoTransport")?);
         web_state.set_iso_stats(iso.iso_stats_arc());
         web_state.set_waveforms(iso.waveforms());
         web_state.set_waveform_dev(iso.waveform_dev());
+        web_state.set_iso_transport(Arc::clone(&iso));
 
         // Block until shutdown. IsoTransport's Drop signals stop +
         // joins its I/O thread cleanly.

@@ -217,6 +217,14 @@ struct IsoInner {
     /// measure USB round-trip latency in the IN callback.
     out_seq_counter: AtomicU8,
 
+    /// When false, the OUT path skips seq bumping / timestamp store
+    /// and the IN path skips the latency correlation lookup. Leaves
+    /// URB-level jitter + tick_count untouched. Toggle via
+    /// POST /api/telemetry/detail to save a few atomic ops/s
+    /// (~16 k/s on the OUT path at 8 kHz) when the detail isn't
+    /// being watched.
+    telemetry_detail_enabled: AtomicBool,
+
     /// Per-seq send timestamps (nanoseconds since `start`). The IN
     /// callback correlates status.seq_num against this ring to
     /// compute per-packet round-trip latency.
@@ -343,6 +351,7 @@ impl IsoTransport {
             out_seq_counter: AtomicU8::new(0),
             out_seq_sent_ns: std::array::from_fn(|_| AtomicI64::new(0)),
             last_urb_ns: AtomicI64::new(0),
+            telemetry_detail_enabled: AtomicBool::new(true),
             start: Instant::now(),
         });
 
@@ -388,6 +397,20 @@ impl IsoTransport {
     /// them on every microframe (cheap parking_lot RwLock read).
     pub fn waveforms(&self) -> Arc<WaveformBank> {
         Arc::clone(&self.waveforms)
+    }
+
+    /// Get / set the per-packet seq_num + latency tracking flag.
+    /// Off saves ~24 k atomic ops/s across the iso OUT+IN hot paths.
+    pub fn telemetry_detail(&self) -> bool {
+        self.inner.telemetry_detail_enabled.load(Ordering::Relaxed)
+    }
+    pub fn set_telemetry_detail(&self, on: bool) {
+        self.inner.telemetry_detail_enabled.store(on, Ordering::Relaxed);
+        // Clear ring so stale timestamps don't produce bogus latency
+        // values if the flag is flipped back on after a long pause.
+        for slot in self.inner.out_seq_sent_ns.iter() {
+            slot.store(0, Ordering::Relaxed);
+        }
     }
 
     /// Snapshot of iso-specific counters.
@@ -660,23 +683,27 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
         let any_active =
             dac0_w.enabled || dac1_w.enabled || pwm0_w.enabled || pwm1_w.enabled;
 
-        // Bump the wire seq_num PER PACKET so each of the 8 microframe
-        // commands in this transfer carries a unique identifier. This
-        // gives 8 kHz effective round-trip visibility (matching the
-        // real USB microframe rate) instead of the 1 kHz per-URB rate.
+        // When detailed telemetry is enabled, bump wire seq_num per
+        // packet (8 kHz) and stamp the send timestamp so the IN
+        // callback can compute real round-trip latency. When disabled,
+        // seq_num stays at whatever base_cmd carries (0 by default)
+        // and we save ~16 k atomic ops/s on this hot path.
+        let detail = inner.telemetry_detail_enabled.load(Ordering::Relaxed);
         let t0 = if any_active {
             inner.waveforms.next_packet_idx(PKTS_PER_TRANSFER as u64)
         } else { 0 };
         const SR_HZ: f32 = (PKTS_PER_TRANSFER * 1000) as f32; // 8000 Hz on HS
-        let now_ns = inner.start.elapsed().as_nanos() as i64;
+        let now_ns = if detail { inner.start.elapsed().as_nanos() as i64 } else { 0 };
         for p in 0..PKTS_PER_TRANSFER {
             let off = p * ISO_PKT_SIZE;
             if off + MESSAGE_SIZE > buf.len() { break; }
-            let wire_seq = inner.out_seq_counter
-                .fetch_add(1, Ordering::Relaxed).wrapping_add(1);
-            inner.out_seq_sent_ns[wire_seq as usize].store(now_ns, Ordering::Relaxed);
             let mut cmd = base_cmd.clone();
-            cmd.seq_num = wire_seq;
+            if detail {
+                let wire_seq = inner.out_seq_counter
+                    .fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+                inner.out_seq_sent_ns[wire_seq as usize].store(now_ns, Ordering::Relaxed);
+                cmd.seq_num = wire_seq;
+            }
             if any_active {
                 let t = t0 + p as u64;
                 if dac0_w.enabled { cmd.dac[0] = dac0_w.sample(t, SR_HZ); }
@@ -765,10 +792,10 @@ unsafe fn handle_in_packet(
 
     // Round-trip latency: firmware echoes the seq_num of the last
     // command it applied. Look up when we sent that seq and diff.
-    // If the firmware hasn't applied a new command yet (seq stuck
-    // at 0 at boot, or we've already serviced this echo), latency
-    // stays 0 so it doesn't drag the mean.
-    let latency_us: u32 = {
+    // Gated on telemetry_detail_enabled to match the OUT path —
+    // with the flag off seq_num is 0 anyway so the lookup would
+    // always miss.
+    let latency_us: u32 = if inner.telemetry_detail_enabled.load(Ordering::Relaxed) {
         let sent_ns = inner.out_seq_sent_ns[wire_seq_echo as usize]
             .load(Ordering::Relaxed);
         if sent_ns > 0 && now_ns >= sent_ns {
@@ -776,6 +803,8 @@ unsafe fn handle_in_packet(
         } else {
             0
         }
+    } else {
+        0
     };
 
     // Also count it as a "tick" for the existing /api/rt_stats

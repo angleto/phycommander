@@ -128,7 +128,7 @@ The reference enclosure, front / rear steel panels, and PSU-support bar are from
 
 ### Signal-conditioning front-end (recommended hand-solder / through-hole)
 
-The Due's DACs output 0.55–2.75 V and its ADCs expect 0–3.3 V — you usually want some protection + buffering around them. The project's author prefers **through-hole / DIP** parts and prebuilt buck/boost modules over SMT; the schematic in [`docs/technical/PCB_BACKPLANE_PINOUT.md`](docs/technical/PCB_BACKPLANE_PINOUT.md) follows this rule.
+The Due's DACs output 0.55–2.75 V and its ADCs expect 0–3.3 V — you usually want some protection + buffering around them. The project's author prefers **through-hole / DIP** parts and prebuilt buck/boost modules over SMT. [`docs/technical/PCB_BACKPLANE_PINOUT.md`](docs/technical/PCB_BACKPLANE_PINOUT.md) sketches a passive Arduino Due shield that fans out all I/O to nine DB-25 connectors following this rule — **the design is a paper sketch only, never fabricated**. See [Contributions wanted](#contributions-wanted) below.
 
 | Qty | Item | Role |
 |-----|------|------|
@@ -141,7 +141,7 @@ The Due's DACs output 0.55–2.75 V and its ADCs expect 0–3.3 V — you usuall
 | 4 | 330 Ω + LED | Optional status LEDs on the PWM pins |
 | 1 | Buck module 12 V → 5 V (prebuilt) | Power Arduino Due from the lab supply |
 | 1 | Pluggable screw-terminal blocks | All external I/O lands here |
-| 1 | Drilled aluminium or 3 mm ABS enclosure | See [`companion_board/panel_sketch/`](companion_board/panel_sketch/) for the front/rear panel SVGs |
+| 1 | Drilled aluminium or 3 mm ABS enclosure | See [`companion_board/panel_sketch/`](companion_board/panel_sketch/) for the front/rear panel SVGs (front/rear are realised on the reference build; `pcb_backplane_*.svg` is the not-yet-fabricated companion shield — see [Contributions wanted](#contributions-wanted)) |
 
 ### What you can skip
 
@@ -226,6 +226,18 @@ For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing
 - **v4** — rule-chain mode (`MODE_RULE_CHAIN`) for composing reactive primitives on-chip without round-tripping to the host.
 - **v4.x** — second supported MCU (SAMD51 / RP2350) with the same wire protocol.
 - **Long term** — pluggable front-end PCB with galvanic isolation and ±10 V amplifiers, designed hand-solder-first.
+
+## Contributions wanted
+
+PhyCMD is maintained solo and a few useful pieces are **sketched but not built**. Concrete help with any of these lands faster than broad feature requests:
+
+- **Fabricate the companion shield PCB.** [`docs/technical/PCB_BACKPLANE_PINOUT.md`](docs/technical/PCB_BACKPLANE_PINOUT.md) describes a passive Arduino Due shield that fans out all I/O to nine DB-25 connectors on the front panel, replacing the hand-crimped wire harness shown in the photos. The pinout is decided, the 1:1 layer SVGs are in [`companion_board/panel_sketch/`](companion_board/panel_sketch/), and a KiCad-8 skeleton sits under [`companion_board/pcb/`](companion_board/pcb/) — but **nothing has been fabricated or validated**. Pull-request-ready help would be: clean KiCad project, generated gerbers, a built prototype with continuity + signal-integrity notes.
+- **Front-end analog conditioning.** The BOM above is a recommended parts list, not a validated schematic — an actual op-amp buffer + ADC protection daughterboard (DIP, hand-solderable, documented) would save everyone time. Bonus points for optional ±10 V rail-to-rail scaling.
+- **xHCI benchmarking.** The reference host has EHCI only; somebody with an xHCI machine can characterise jitter / max effective refresh rate and contribute a short report + `docs/technical/XHCI_NOTES.md`.
+- **Watchdog-driven crash recovery.** Firmware currently has to be SAM-BA reflashed after a rare wedge (see session history). A firmware watchdog + host-side auto-reset over USB would eliminate this.
+- **Non-reference deployments.** If you get it running on a different mini-PC / different Linux distro, open a PR against [`docs/deployment/DEPLOYMENT.md`](docs/deployment/DEPLOYMENT.md) with the delta.
+
+Issues tagged `help wanted` on GitHub track these. Pull requests for smaller polish work (docs, typos, small refactors) also very welcome.
 
 ## License & authorship
 

@@ -34,10 +34,10 @@ Complete guide to PhyCMD documentation.
 - **Wire Protocol**: [firmware/PROTOCOL.md](firmware/PROTOCOL.md) — byte-level spec, v1 + v2 reactive + v3 PID
 - **Function Generator User Guide**: [user-guide/FUNCTION_GENERATOR.md](user-guide/FUNCTION_GENERATOR.md) — shapes, LUT, threshold, pulse, PID with examples
 - **Device Pinout** (front + rear panel): [DEVICE_PINOUT.md](technical/DEVICE_PINOUT.md)
-- **I/O Backplane PCB (Arduino Due shield)**: [PCB_BACKPLANE_PINOUT.md](technical/PCB_BACKPLANE_PINOUT.md)
+- **I/O Backplane PCB (Arduino Due shield)** — **design sketch, not fabricated**: [PCB_BACKPLANE_PINOUT.md](technical/PCB_BACKPLANE_PINOUT.md) · see README → Contributions wanted
 - **Companion board** (Arduino Due shield + panel): [../companion_board/](../companion_board/)
-  - PCB CAD project (KiCad 8 skeleton): [../companion_board/pcb/README.md](../companion_board/pcb/README.md)
-  - Panel sketches (SVG masters + photos): [../companion_board/panel_sketch/](../companion_board/panel_sketch/)
+  - PCB CAD project (KiCad 8 skeleton, **unfabricated**): [../companion_board/pcb/README.md](../companion_board/pcb/README.md)
+  - Panel sketches (SVG masters; front+rear are realised on the reference build, PCB backplane layers are the not-yet-built companion shield): [../companion_board/panel_sketch/](../companion_board/panel_sketch/)
 
 ---
 

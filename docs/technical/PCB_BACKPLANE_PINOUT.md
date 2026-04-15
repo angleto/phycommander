@@ -1,5 +1,11 @@
 # PCB Backplane — Arduino Due Shield (v3)
 
+> ⚠️  **Status: design sketch, never fabricated.**
+> Pinout, mechanical outline, and layer plots are decided; nothing
+> has been etched, drilled, or signal-integrity tested. See the
+> repository README → *Contributions wanted* for what would close
+> the gap to a built + validated board.
+
 Passive Arduino Due shield that fans out all I/O signals to nine D-Sub front-panel connectors. Plugs directly onto the Due — no wire harness. Double-sided home-fab compatible (UV bromograph + photosensitized board + through-hole rivets for vias).
 
 See also:

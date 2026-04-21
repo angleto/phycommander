@@ -214,7 +214,7 @@ UDC_DESC_STORAGE udi_vendor_desc_t udc_desc_hs =
  *   and the ring fills (s_tx_head would collide with s_tx_tail),
  *   the incoming frame is DROPPED on the firmware side (safer than
  *   corrupting a pending reply). The host will observe this as a
- *   missing response and time out on that slot. With NUM_TX_SLOTS=16
+ *   missing response and time out on that slot. With NUM_TX_SLOTS=64
  *   this never happens in practice at the rates we target.
  * ------------------------------------------------------------------------- */
 

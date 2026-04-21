@@ -142,6 +142,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/waveform", get(get_waveforms))
         .route("/api/waveform/:channel", post(set_waveform))
         .route("/api/waveform/:channel", axum::routing::delete(disable_waveform))
+        .route("/api/waveform/coexistence", get(waveform_coexistence))
         // Firmware fn-gen (vendor SETUP plane). Available in iso mode only.
         .route("/api/fngen/caps", get(fngen_caps))
         .route("/api/fngen/state/:channel", get(fngen_state))
@@ -278,6 +279,67 @@ async fn set_waveform(
         }
         Err(e) => (StatusCode::BAD_REQUEST, e).into_response(),
     }
+}
+
+/// GET /api/waveform/coexistence — reports, per shared channel (DAC0,
+/// DAC1, PWM0, PWM1), whether the host-side `WaveformBank` generator
+/// and the firmware on-chip function generator are both active. When
+/// both are active the firmware wins (see `waveforms.rs` module doc);
+/// this endpoint surfaces the overlap so the dashboard can draw a
+/// warning badge on the affected channel row.
+#[derive(Serialize)]
+struct ChannelCoexistence {
+    host_enabled: bool,
+    firmware_active: bool,
+    firmware_shape: &'static str,
+    overridden_by_firmware: bool,
+}
+#[derive(Serialize)]
+struct CoexistenceReport {
+    dac0: ChannelCoexistence,
+    dac1: ChannelCoexistence,
+    pwm0: ChannelCoexistence,
+    pwm1: ChannelCoexistence,
+}
+async fn waveform_coexistence(State(state): State<Arc<AppState>>) -> Response {
+    let (Some(w), Some(d)) = (state.waveforms.get(), state.waveform_dev.get()) else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "coexistence report only available in iso mode",
+        )
+            .into_response();
+    };
+
+    // Host-side: single cheap RwLock read per channel.
+    let snap = w.snapshot();
+    // Firmware-side: one EP0 control transfer per channel (4 total).
+    // Returning a BUSY error for a channel leaves it reported as
+    // `firmware_active = false`, which is the safe default: the UI
+    // won't draw a spurious warning if the firmware is momentarily
+    // reconnecting.
+    let firmware_state = |name: &'static str| -> (bool, &'static str) {
+        match d.state(name) {
+            Ok(st) => {
+                let active = st.shape != 0; // 0 == SHAPE_OFF
+                (active, st.shape_name)
+            }
+            Err(_) => (false, "unavailable"),
+        }
+    };
+    let compose = |host_enabled: bool, fw: (bool, &'static str)| ChannelCoexistence {
+        host_enabled,
+        firmware_active: fw.0,
+        firmware_shape: fw.1,
+        overridden_by_firmware: host_enabled && fw.0,
+    };
+
+    let report = CoexistenceReport {
+        dac0: compose(snap.dac0.enabled, firmware_state("dac0")),
+        dac1: compose(snap.dac1.enabled, firmware_state("dac1")),
+        pwm0: compose(snap.pwm0.enabled, firmware_state("pwm0")),
+        pwm1: compose(snap.pwm1.enabled, firmware_state("pwm1")),
+    };
+    Json(report).into_response()
 }
 
 /// DELETE /api/waveform/{channel} — disable the channel's waveform,

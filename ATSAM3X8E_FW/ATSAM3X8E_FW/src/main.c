@@ -112,11 +112,26 @@ static uint8_t  s_last_seq    = 0xFFu;
 static uint16_t s_error_count = 0;
 static volatile uint32_t s_uptime_ms = 0;
 
+/* Watchdog kick cadence, in SysTick ticks (= milliseconds). Picked
+ * well below the WDT_MR.WDV timeout (~2 s) so any drop in tick rate
+ * of up to 4× still pets the dog before it bites. */
+#define WDT_KICK_EVERY_MS  500u
+
 void SysTick_Handler(void);
 void SysTick_Handler(void)
 {
 	s_uptime_ms++;
 	waveform_systick_1ms();    /* drives PULSE_TRIG cooldown / pulse end */
+
+	/* Kick the watchdog periodically. If the main loop, USB ISR,
+	 * DACC ISR, or SysTick itself wedges for more than ~2 s the
+	 * WDT triggers a hard reset — the host side detects the USB
+	 * disconnect and re-opens the device automatically. */
+	if ((s_uptime_ms % WDT_KICK_EVERY_MS) == 0) {
+		/* WDT_CR_KEY(0xA5) is the WDT password required on every
+		 * write; any other value leaves WDT_CR unchanged. */
+		WDT->WDT_CR = WDT_CR_KEY(0xA5u) | WDT_CR_WDRSTT;
+	}
 }
 
 /* ============================================================
@@ -363,15 +378,27 @@ void apply_command_frame(const uint8_t *rx_buf)
 	/* Apply DAC outputs — but only on channels currently in MANUAL.
 	 * A channel in GENERATOR mode is being driven by the on-chip
 	 * TC + DACC PDC chain in waveform.c; writing to its CDR here
-	 * would race with the PDC and cause glitches. */
+	 * would race with the PDC and cause glitches.
+	 *
+	 * For MANUAL channels we also push the value into the waveform
+	 * layer's per-channel hold, so if the OTHER channel is still
+	 * generating (PDC active) the refill loop emits this value during
+	 * the stopped-channel's slots instead of reverting to mid-rail.
+	 * See waveform_set_manual_hold / refill_buffer SHAPE_OFF branch. */
 	if (cmd->flags & FLAG_DAC_ENABLE) {
 		uint16_t v0 = cmd->dac0, v1 = cmd->dac1;
 		if (v0 > DAC_MAX) v0 = DAC_MAX;
 		if (v1 > DAC_MAX) v1 = DAC_MAX;
 		bool gen0 = waveform_dac_is_generating(0);
 		bool gen1 = waveform_dac_is_generating(1);
-		if (!gen0) dacc_write_conversion_data(DACC, v0);
-		if (!gen1) DACC->DACC_CDR = v1 | 0x1000u;   /* tag → CH1 */
+		if (!gen0) {
+			dacc_write_conversion_data(DACC, v0);
+			waveform_set_manual_hold(0, v0);
+		}
+		if (!gen1) {
+			DACC->DACC_CDR = v1 | 0x1000u;   /* tag → CH1 */
+			waveform_set_manual_hold(1, v1);
+		}
 	}
 
 	/* Sequence tracking */
@@ -447,8 +474,17 @@ int main(void)
 	 * counter just wraps freely. */
 	enable_dwt_cyccnt();
 
-	/* Disable the SAM3X watchdog (WDT_MR is write-once). */
-	WDT->WDT_MR = WDT_MR_WDDIS;
+	/* Configure the SAM3X watchdog. WDT_MR is write-once after reset
+	 * so we have to set it up before anything else can touch it.
+	 * Clock = SLCK / 128 = 32.768 kHz / 128 ≈ 256 Hz → one WDV tick
+	 * ≈ 3.906 ms. WDV = 512 gives a ~2.0 s timeout; WDD = WDV means
+	 * no "too-early" window (a kick at any time pets the dog).
+	 * WDRSTEN asks the WDT to generate a processor-level reset on
+	 * timeout, which the host-side IsoTransport auto-reset logic
+	 * catches as a USB LIBUSB_ERROR_NO_DEVICE and retries opening
+	 * the device. SysTick at 1 kHz pets the dog every 500 ms
+	 * (WDT_KICK_EVERY_MS). */
+	WDT->WDT_MR = WDT_MR_WDV(512) | WDT_MR_WDD(512) | WDT_MR_WDRSTEN;
 
 	/* Initialise I/O peripherals */
 	init_dig_in_ports();

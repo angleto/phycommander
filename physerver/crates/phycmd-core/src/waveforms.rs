@@ -11,6 +11,26 @@
 //! anyway (its slew rate caps somewhere below 1 MHz, but the practical
 //! ceiling on a 12-bit DAC at 8 kSPS is a few hundred Hz of clean sine).
 //!
+//! ## Interaction with the on-chip firmware function generator
+//!
+//! The firmware exposes a **second** waveform generator via vendor
+//! SETUP requests (see `waveform.c` and the `/api/fngen/*` REST routes).
+//! That one lives entirely on the SAM3X: PDC + TC triggers DAC
+//! conversions at up to 1 MSPS, independently of USB traffic.
+//!
+//! If **both** generators target the same DAC channel, the firmware
+//! wins: `apply_command_frame` checks `waveform_dac_is_generating(idx)`
+//! before writing the Command frame's `dacN` field, and skips the
+//! write when a firmware generator is running. Any per-microframe
+//! value this `WaveformBank` computes is silently ignored for that
+//! channel until the firmware generator is stopped (via
+//! `/api/fngen/stop/dacN`).
+//!
+//! This is by design — two generators fighting on the same physical
+//! DAC would alias unpredictably. The dashboard can mask host-side
+//! UI on a channel that is currently firmware-driven; not enforced
+//! in core, only documented here.
+//!
 //! All fields are `Copy` and stored behind small read-locks so the
 //! HTTP layer can update them at any time without disturbing the iso
 //! callback's hot path beyond a single uncontended `read()`.

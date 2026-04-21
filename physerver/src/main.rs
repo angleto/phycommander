@@ -233,17 +233,17 @@ async fn main() -> Result<()> {
         ..Default::default()
     };
 
-    // Note on IPC: the shared_memory crate's IpcServer holds raw
-    // pointers that are not Send, so we cannot use it from tokio
-    // tasks directly. For now the status goes to the web state and
-    // broadcast only; IPC shared memory is initialised but not
-    // written to by the new RT scheduler path. A future refactor
-    // will move IPC read/write into the RT thread itself via a
-    // custom Transport wrapper.
-    let _ipc_server = ipc_server; // keep alive, avoid drop
+    // IPC wiring. `IpcServer` now implements Send+Sync (see
+    // `src/ipc/mod.rs`) because SharedState is built entirely on
+    // atomics, so sharing the Arc between the two tokio tasks below
+    // is safe. When iso-mode or bulk-mode isn't using IPC at all
+    // (e.g. the user passed --no-ipc), `ipc_server` is None and the
+    // tasks simply skip the IPC push/pull.
+    let ipc_server_consumer = ipc_server.clone();
+    let ipc_server_forwarder = ipc_server.clone();
 
     // Consumer task: forward status frames from the bus to the web
-    // state + WebSocket broadcast.
+    // state + WebSocket broadcast, and push into IPC shared memory.
     //
     // Iso mode produces ~8000 frames/s (one per USB microframe), which
     // is far more than any browser can display and would burn CPU on
@@ -253,10 +253,12 @@ async fn main() -> Result<()> {
     // but throttle the WebSocket broadcast to a max of ~250 Hz with a
     // wall-clock minimum interval. Bulk mode at 1 kHz also gets
     // throttled to 250 Hz, which is still well above the dashboard's
-    // refresh budget.
+    // refresh budget. IPC writes are cheap atomic stores so we push
+    // every frame to keep shared-memory readers tight on latency.
     {
         let mut rx = bus.subscribe();
         let web_state_c = web_state.clone();
+        let ipc_c = ipc_server_consumer;
         tokio::spawn(async move {
             const WS_MIN_INTERVAL: std::time::Duration = std::time::Duration::from_millis(4);
             let mut last_ws_send = std::time::Instant::now()
@@ -270,6 +272,9 @@ async fn main() -> Result<()> {
                         {
                             let mut s = web_state_c.current_status.write().await;
                             *s = status.clone();
+                        }
+                        if let Some(ipc) = ipc_c.as_ref() {
+                            ipc.write_status(&status);
                         }
                         let now = std::time::Instant::now();
                         if now.duration_since(last_ws_send) >= WS_MIN_INTERVAL {
@@ -288,22 +293,45 @@ async fn main() -> Result<()> {
 
     // Command forwarder task: poll web_state.current_command at 500 Hz
     // and push every field into the staging buffer in Coalesce mode.
+    // Also pulls commands from IPC (shared memory) so external clients
+    // that write via `IpcClient::write_command` get their setpoints
+    // applied without going through HTTP/WS. Last-writer-wins between
+    // HTTP and IPC within the same tick, which is consistent with the
+    // pre-regression behavior.
     {
         let staging_c = Arc::clone(&staging);
         let web_state_c = web_state.clone();
+        let ipc_c = ipc_server_forwarder;
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_millis(2));
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            // Track the last IPC command sequence we observed, so we
+            // only push into staging when a client actually wrote
+            // something new. Prevents IPC → staging → ack → IPC loops.
+            let mut last_ipc_seq: u64 = 0;
             loop {
                 interval.tick().await;
-                let cmd = web_state_c.current_command.read().await.clone();
+                let cmd_http = web_state_c.current_command.read().await.clone();
                 // Coalesce writes — cheap, non-blocking.
-                let _ = staging_c.set_dac0(cmd.dac[0]);
-                let _ = staging_c.set_dac1(cmd.dac[1]);
-                let _ = staging_c.set_pwm0(cmd.pwm[0]);
-                let _ = staging_c.set_pwm1(cmd.pwm[1]);
-                let _ = staging_c.set_digital_out(cmd.digital_out);
-                let _ = staging_c.set_flags(cmd.flags);
+                let _ = staging_c.set_dac0(cmd_http.dac[0]);
+                let _ = staging_c.set_dac1(cmd_http.dac[1]);
+                let _ = staging_c.set_pwm0(cmd_http.pwm[0]);
+                let _ = staging_c.set_pwm1(cmd_http.pwm[1]);
+                let _ = staging_c.set_digital_out(cmd_http.digital_out);
+                let _ = staging_c.set_flags(cmd_http.flags);
+
+                if let Some(ipc) = ipc_c.as_ref() {
+                    let (cmd_ipc, seq) = ipc.read_command_with_seq();
+                    if seq != last_ipc_seq {
+                        last_ipc_seq = seq;
+                        let _ = staging_c.set_dac0(cmd_ipc.dac[0]);
+                        let _ = staging_c.set_dac1(cmd_ipc.dac[1]);
+                        let _ = staging_c.set_pwm0(cmd_ipc.pwm[0]);
+                        let _ = staging_c.set_pwm1(cmd_ipc.pwm[1]);
+                        let _ = staging_c.set_digital_out(cmd_ipc.digital_out);
+                        let _ = staging_c.set_flags(cmd_ipc.flags);
+                    }
+                }
             }
         });
     }

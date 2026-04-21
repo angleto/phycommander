@@ -5,9 +5,12 @@
 ///   - DOUT[0..15] -> DIN[0..15]          (digitale)
 ///   - Toggle GPIO per misura frequenza   (onda quadra)
 ///
-/// Il firmware usa un protocollo raw senza header/CRC:
-///   Comando: [0-1]=header(ignorato), [2-3]=digital_out, [4-5]=dac0, [6-7]=dac1
-///   Risposta: [0-1]=digital_in, [2-3]=digital_out_echo, [4-19]=adc[0..7]
+/// Il firmware Step 3 valida CRC-16-CCITT sul comando e risponde con
+/// il frame PhyCMD-64 completo (header 0x55AA, CRC su bytes 0..24).
+/// Usiamo `physerver::protocol::encode_command` / `decode_status` per
+/// stare allineati col contratto wire in modo meccanico: qualsiasi
+/// drift futuro del layout scatta sui `_Static_assert` / `const _`
+/// dei due lati prima di arrivare qui.
 ///
 /// Esecuzione:
 ///   cargo test --test selftest -- --ignored          # tutti i test hw
@@ -17,23 +20,20 @@
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
+use physerver::protocol::{decode_status, encode_command};
+use physerver::{Command, CommandFlags, Status};
+
 const MSG_SIZE: usize = 64;
 const DAC_MAX: u16 = 4095;
 const ADC_TOLERANCE: u16 = 80;
 const ADC_NOISE_MAX_STDDEV: f64 = 20.0;
 const GPIO_SETTLE_ROUNDS: usize = 3;
 
-/// Risposta raw dal firmware
-#[derive(Debug, Clone)]
-struct FwStatus {
-    digital_in: u16,
-    digital_out: u16,
-    adc: [u16; 8],
-}
-
-/// Client raw per comunicazione diretta con firmware
+/// Client tipato per dialogo con il firmware via USB CDC, con
+/// encode_command + decode_status (CRC incluso).
 struct FwClient {
     port: Box<dyn serialport::SerialPort>,
+    seq: u8,
 }
 
 impl FwClient {
@@ -69,47 +69,38 @@ impl FwClient {
 
         eprintln!("[selftest] Connesso a {}", port_name);
 
-        let mut client = Self { port };
+        let mut client = Self { port, seq: 0 };
         // Flush iniziale
         let _ = client.port.clear(serialport::ClearBuffer::All);
         client
     }
 
-    fn exchange(&mut self, digital_out: u16, dac0: u16, dac1: u16) -> FwStatus {
-        let mut buf = [0u8; MSG_SIZE];
-        // Header (compatibile physerver, firmware lo ignora)
-        buf[0] = 0x55;
-        buf[1] = 0xAA;
-        // digital_out
-        buf[2] = (digital_out & 0xFF) as u8;
-        buf[3] = (digital_out >> 8) as u8;
-        // dac0
-        let dac0 = dac0.min(DAC_MAX);
-        buf[4] = (dac0 & 0xFF) as u8;
-        buf[5] = (dac0 >> 8) as u8;
-        // dac1
-        let dac1 = dac1.min(DAC_MAX);
-        buf[6] = (dac1 & 0xFF) as u8;
-        buf[7] = (dac1 >> 8) as u8;
+    fn next_seq(&mut self) -> u8 {
+        let s = self.seq;
+        self.seq = self.seq.wrapping_add(1);
+        s
+    }
 
-        self.port.write_all(&buf).expect("Errore scrittura seriale");
+    fn exchange(&mut self, digital_out: u16, dac0: u16, dac1: u16) -> Status {
+        let cmd = Command {
+            digital_out,
+            dac: [dac0.min(DAC_MAX), dac1.min(DAC_MAX)],
+            pwm: [0, 0],
+            flags: CommandFlags { dac_enable: true, ..Default::default() },
+            seq_num: self.next_seq(),
+        };
+        let bytes = encode_command(&cmd);
+        assert_eq!(bytes.len(), MSG_SIZE);
+        self.port.write_all(&bytes).expect("Errore scrittura seriale");
         self.port.flush().expect("Errore flush seriale");
 
         let mut resp = [0u8; MSG_SIZE];
         self.port.read_exact(&mut resp).expect("Timeout lettura risposta");
-
-        let digital_in = u16::from_le_bytes([resp[0], resp[1]]);
-        let digital_out = u16::from_le_bytes([resp[2], resp[3]]);
-        let mut adc = [0u16; 8];
-        for i in 0..8 {
-            adc[i] = u16::from_le_bytes([resp[4 + i * 2], resp[5 + i * 2]]);
-        }
-
-        FwStatus { digital_in, digital_out, adc }
+        decode_status(&resp).expect("decode_status fallita (CRC o header invalido)")
     }
 
     /// Invia comando e attendi stabilizzazione
-    fn exchange_settle(&mut self, digital_out: u16, dac0: u16, dac1: u16) -> FwStatus {
+    fn exchange_settle(&mut self, digital_out: u16, dac0: u16, dac1: u16) -> Status {
         let mut status = self.exchange(digital_out, dac0, dac1);
         for _ in 1..GPIO_SETTLE_ROUNDS {
             status = self.exchange(digital_out, dac0, dac1);

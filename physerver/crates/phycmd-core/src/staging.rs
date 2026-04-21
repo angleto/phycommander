@@ -43,6 +43,7 @@
 use crate::protocol::{Command, CommandFlags};
 use parking_lot::{Condvar, Mutex};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::time::Duration;
 use thiserror::Error;
 
 // -------------------------------------------------------------------------
@@ -121,6 +122,9 @@ pub enum StagingError {
 
     #[error("invalid digital_out bit index: {0} (must be 0..16)")]
     InvalidBit(u8),
+
+    #[error("blocking write timed out waiting for mark_sent ({0:?}); RT scheduler may be stalled")]
+    Timeout(Duration),
 }
 
 // -------------------------------------------------------------------------
@@ -215,6 +219,12 @@ impl CommandStaging {
                 // `wait_while` handles the thundering-herd case: all
                 // waiters are woken by `notify_all` from `mark_sent`,
                 // each re-checks its own predicate under the lock.
+                //
+                // Unbounded wait — if the RT scheduler stops ticking
+                // this blocks forever. Callers that need a deadline
+                // should use `set_*_with_timeout(..)` or the
+                // `do_write_timeout` helper below, which surfaces
+                // `StagingError::Timeout` instead of hanging.
                 self.cv.wait_while(&mut g, |s| (s.dirty_bits & mask) != 0);
             }
             WriteMode::ErrorOnConflict => {
@@ -222,6 +232,39 @@ impl CommandStaging {
                     return Err(StagingError::WouldOverwrite);
                 }
             }
+        }
+        apply(&mut g.frame);
+        g.dirty_bits |= mask;
+        g.write_generation = g.write_generation.wrapping_add(1);
+        Ok(())
+    }
+
+    // Bounded-wait variant: equivalent to BlockUntilSent but with a
+    // hard deadline. Returns `StagingError::Timeout` if the RT loop
+    // hasn't cleared the field's dirty bits within `timeout`. On
+    // timeout the write is NOT applied (the old pending value stays
+    // in place).
+    fn do_write_timeout<F>(
+        &self,
+        mask: u32,
+        timeout: Duration,
+        apply: F,
+    ) -> Result<(), StagingError>
+    where
+        F: FnOnce(&mut Command),
+    {
+        let mut g = self.inner.lock();
+        // wait_while_for returns WaitTimeoutResult; after it returns
+        // we re-check the predicate under the lock because spurious
+        // wake-ups and the thundering-herd pattern can leave the
+        // field still dirty even if the Condvar was notified.
+        let result = self.cv.wait_while_for(
+            &mut g,
+            |s| (s.dirty_bits & mask) != 0,
+            timeout,
+        );
+        if result.timed_out() && (g.dirty_bits & mask) != 0 {
+            return Err(StagingError::Timeout(timeout));
         }
         apply(&mut g.frame);
         g.dirty_bits |= mask;
@@ -239,12 +282,21 @@ impl CommandStaging {
     pub fn set_dac0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DAC0, |c| c.dac[0] = value)
     }
+    /// Bounded-wait analogue of [`set_dac0`] with `WriteMode::BlockUntilSent`.
+    /// Returns `StagingError::Timeout` if the value doesn't get marked
+    /// sent within `timeout`.
+    pub fn set_dac0_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_DAC0, timeout, |c| c.dac[0] = value)
+    }
 
     pub fn set_dac1(&self, value: u16) -> Result<(), StagingError> {
         self.set_dac1_with(self.default_mode(), value)
     }
     pub fn set_dac1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DAC1, |c| c.dac[1] = value)
+    }
+    pub fn set_dac1_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_DAC1, timeout, |c| c.dac[1] = value)
     }
 
     // ---------------------------------------------------------------
@@ -257,12 +309,18 @@ impl CommandStaging {
     pub fn set_pwm0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_PWM0, |c| c.pwm[0] = value)
     }
+    pub fn set_pwm0_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_PWM0, timeout, |c| c.pwm[0] = value)
+    }
 
     pub fn set_pwm1(&self, value: u16) -> Result<(), StagingError> {
         self.set_pwm1_with(self.default_mode(), value)
     }
     pub fn set_pwm1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_PWM1, |c| c.pwm[1] = value)
+    }
+    pub fn set_pwm1_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_PWM1, timeout, |c| c.pwm[1] = value)
     }
 
     // ---------------------------------------------------------------
@@ -274,6 +332,13 @@ impl CommandStaging {
     }
     pub fn set_flags_with(&self, mode: WriteMode, flags: CommandFlags) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_FLAGS, |c| c.flags = flags)
+    }
+    pub fn set_flags_with_timeout(
+        &self,
+        flags: CommandFlags,
+        timeout: Duration,
+    ) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_FLAGS, timeout, |c| c.flags = flags)
     }
 
     // ---------------------------------------------------------------
@@ -300,6 +365,13 @@ impl CommandStaging {
     pub fn set_digital_out_with(&self, mode: WriteMode, mask: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DIGITAL_OUT_ALL, |c| c.digital_out = mask)
     }
+    pub fn set_digital_out_with_timeout(
+        &self,
+        mask: u16,
+        timeout: Duration,
+    ) -> Result<(), StagingError> {
+        self.do_write_timeout(DIRTY_DIGITAL_OUT_ALL, timeout, |c| c.digital_out = mask)
+    }
 
     pub fn set_digital_out_bit(&self, bit: u8, value: bool) -> Result<(), StagingError> {
         self.set_digital_out_bit_with(self.default_mode(), bit, value)
@@ -315,6 +387,24 @@ impl CommandStaging {
         }
         let mask = dirty_digital_out_bit(bit);
         self.do_write(mode, mask, |c| {
+            if value {
+                c.digital_out |= 1u16 << bit;
+            } else {
+                c.digital_out &= !(1u16 << bit);
+            }
+        })
+    }
+    pub fn set_digital_out_bit_with_timeout(
+        &self,
+        bit: u8,
+        value: bool,
+        timeout: Duration,
+    ) -> Result<(), StagingError> {
+        if bit >= 16 {
+            return Err(StagingError::InvalidBit(bit));
+        }
+        let mask = dirty_digital_out_bit(bit);
+        self.do_write_timeout(mask, timeout, |c| {
             if value {
                 c.digital_out |= 1u16 << bit;
             } else {
@@ -660,6 +750,85 @@ mod tests {
         s.mark_sent(gen);
         let g1 = s.sent_generation();
         assert_eq!(g1, g0 + 1);
+    }
+
+    #[test]
+    fn timeout_write_surfaces_stalled_scheduler() {
+        // Dirty DAC0 once and never call mark_sent. A set_dac0_with_timeout
+        // call must return Err(Timeout) within the specified window
+        // instead of blocking indefinitely.
+        let s = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
+        s.set_dac0(100).unwrap();
+
+        let s2 = Arc::clone(&s);
+        let handle = thread::spawn(move || {
+            let t0 = Instant::now();
+            let err = s2.set_dac0_with_timeout(200, Duration::from_millis(50));
+            (t0.elapsed(), err)
+        });
+
+        let (elapsed, err) = handle.join().unwrap();
+        assert!(
+            matches!(err, Err(StagingError::Timeout(_))),
+            "expected Timeout error, got {err:?}"
+        );
+        assert!(
+            elapsed >= Duration::from_millis(40),
+            "writer returned too early: {}ms",
+            elapsed.as_millis()
+        );
+        assert!(
+            elapsed < Duration::from_millis(150),
+            "writer returned too late: {}ms",
+            elapsed.as_millis()
+        );
+
+        // Timeout must leave the old value in place (not apply a partial
+        // write).
+        let (frame, _) = s.take_snapshot();
+        assert_eq!(frame.dac[0], 100);
+    }
+
+    #[test]
+    fn timeout_write_succeeds_when_mark_sent_happens_in_time() {
+        let s = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
+        s.set_dac0(100).unwrap();
+
+        let s2 = Arc::clone(&s);
+        let writer = thread::spawn(move || {
+            s2.set_dac0_with_timeout(200, Duration::from_secs(1))
+        });
+
+        // Clear dirty in well under the 1s timeout.
+        thread::sleep(Duration::from_millis(20));
+        let (_, gen) = s.take_snapshot();
+        s.mark_sent(gen);
+
+        let result = writer.join().unwrap();
+        assert!(result.is_ok());
+        let (frame, _) = s.take_snapshot();
+        assert_eq!(frame.dac[0], 200);
+    }
+
+    #[test]
+    fn timeout_is_per_field() {
+        // DAC0 pending, pwm0 timeout-write should NOT block on DAC0.
+        let s = Arc::new(CommandStaging::new(WriteMode::BlockUntilSent));
+        s.set_dac0(1).unwrap();
+
+        let s2 = Arc::clone(&s);
+        let handle = thread::spawn(move || {
+            let t0 = Instant::now();
+            let r = s2.set_pwm0_with_timeout(42, Duration::from_secs(1));
+            (t0.elapsed(), r)
+        });
+        let (elapsed, r) = handle.join().unwrap();
+        assert!(r.is_ok());
+        assert!(
+            elapsed < Duration::from_millis(50),
+            "different-field timeout-write should not block ({}ms)",
+            elapsed.as_millis()
+        );
     }
 
     #[test]

@@ -118,6 +118,16 @@ typedef struct {
 	uint32_t     phase_q24_8;
 	uint32_t     phase_inc_q24_8;
 
+	/* Last 12-bit value applied to the DAC, held across PDC pumps.
+	 * In SHAPE_OFF this is whatever the streaming Command frame last
+	 * wrote (updated via waveform_set_manual_hold from main.c). In
+	 * reactive modes (SHAPE_LUT/THRESHOLD/PID) this is the last value
+	 * computed by the reactive ISR. refill_buffer() reads this to keep
+	 * the DAC stable across PDC refills when the channel is not
+	 * open-loop generating — without it the PDC would keep pumping
+	 * `offset` at 200+ kSPS and drown any CPU write to DACC_CDR. */
+	volatile uint16_t reactive_value;
+
 	/* Arbitrary playback bookkeeping (only meaningful when
 	 * shape == SHAPE_ARBITRARY). The samples themselves live in
 	 * s_arb_buf[ch_idx][0..arb_n_samples-1]. */
@@ -475,6 +485,7 @@ static inline int32_t shape_arbitrary_sample(uint8_t ch_idx,
 /* Compute the DACC_CDR word for one channel at the given phase. */
 static inline uint32_t channel_sample_word(uint8_t ch_idx, volatile dac_chan_t *c)
 {
+	uint32_t tag = (ch_idx == 0) ? DACC_TAG_CH0 : DACC_TAG_CH1;
 	int32_t unit;     /* signed in approx [-32768, +32767] */
 	switch (c->shape) {
 	case SHAPE_OFF:      unit = 0; break;     /* shouldn't happen if we filter caller */
@@ -492,9 +503,19 @@ static inline uint32_t channel_sample_word(uint8_t ch_idx, volatile dac_chan_t *
 		int32_t v = (int32_t)c->offset + scaled;
 		if (v < 0) v = 0;
 		if (v > (int32_t)DACC_VAL_MASK) v = DACC_VAL_MASK;
-		uint32_t tag = (ch_idx == 0) ? DACC_TAG_CH0 : DACC_TAG_CH1;
 		return ((uint32_t)v & DACC_VAL_MASK) | tag;
 	}
+	/* Reactive modes: the reactive ISR (LUT/THRESHOLD/PID evaluation
+	 * from SysTick, or PULSE_TRIG edge handler) updates c->reactive_value
+	 * via waveform_set_reactive_dac. The PDC just pumps that value at
+	 * the DAC clock rate, holding it stable between reactive updates.
+	 * This replaces the pre-fix design where reactive_dac_write poked
+	 * DACC_CDR directly and was overwritten within microseconds by the
+	 * next PDC pump. */
+	case SHAPE_LUT:
+	case SHAPE_THRESHOLD:
+	case SHAPE_PID:
+		return ((uint32_t)c->reactive_value & DACC_VAL_MASK) | tag;
 	default: unit = 0; break;
 	}
 
@@ -504,8 +525,6 @@ static inline uint32_t channel_sample_word(uint8_t ch_idx, volatile dac_chan_t *
 	int32_t v = (int32_t)c->offset + scaled;
 	if (v < 0) v = 0;
 	if (v > (int32_t)DACC_VAL_MASK) v = DACC_VAL_MASK;
-
-	uint32_t tag = (ch_idx == 0) ? DACC_TAG_CH0 : DACC_TAG_CH1;
 	return ((uint32_t)v & DACC_VAL_MASK) | tag;
 }
 
@@ -543,12 +562,14 @@ static void refill_buffer(uint32_t *buf, uint32_t n_samples)
 			buf[i] = channel_sample_word(0, &c0);
 			ph0 += inc0;
 		} else {
-			/* Channel is in MANUAL — keep emitting the last DAC value
-			 * (which is whatever main.c::apply_command_frame wrote).
-			 * We use offset as the stand-in: the host sets it via
-			 * GEN_STOP fallback (or it was 0 at boot). For pure
-			 * idleness this just outputs 0 which is benign. */
-			buf[i] = ((uint32_t)c0.offset & DACC_VAL_MASK) | DACC_TAG_CH0;
+			/* Channel is in MANUAL. Emit the last value actually applied
+			 * to the DAC (reactive_value, updated by apply_command_frame
+			 * via waveform_set_manual_hold, or left at 2048 mid-rail
+			 * before the first host write). Pre-fix this emitted
+			 * `offset` and a transition GENERATOR → MANUAL silently
+			 * snapped the DAC to mid-rail instead of holding the last
+			 * manual value. */
+			buf[i] = ((uint32_t)c0.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH0;
 		}
 
 		if (c1.shape != SHAPE_OFF) {
@@ -556,7 +577,7 @@ static void refill_buffer(uint32_t *buf, uint32_t n_samples)
 			buf[i + 1] = channel_sample_word(1, &c1);
 			ph1 += inc1;
 		} else {
-			buf[i + 1] = ((uint32_t)c1.offset & DACC_VAL_MASK) | DACC_TAG_CH1;
+			buf[i + 1] = ((uint32_t)c1.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH1;
 		}
 	}
 
@@ -653,16 +674,19 @@ static bool any_channel_active(void)
 extern void *s_dig_out_ports_ptr;   /* main.c: array of Pio* per DOUT bit */
 extern uint8_t s_dig_out_pin_idx[]; /* main.c: per-DOUT-bit PIO pin index */
 
-/* Apply a 12-bit value to a DAC channel directly via DACC_CDR with
- * the appropriate flexible-selection tag bit. */
+/* Stage a 12-bit reactive value on a DAC channel. The PDC refill loop
+ * (`channel_sample_word` for SHAPE_LUT/THRESHOLD/PID) will pick it up
+ * on the next buffer half and the DAC will hold it stable until the
+ * next reactive update. Worst-case visibility latency is
+ * PINGPONG_SAMPLES / (2 × dac_clock_per_channel) ≈ 640 µs at the
+ * default 200 kSPS. We deliberately do NOT write DACC_CDR directly
+ * here: the PDC is actively pumping and any CPU write to CDR would be
+ * overwritten by the next PDC sample within ~2.5 µs. */
 static inline void reactive_dac_write(uint8_t dac_idx, uint16_t v12)
 {
+	if (dac_idx >= WAVE_NUM_DAC) return;
 	if (v12 > DACC_VAL_MASK) v12 = DACC_VAL_MASK;
-	if (dac_idx == 0) {
-		DACC->DACC_CDR = (uint32_t)v12 | DACC_TAG_CH0;
-	} else {
-		DACC->DACC_CDR = (uint32_t)v12 | DACC_TAG_CH1;
-	}
+	s_chan[dac_idx].reactive_value = v12;
 }
 
 /* Apply a DOUT bit-mask. The `mask` argument carries which bits to
@@ -757,7 +781,7 @@ static void threshold_eval(uint8_t kind, uint8_t idx, volatile threshold_state_t
 	uint8_t  now_high = was_high;
 	if (v > t->spec.thr_high)      now_high = 1;
 	else if (v < t->spec.thr_low)  now_high = 0;
-	if (now_high != was_high || /* first eval edge */ true) {
+	if (now_high != was_high) {
 		t->cur_high = now_high;
 		uint16_t outv = now_high ? t->spec.val_high : t->spec.val_low;
 		if (kind == CHAN_KIND_DAC) {
@@ -899,23 +923,11 @@ void waveform_on_adc_endrx(void)
 	}
 }
 
-/* ADC_Handler — called by NVIC when ADC raises an interrupt. The
- * existing main.c configuration enables ADC_IER bit 27 (ENDRX, end of
- * PDC RX transfer), so this handler fires every time the PDC ring
- * completes one sweep of all 8 channels. We re-arm the PDC NextPointer
- * (so the ring keeps cycling) and dispatch to the reactive ADC
- * consumers in waveform_on_adc_endrx. */
-extern uint16_t g_adc_buf[16][8];
-void ADC_Handler(void)
-{
-	uint32_t isr = ADC->ADC_ISR;
-	if (isr & (1u << 27)) {                /* ENDRX — see ADC_IER setup in main.c */
-		/* Re-arm the next half of the PDC ring so it keeps running. */
-		ADC->ADC_RNPR = (uint32_t)g_adc_buf[1];
-		ADC->ADC_RNCR = 8;
-		waveform_on_adc_endrx();
-	}
-}
+/* No ADC_Handler: reactive ADC consumers run from waveform_systick_1ms
+ * at 1 kHz instead of from the ADC ENDRX ISR. Running per-sweep at
+ * ~60 kHz was saturating the UOTGHS iso scheduler; 1 kHz is enough for
+ * any practical analog control loop and keeps the ADC peripheral
+ * free-running purely for g_adc_buf snapshots. */
 
 /* Called by main.c on any DIN change (the polled main loop reaches
  * here every time get_dig_in_value() returns a different value). */
@@ -982,6 +994,10 @@ void waveform_init(void)
 		s_chan[i].amplitude = 4095;
 		s_chan[i].offset    = 2048;
 		s_chan[i].duty_x10  = 500;
+		/* Hold value for MANUAL and reactive-mode refills. 2048 is
+		 * mid-rail of the 0..4095 DAC range, matches the silent-DAC
+		 * default until the host writes. */
+		s_chan[i].reactive_value = 2048;
 	}
 	s_dac_clock_hz = WAVE_DEFAULT_DAC_CLOCK_HZ;
 	s_adc_rate_hz  = WAVE_DEFAULT_DAC_CLOCK_HZ;
@@ -997,19 +1013,13 @@ void waveform_init(void)
 
 	sin_lut_init();
 
-	/* Enable the ADC IRQ at NVIC level — the existing main.c
-	 * adc_setup() already configured ADC_IER for ENDRX, but the
-	 * NVIC line wasn't enabled (the previous firmware just polled
-	 * g_adc_buf in process_command_frame). Now that we have
-	 * ADC_Handler installed, turn the line on. */
-	/* ADC_IRQn is NOT enabled at boot: leaving it on costs ~5% CPU
-	 * even when no reactive channel uses ADC because the PDC ring
-	 * in free-running mode raises ENDRX at ~75 kHz. The NVIC is
-	 * armed on demand by update_adc_irq_needed() whenever a
-	 * LUT / THRESHOLD / PID channel with input_src == ADC becomes
-	 * active, and disarmed when the last such consumer stops. */
-	NVIC_SetPriority(ADC_IRQn, 4);
-	NVIC_ClearPendingIRQ(ADC_IRQn);
+	/* ADC_IRQn is never enabled: reactive ADC-driven modes are
+	 * evaluated from waveform_systick_1ms() at 1 kHz. Leaving the
+	 * ADC line armed would raise ENDRX at ~75 kHz in free-running
+	 * mode and saturate the UOTGHS iso scheduler (historical bug,
+	 * see commit history). The ADC PDC ring is kept running purely
+	 * so g_adc_buf carries a fresh snapshot for protocol status
+	 * frames and reactive sysick evaluation. */
 }
 
 /* Scan per-channel state; return true iff any reactive slot is
@@ -1028,18 +1038,9 @@ static bool any_adc_consumer_active(void)
 	return false;
 }
 
-static void update_adc_irq_needed(void)
-{
-	/* ADC_IRQn stays permanently disabled: reactive evaluation runs
-	 * from waveform_systick_1ms() instead. Left as a stub so the
-	 * existing call sites don't need to change shape. */
-	NVIC_DisableIRQ(ADC_IRQn);
-}
-
 void waveform_stop_all(void)
 {
 	NVIC_DisableIRQ(DACC_IRQn);
-	NVIC_DisableIRQ(ADC_IRQn);
 	for (uint8_t i = 0; i < WAVE_NUM_DAC; i++) {
 		s_chan[i].shape = SHAPE_OFF;
 		s_thr_dac[i].active = 0;
@@ -1064,6 +1065,13 @@ bool waveform_dac_is_generating(uint8_t dac_idx)
 {
 	if (dac_idx >= WAVE_NUM_DAC) return false;
 	return s_chan[dac_idx].shape != SHAPE_OFF;
+}
+
+void waveform_set_manual_hold(uint8_t dac_idx, uint16_t v12)
+{
+	if (dac_idx >= WAVE_NUM_DAC) return;
+	if (v12 > DACC_VAL_MASK) v12 = DACC_VAL_MASK;
+	s_chan[dac_idx].reactive_value = v12;
 }
 
 uint16_t waveform_reactive_dout_mask(void)
@@ -1221,7 +1229,10 @@ bool waveform_get_caps(void *out, uint16_t out_len)
 		.firmware_minor         = USB_DEVICE_MINOR_VERSION,
 		.firmware_major         = USB_DEVICE_MAJOR_VERSION,
 		.num_dac                = WAVE_NUM_DAC,
-		.num_pwm                = WAVE_NUM_PWM,
+		/* Report only the PWM channels that actually accept BUILTIN;
+		 * PWM4..7 remain in the flat channel-id space for GEN_GET_STATE
+		 * but are not pinned on the Due and reject BUILTIN requests. */
+		.num_pwm                = WAVE_NUM_PWM_ACTIVE,
 		.num_dout               = WAVE_NUM_DOUT,
 		.num_din                = WAVE_NUM_DIN,
 		.num_adc                = WAVE_NUM_ADC,
@@ -1277,10 +1288,19 @@ bool waveform_get_state(uint16_t channel_id, void *out, uint16_t out_len)
 		st.arb_loops_remaining   = c.arb_loops_remaining;
 		st.arb_sample_rate_hz    = c.arb_sample_rate_hz;
 		st.cur_phase_q24_8       = c.phase_q24_8;
-	} else if (kind == CHAN_KIND_PWM && idx < WAVE_NUM_PWM_ACTIVE && s_pwm[idx].active) {
-		st.shape    = SHAPE_SQUARE;
-		st.freq_mHz = s_pwm[idx].freq_mHz;
-		st.duty_x10 = s_pwm[idx].duty_x10;
+	} else if (kind == CHAN_KIND_PWM) {
+		if (idx >= WAVE_NUM_PWM_ACTIVE) {
+			/* PWM 4..7 live in the channel ID space so host code
+			 * can iterate 0..num_pwm symmetrically, but this
+			 * hardware revision does not route them to a pin:
+			 * BUILTIN rejects them and GEN_GET_STATE reports
+			 * them as "reserved" via the flag bit. */
+			st.flags |= CHAN_STATE_FLAG_RESERVED;
+		} else if (s_pwm[idx].active) {
+			st.shape    = SHAPE_SQUARE;
+			st.freq_mHz = s_pwm[idx].freq_mHz;
+			st.duty_x10 = s_pwm[idx].duty_x10;
+		}
 	} else if (kind == CHAN_KIND_DOUT) {
 		/* Report whichever reactive mode owns this DOUT so the
 		 * dashboard indicator reflects the firmware state. */
@@ -1347,7 +1367,6 @@ bool waveform_play_builtin(uint16_t channel_id, const void *data, uint16_t len)
 	NVIC_EnableIRQ(DACC_IRQn);
 
 	update_pdc_running();
-	update_adc_irq_needed();
 	return true;
 }
 
@@ -1391,7 +1410,6 @@ bool waveform_play_arbitrary(uint16_t channel_id, const void *data, uint16_t len
 	NVIC_EnableIRQ(DACC_IRQn);
 
 	update_pdc_running();
-	update_adc_irq_needed();
 	return true;
 }
 
@@ -1423,7 +1441,6 @@ bool waveform_stop(uint16_t channel_id)
 			s_pulse[i].in_pulse = 0;
 		}
 	}
-	update_adc_irq_needed();
 	return true;
 }
 
@@ -1462,7 +1479,6 @@ bool waveform_play_lut(uint16_t channel_id, const void *data, uint16_t len)
 	}
 	NVIC_EnableIRQ(DACC_IRQn);
 	update_pdc_running();
-	update_adc_irq_needed();
 	/* Apply once immediately so output isn't stale until the next ISR. */
 	lut_apply((uint8_t)slot);
 	return true;
@@ -1498,7 +1514,6 @@ bool waveform_play_threshold(uint16_t channel_id, const void *data, uint16_t len
 		s_thr_dout[idx].active   = 1;
 		threshold_eval(CHAN_KIND_DOUT, idx, &s_thr_dout[idx]);
 	}
-	update_adc_irq_needed();
 	return true;
 }
 
@@ -1569,7 +1584,6 @@ bool waveform_play_pid(uint16_t channel_id, const void *data, uint16_t len)
 	s_chan[idx].shape = SHAPE_PID;
 	NVIC_EnableIRQ(DACC_IRQn);
 	update_pdc_running();
-	update_adc_irq_needed();
 	return true;
 }
 

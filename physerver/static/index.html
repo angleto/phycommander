@@ -1629,6 +1629,10 @@ function fngenBuildRow(channel, modes, maxVal) {
             </div>
             <span class="fngen-state" data-k="state">—</span>
         </div>
+        <div class="fngen-coexist" data-k="coexist" style="display:none;
+             font-size:10px; padding:4px 8px; border-radius:4px;
+             background:#fff3cd; color:#664d03; border:1px solid #ffecb5;
+             line-height:1.3;"></div>
         <div class="fngen-params" data-k="pane"></div>
         <div class="fngen-actions">
             <button class="fngen-btn stop" data-act="stop">stop</button>
@@ -1947,6 +1951,45 @@ async function fngenPollState() {
             slider.title = locked ? 'DAC' + i + ' is driven by the on-chip generator. Stop the generator to use this slider.' : '';
         }
     }
+
+    // Coexistence warning: when BOTH host-side WaveformBank AND
+    // firmware on-chip generator are active on the same channel, the
+    // firmware wins and the host-side samples are silently ignored.
+    // Poll the combined snapshot and paint a small yellow badge under
+    // the fngen row title when we detect the overlap. Failure to fetch
+    // just hides the badge (safe default: assume no conflict).
+    try {
+        const r = await fetch('/api/waveform/coexistence');
+        if (r.ok) {
+            const j = await r.json();
+            ['dac0','dac1','pwm0','pwm1'].forEach(ch => {
+                const row = document.getElementById('fngenrow-' + ch);
+                const warn = row && row.querySelector('[data-k="coexist"]');
+                if (!warn) return;
+                const info = j[ch];
+                if (info && info.overridden_by_firmware) {
+                    warn.style.display = '';
+                    warn.innerHTML =
+                        '⚠ host-side <code>WaveformBank</code> is enabled on ' +
+                        ch.toUpperCase() +
+                        ', but the on-chip generator is running here too (' +
+                        (info.firmware_shape || '?') +
+                        '). The firmware wins: host-side samples are ignored ' +
+                        'until you stop one side.';
+                } else {
+                    warn.style.display = 'none';
+                    warn.textContent = '';
+                }
+            });
+        } else {
+            // 503 in bulk mode is normal — just keep the badges hidden.
+            ['dac0','dac1','pwm0','pwm1'].forEach(ch => {
+                const row = document.getElementById('fngenrow-' + ch);
+                const warn = row && row.querySelector('[data-k="coexist"]');
+                if (warn) warn.style.display = 'none';
+            });
+        }
+    } catch (_) { /* network hiccup — leave the last state in place */ }
 }
 
 // Sync one channel's card form fields from the device state. We don't
@@ -1956,6 +1999,26 @@ function fngenSyncRowFromState(ch, s) {
     const row = document.getElementById('fngenrow-' + ch);
     if (!row) return;
     const active = s.shape !== 0;
+    // Firmware marks channels that exist in the protocol ID space but
+    // aren't backed by hardware (currently PWM4..7 on Arduino Due)
+    // with `reserved: true`. Paint them as dimmed and block input.
+    const reserved = !!s.reserved;
+    if (reserved) {
+        row.classList.add('reserved');
+        row.style.opacity = '0.45';
+        row.style.pointerEvents = 'none';
+        row.title = ch.toUpperCase() +
+            ' is reserved: this firmware revision does not route the channel to a pin. ' +
+            'The channel ID exists for protocol symmetry only.';
+        const el = row.querySelector('[data-k="state"]');
+        if (el) { el.textContent = 'reserved'; el.classList.remove('active'); }
+        return;
+    } else {
+        row.classList.remove('reserved');
+        row.style.opacity = '';
+        row.style.pointerEvents = '';
+        row.title = '';
+    }
     const el = row.querySelector('[data-k="state"]');
     if (el) {
         const hz = s.freq_mhz / 1000;

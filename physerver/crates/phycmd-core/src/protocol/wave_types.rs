@@ -101,6 +101,18 @@ pub const MODE_THRESHOLD: u8 = 1 << 4;
 pub const MODE_PULSE_TRIG: u8 = 1 << 5;
 pub const MODE_PID: u8 = 1 << 6;
 
+// ---- ChannelState.flags bits ------------------------------------------
+//
+// Mirror of `CHAN_STATE_FLAG_*` in `waveform.h`.
+
+/// The channel ID is defined in the protocol but not backed by hardware
+/// on this firmware revision. Currently set for PWM 4..7 on Arduino
+/// Due: the IDs exist so hosts can iterate 0..num_pwm uniformly, but
+/// BUILTIN / ARBITRARY requests on them return STALL and
+/// GEN_GET_STATE flags this bit. Clients should render such channels
+/// as unavailable.
+pub const CHAN_STATE_FLAG_RESERVED: u8 = 1 << 0;
+
 // ---- Wire-format structs (must stay byte-identical with waveform.h) -----
 
 #[repr(C, packed)]

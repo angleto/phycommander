@@ -47,6 +47,24 @@ pub struct IpcServer {
     shmem: Shmem,
 }
 
+// SAFETY: `Shmem` holds a raw pointer to the mapped shared memory
+// region, which is `!Send` by default. All reads and writes we perform
+// through that pointer target fields of `SharedState`, which consists
+// exclusively of atomics (`AtomicU8/U16/U32/U64`). Those are themselves
+// thread-safe and carry their own memory ordering. The pointer is
+// valid for the entire lifetime of the `IpcServer` (the region stays
+// mapped until `Shmem`'s Drop). Concurrent access from multiple threads
+// therefore cannot race on the Rust side. We expose Send+Sync so the
+// tokio status consumer and command forwarder tasks can share an
+// `Arc<IpcServer>` without a wrapper.
+unsafe impl Send for IpcServer {}
+unsafe impl Sync for IpcServer {}
+
+// Ditto for IpcClient — same argument, same data (SharedState via
+// atomics only).
+unsafe impl Send for IpcClient {}
+unsafe impl Sync for IpcClient {}
+
 impl IpcServer {
     /// Create a new IPC server (physerver side)
     pub fn new() -> Result<Self> {
@@ -74,11 +92,23 @@ impl IpcServer {
         unsafe { &*(self.shmem.as_ptr() as *const SharedState) }
     }
 
-    /// Read command from shared memory
+    /// Read command from shared memory.
     pub fn read_command(&self) -> Command {
-        let state = self.state();
+        self.read_command_with_seq().0
+    }
 
-        Command {
+    /// Read command + the current `command_seq` counter.  Callers that
+    /// poll the IPC command channel at a high rate can skip applying
+    /// the command when `seq` has not advanced since the last read.
+    pub fn read_command_with_seq(&self) -> (Command, u64) {
+        let state = self.state();
+        // Snapshot seq first; a writer that races with us will bump
+        // seq after stores, so if we re-read the same seq before and
+        // after the field loads, we know we saw a consistent state.
+        // Currently we accept a possible one-tick staleness — not an
+        // issue at the 500 Hz forwarder rate.
+        let seq = state.command_seq.load(Ordering::Acquire);
+        let cmd = Command {
             digital_out: state.cmd_digital_out.load(Ordering::Acquire),
             dac: [state.cmd_dac0.load(Ordering::Acquire), state.cmd_dac1.load(Ordering::Acquire)],
             pwm: [state.cmd_pwm0.load(Ordering::Acquire), state.cmd_pwm1.load(Ordering::Acquire)],
@@ -86,7 +116,8 @@ impl IpcServer {
                 state.cmd_flags.load(Ordering::Acquire),
             ),
             seq_num: 0, // Will be set by serial handler
-        }
+        };
+        (cmd, seq)
     }
 
     /// Write status to shared memory

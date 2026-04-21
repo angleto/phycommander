@@ -52,7 +52,7 @@ use parking_lot::RwLock;
 use serde::Serialize;
 use std::os::raw::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -90,6 +90,84 @@ const PKTS_PER_TRANSFER: usize = 8;
 /// thread wakes up at least this often to check the stop flag, even
 /// when no transfers complete (which only happens at shutdown).
 const HANDLE_EVENTS_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// Alignment (in bytes) for iso transfer buffers. 64 B = typical
+/// cache-line on x86_64 and ARMv7/ARMv8. EHCI/xHCI controllers on
+/// x86_64 accept any alignment, but aligning to a cache line prevents
+/// false sharing between the CPU and the DMA engine on hosts with
+/// non-coherent caches (most ARM Linux SBCs). On x86_64 it costs at
+/// most a few bytes of padding per buffer; on ARM it's required for
+/// correctness under stress. We pay the cost unconditionally because
+/// it's negligible and makes the code portable.
+const DMA_ALIGN: usize = 64;
+
+// -------------------------------------------------------------------------
+//   AlignedBuffer — heap slab with guaranteed alignment
+//
+//   Rust's `Vec<u8>` only guarantees 1-byte alignment by default.
+//   libusb will happily DMA into any address, but on non-coherent
+//   caches the CPU can end up sharing a cache line with another
+//   object when the buffer is misaligned. `AlignedBuffer` allocates
+//   via `std::alloc::alloc_zeroed` with an explicit `Layout`, so the
+//   underlying pointer is aligned to `DMA_ALIGN` exactly.
+// -------------------------------------------------------------------------
+
+struct AlignedBuffer {
+    ptr: *mut u8,
+    layout: std::alloc::Layout,
+}
+
+impl AlignedBuffer {
+    fn new(size: usize) -> Self {
+        // SAFETY: DMA_ALIGN is a power of two (64) and size is bounded
+        // at compile-time by PKTS_PER_TRANSFER * ISO_PKT_SIZE = 2048,
+        // well under the Layout maximum. alloc_zeroed returns a zero
+        // initialised allocation; we handle OOM by panicking because
+        // at transport bring-up there is no recovery path (the
+        // application cannot proceed without its iso buffers).
+        let layout = std::alloc::Layout::from_size_align(size, DMA_ALIGN)
+            .expect("AlignedBuffer layout invalid (size/align combination)");
+        let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+        if ptr.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        debug_assert_eq!(
+            ptr as usize % DMA_ALIGN,
+            0,
+            "allocator returned misaligned pointer"
+        );
+        Self { ptr, layout }
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.ptr
+    }
+    fn len(&self) -> usize {
+        self.layout.size()
+    }
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        // SAFETY: ptr is non-null and valid for `layout.size()` bytes
+        // for the entire lifetime of self (dealloc happens in Drop).
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.layout.size()) }
+    }
+}
+
+impl Drop for AlignedBuffer {
+    fn drop(&mut self) {
+        // SAFETY: ptr came from alloc_zeroed with the same layout
+        // and has not been deallocated yet.
+        unsafe { std::alloc::dealloc(self.ptr, self.layout) };
+    }
+}
+
+// SAFETY: AlignedBuffer owns a raw pointer to a heap region. No
+// implicit sharing across threads — the buffer is owned by the iso
+// I/O thread exclusively after construction. We only mark Send so
+// that constructors running on the main thread can hand the buffer
+// off to the I/O thread (and libusb callbacks dispatched from that
+// thread). Sync is NOT claimed: concurrent &mut access would break
+// aliasing rules; callbacks never share a buffer between directions.
+unsafe impl Send for AlignedBuffer {}
 
 // ---------------------------------------------------------------------
 //   Public types
@@ -169,14 +247,26 @@ pub struct IsoStatsSnapshot {
 
 /// State reachable from the libusb callbacks via `user_data`.
 struct IsoInner {
-    /// libusb context and device handle, opened once in
-    /// `IsoTransport::new` (main thread) and shared between the iso
-    /// I/O thread (which uses EP3/EP4 for transfers) and the
-    /// `WaveformDevice` control client (which uses EP0). libusb is
-    /// thread-safe across distinct EP groups so the two paths
-    /// do not race.
+    /// libusb context. Opened once in `IsoTransport::new` and reused
+    /// for the lifetime of the transport, including across
+    /// auto-reconnects after a firmware watchdog reset.
     ctx: *mut ffi::libusb_context,
-    dev_handle: *mut ffi::libusb_device_handle,
+    /// Active libusb device handle. This field is stored behind an
+    /// `RwLock` because the iso I/O thread may replace it at runtime
+    /// after a firmware watchdog reset: the old handle becomes
+    /// invalid when the SAM3X re-enumerates, so we close it, open a
+    /// fresh one, and swap in place. Callbacks/control-transfer
+    /// clients read it under a short read-lock on every operation.
+    dev_handle: parking_lot::RwLock<*mut ffi::libusb_device_handle>,
+    /// Counter of consecutive "no progress" seconds observed by the
+    /// auto-reconnect watcher. When it exceeds a threshold we tear
+    /// down the transfer pool, re-open the device, and resubmit.
+    /// Incremented from the I/O thread, cleared on successful RX.
+    no_progress_seconds: AtomicU32,
+    /// True whenever the I/O thread is inside the reconnect sequence.
+    /// WaveformDevice control transfers yield a temporary error
+    /// rather than racing against a handle that is mid-close.
+    reconnecting: AtomicBool,
 
     /// Set by the foreground thread to ask the I/O thread to drain and
     /// exit. Callbacks check this before re-submitting transfers.
@@ -259,9 +349,10 @@ impl Drop for IsoInner {
         // so we are the sole owner of ctx + dev_handle here. Free
         // the libusb resources cleanly.
         unsafe {
-            if !self.dev_handle.is_null() {
-                let _ = ffi::libusb_release_interface(self.dev_handle, INTERFACE);
-                ffi::libusb_close(self.dev_handle);
+            let dh = *self.dev_handle.read();
+            if !dh.is_null() {
+                let _ = ffi::libusb_release_interface(dh, INTERFACE);
+                ffi::libusb_close(dh);
             }
             if !self.ctx.is_null() {
                 ffi::libusb_exit(self.ctx);
@@ -317,6 +408,30 @@ impl IsoTransport {
             let mut ctx_ptr: *mut ffi::libusb_context = ptr::null_mut();
             let r = ffi::libusb_init(&mut ctx_ptr);
             anyhow::ensure!(r == 0, "libusb_init failed: {r}");
+
+            // Log the libusb build we linked against. Seeing the version
+            // in the journal makes it trivial to spot when a distro ships
+            // a libusb compiled without --enable-threads (in which case
+            // the thread-safety assumption this module relies on for
+            // concurrent EP0/EP3/EP4 access breaks down silently).
+            let v = ffi::libusb_get_version();
+            if !v.is_null() {
+                let rc_ptr = (*v).rc;
+                let rc = if rc_ptr.is_null() {
+                    ""
+                } else {
+                    std::ffi::CStr::from_ptr(rc_ptr).to_str().unwrap_or("")
+                };
+                info!(
+                    "libusb {}.{}.{}.{}{}",
+                    (*v).major,
+                    (*v).minor,
+                    (*v).micro,
+                    (*v).nano,
+                    if rc.is_empty() { String::new() } else { format!("-{rc}") }
+                );
+            }
+
             let dh = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
             if dh.is_null() {
                 ffi::libusb_exit(ctx_ptr);
@@ -339,7 +454,9 @@ impl IsoTransport {
 
         let inner = Arc::new(IsoInner {
             ctx,
-            dev_handle,
+            dev_handle: parking_lot::RwLock::new(dev_handle),
+            no_progress_seconds: AtomicU32::new(0),
+            reconnecting: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             latest_status: RwLock::new(crate::protocol::Status::default()),
             staging,
@@ -355,8 +472,7 @@ impl IsoTransport {
             start: Instant::now(),
         });
 
-        let waveform_dev =
-            Arc::new(WaveformDevice { dev_handle, _ctx_keepalive: Arc::clone(&inner) });
+        let waveform_dev = Arc::new(WaveformDevice { inner: Arc::clone(&inner) });
 
         let inner_for_thread = Arc::clone(&inner);
         let io_thread = std::thread::Builder::new()
@@ -457,9 +573,11 @@ struct IoResources {
     transfers_in: Vec<*mut ffi::libusb_transfer>,
     transfers_out: Vec<*mut ffi::libusb_transfer>,
     // Buffers and callback contexts kept alive via Vec; transfers
-    // hold raw pointers into them.
-    _buffers_in: Vec<Vec<u8>>,
-    _buffers_out: Vec<Vec<u8>>,
+    // hold raw pointers into them. Buffers are cache-line aligned
+    // (see DMA_ALIGN / AlignedBuffer) so a non-coherent ARM host
+    // cannot race with the CPU on a shared cache line.
+    _buffers_in: Vec<AlignedBuffer>,
+    _buffers_out: Vec<AlignedBuffer>,
     _cb_ctx_in: Vec<Box<CallbackCtx>>,
     _cb_ctx_out: Vec<Box<CallbackCtx>>,
 }
@@ -474,105 +592,264 @@ impl Drop for IoResources {
     }
 }
 
+/// Threshold of consecutive "no progress" 1-second windows that
+/// triggers an auto-reconnect. Picked to be larger than the firmware
+/// watchdog timeout (~2 s) so we reliably catch a single WDT event,
+/// plus a safety margin. Tuned at 4 s of total silence.
+const NO_PROGRESS_RECONNECT_THRESHOLD: u32 = 4;
+
 fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
     unsafe {
-        // libusb context + dev_handle were opened by IsoTransport::new
-        // (main thread) and live in `inner`. We just borrow them here.
         let ctx_ptr = inner.ctx;
-        let dev_handle = inner.dev_handle;
 
-        let mut res = IoResources {
-            transfers_in: Vec::with_capacity(NUM_TRANSFERS),
-            transfers_out: Vec::with_capacity(NUM_TRANSFERS),
-            _buffers_in: Vec::with_capacity(NUM_TRANSFERS),
-            _buffers_out: Vec::with_capacity(NUM_TRANSFERS),
-            _cb_ctx_in: Vec::with_capacity(NUM_TRANSFERS),
-            _cb_ctx_out: Vec::with_capacity(NUM_TRANSFERS),
-        };
-
-        // ---- Allocate transfer pool ----
-        for _ in 0..NUM_TRANSFERS {
-            // IN
-            let buf_in = vec![0u8; PKTS_PER_TRANSFER * ISO_PKT_SIZE];
-            let cb_in = Box::new(CallbackCtx { inner: Arc::clone(&inner), dir_in: true });
-            let xfer_in = alloc_iso_transfer(
-                dev_handle,
-                EP_ISO_IN,
-                &buf_in,
-                cb_in.as_ref() as *const CallbackCtx as *mut c_void,
-            )?;
-            res.transfers_in.push(xfer_in);
-            res._buffers_in.push(buf_in);
-            res._cb_ctx_in.push(cb_in);
-
-            // OUT — pre-fill with a default Command. The callback
-            // will overwrite this on every completion before re-submit.
-            let mut buf_out = vec![0u8; PKTS_PER_TRANSFER * ISO_PKT_SIZE];
-            let default_cmd = encode_command(&Command::default());
-            for p in 0..PKTS_PER_TRANSFER {
-                let off = p * ISO_PKT_SIZE;
-                buf_out[off..off + MESSAGE_SIZE].copy_from_slice(&default_cmd);
-                // bytes [off+64..off+256] stay zero (padding contract)
-            }
-            let cb_out = Box::new(CallbackCtx { inner: Arc::clone(&inner), dir_in: false });
-            let xfer_out = alloc_iso_transfer(
-                dev_handle,
-                EP_ISO_OUT,
-                &buf_out,
-                cb_out.as_ref() as *const CallbackCtx as *mut c_void,
-            )?;
-            res.transfers_out.push(xfer_out);
-            res._buffers_out.push(buf_out);
-            res._cb_ctx_out.push(cb_out);
-        }
-
-        // ---- Submit them all ----
-        for &t in res.transfers_in.iter().chain(res.transfers_out.iter()) {
-            let r = ffi::libusb_submit_transfer(t);
-            if r != 0 {
-                warn!("initial libusb_submit_transfer failed: {r}");
-            }
-        }
-
-        let timeout_tv = libc::timeval {
-            tv_sec: HANDLE_EVENTS_TIMEOUT.as_secs() as _,
-            tv_usec: HANDLE_EVENTS_TIMEOUT.subsec_micros() as _,
-        };
-
-        // ---- Steady-state event loop ----
+        // Outer loop: per-session. Each iteration runs a libusb event
+        // loop against the current dev_handle until either the stop
+        // flag is set (graceful shutdown) or the firmware disconnects
+        // for more than NO_PROGRESS_RECONNECT_THRESHOLD seconds, at
+        // which point we reopen and run a fresh session.
         while !inner.stop.load(Ordering::Acquire) {
-            ffi::libusb_handle_events_timeout_completed(ctx_ptr, &timeout_tv, ptr::null_mut());
-        }
+            let dev_handle = *inner.dev_handle.read();
+            if dev_handle.is_null() {
+                // Setup failure or mid-reconnect. Short sleep then
+                // retry.
+                std::thread::sleep(Duration::from_millis(100));
+                continue;
+            }
 
-        // ---- Shutdown: cancel outstanding transfers, then drain ----
-        info!("iso I/O thread received stop signal — cancelling transfers");
-        for &t in res.transfers_in.iter().chain(res.transfers_out.iter()) {
-            ffi::libusb_cancel_transfer(t);
+            match run_iso_session(&inner, ctx_ptr, dev_handle) {
+                SessionExit::StopRequested => {
+                    info!("iso session exited cleanly (stop requested)");
+                    break;
+                }
+                SessionExit::Reconnect => {
+                    warn!(
+                        "iso: no progress for {}s, firmware may have reset. \
+                         Attempting auto-reconnect.",
+                        NO_PROGRESS_RECONNECT_THRESHOLD
+                    );
+                    if let Err(e) = try_reconnect(&inner, ctx_ptr) {
+                        warn!("auto-reconnect attempt failed: {e:#}. Retrying in 1s.");
+                        std::thread::sleep(Duration::from_secs(1));
+                    } else {
+                        info!("auto-reconnect succeeded");
+                    }
+                }
+                SessionExit::FatalError(e) => {
+                    error!("iso session terminated with fatal error: {e:#}");
+                    break;
+                }
+            }
         }
-        let drain_until = Instant::now() + Duration::from_millis(500);
-        while Instant::now() < drain_until {
-            ffi::libusb_handle_events_timeout_completed(ctx_ptr, &timeout_tv, ptr::null_mut());
-        }
-
-        // res drops here, freeing transfers and closing the device.
         Ok(())
     }
+}
+
+enum SessionExit {
+    StopRequested,
+    Reconnect,
+    FatalError(anyhow::Error),
+}
+
+/// Runs one complete iso session against `dev_handle`: allocates the
+/// transfer pool, submits all transfers, drives libusb's event loop
+/// until stop / no-progress / fatal error, then cancels + drains.
+/// Leaves the dev_handle untouched — the outer loop is responsible
+/// for closing and re-opening it when this function returns
+/// `SessionExit::Reconnect`.
+unsafe fn run_iso_session(
+    inner: &Arc<IsoInner>,
+    ctx_ptr: *mut ffi::libusb_context,
+    dev_handle: *mut ffi::libusb_device_handle,
+) -> SessionExit {
+    let mut res = IoResources {
+        transfers_in: Vec::with_capacity(NUM_TRANSFERS),
+        transfers_out: Vec::with_capacity(NUM_TRANSFERS),
+        _buffers_in: Vec::with_capacity(NUM_TRANSFERS),
+        _buffers_out: Vec::with_capacity(NUM_TRANSFERS),
+        _cb_ctx_in: Vec::with_capacity(NUM_TRANSFERS),
+        _cb_ctx_out: Vec::with_capacity(NUM_TRANSFERS),
+    };
+
+    // ---- Allocate transfer pool ----
+    //
+    // Every iso buffer is allocated via AlignedBuffer with
+    // DMA_ALIGN (64 B = cache line). On x86_64 this is overkill
+    // (the EHCI/xHCI DMA engine accepts any alignment), but it
+    // costs only a handful of padding bytes per buffer and makes
+    // the transport correct on ARM Linux hosts with non-coherent
+    // caches where byte-aligned DMA can race with CPU cache
+    // eviction. See DMA_ALIGN / AlignedBuffer above.
+    let buf_size = PKTS_PER_TRANSFER * ISO_PKT_SIZE;
+    for _ in 0..NUM_TRANSFERS {
+        // IN
+        let buf_in = AlignedBuffer::new(buf_size);
+        let cb_in = Box::new(CallbackCtx { inner: Arc::clone(inner), dir_in: true });
+        let xfer_in = match alloc_iso_transfer(
+            dev_handle,
+            EP_ISO_IN,
+            buf_in.as_ptr(),
+            buf_in.len(),
+            cb_in.as_ref() as *const CallbackCtx as *mut c_void,
+        ) {
+            Ok(x) => x,
+            Err(e) => return SessionExit::FatalError(e),
+        };
+        res.transfers_in.push(xfer_in);
+        res._buffers_in.push(buf_in);
+        res._cb_ctx_in.push(cb_in);
+
+        // OUT — pre-fill with a default Command. The callback
+        // will overwrite this on every completion before re-submit.
+        let mut buf_out = AlignedBuffer::new(buf_size);
+        let default_cmd = encode_command(&Command::default());
+        {
+            let slab = buf_out.as_mut_slice();
+            for p in 0..PKTS_PER_TRANSFER {
+                let off = p * ISO_PKT_SIZE;
+                slab[off..off + MESSAGE_SIZE].copy_from_slice(&default_cmd);
+                // bytes [off+64..off+256] stay zero (padding contract)
+            }
+        }
+        let cb_out = Box::new(CallbackCtx { inner: Arc::clone(inner), dir_in: false });
+        let xfer_out = match alloc_iso_transfer(
+            dev_handle,
+            EP_ISO_OUT,
+            buf_out.as_ptr(),
+            buf_out.len(),
+            cb_out.as_ref() as *const CallbackCtx as *mut c_void,
+        ) {
+            Ok(x) => x,
+            Err(e) => return SessionExit::FatalError(e),
+        };
+        res.transfers_out.push(xfer_out);
+        res._buffers_out.push(buf_out);
+        res._cb_ctx_out.push(cb_out);
+    }
+
+    // ---- Submit them all ----
+    for &t in res.transfers_in.iter().chain(res.transfers_out.iter()) {
+        let r = ffi::libusb_submit_transfer(t);
+        if r != 0 {
+            warn!("initial libusb_submit_transfer failed: {r}");
+        }
+    }
+
+    let timeout_tv = libc::timeval {
+        tv_sec: HANDLE_EVENTS_TIMEOUT.as_secs() as _,
+        tv_usec: HANDLE_EVENTS_TIMEOUT.subsec_micros() as _,
+    };
+
+    // Reset progress tracking at session start.
+    inner.no_progress_seconds.store(0, Ordering::Relaxed);
+    let last_ok_snapshot = inner.iso_stats.iso_in_pkts_ok.load(Ordering::Relaxed);
+    let mut last_ok = last_ok_snapshot;
+    let mut last_progress_check = Instant::now();
+
+    // ---- Steady-state event loop ----
+    let exit = loop {
+        if inner.stop.load(Ordering::Acquire) {
+            break SessionExit::StopRequested;
+        }
+        ffi::libusb_handle_events_timeout_completed(ctx_ptr, &timeout_tv, ptr::null_mut());
+
+        // Check progress every ~1 second. `iso_in_pkts_ok` is the
+        // authoritative "firmware is alive" signal: it only advances
+        // on CRC-valid status frames. If it flatlines for too long
+        // the firmware is either hung or reset; either way we need
+        // to reopen.
+        if last_progress_check.elapsed() >= Duration::from_secs(1) {
+            last_progress_check = Instant::now();
+            let now_ok = inner.iso_stats.iso_in_pkts_ok.load(Ordering::Relaxed);
+            if now_ok == last_ok {
+                let prev = inner.no_progress_seconds.fetch_add(1, Ordering::Relaxed);
+                if prev + 1 >= NO_PROGRESS_RECONNECT_THRESHOLD {
+                    break SessionExit::Reconnect;
+                }
+            } else {
+                inner.no_progress_seconds.store(0, Ordering::Relaxed);
+                last_ok = now_ok;
+            }
+        }
+    };
+
+    // ---- Shutdown / reconnect: cancel outstanding transfers, drain ----
+    for &t in res.transfers_in.iter().chain(res.transfers_out.iter()) {
+        ffi::libusb_cancel_transfer(t);
+    }
+    let drain_until = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < drain_until {
+        ffi::libusb_handle_events_timeout_completed(ctx_ptr, &timeout_tv, ptr::null_mut());
+    }
+    // `res` drops here, freeing libusb_transfer descriptors.
+    exit
+}
+
+/// Tear down the current libusb device handle and open a fresh one.
+/// Called after a session exits with `SessionExit::Reconnect`. While
+/// this runs, `inner.reconnecting` is set so that WaveformDevice
+/// control transfers return LIBUSB_ERROR_BUSY instead of using a
+/// handle that's in the process of being closed.
+unsafe fn try_reconnect(
+    inner: &Arc<IsoInner>,
+    ctx_ptr: *mut ffi::libusb_context,
+) -> Result<()> {
+    inner.reconnecting.store(true, Ordering::Release);
+    // Release interface + close the old handle.
+    {
+        let mut dh_guard = inner.dev_handle.write();
+        let old = *dh_guard;
+        if !old.is_null() {
+            let _ = ffi::libusb_release_interface(old, INTERFACE);
+            ffi::libusb_close(old);
+        }
+        *dh_guard = ptr::null_mut();
+    }
+
+    // Retry open for up to ~5 seconds — the SAM3X USB re-enumeration
+    // after a watchdog reset typically completes within 1-2 s, but
+    // slow hosts occasionally need a bit longer.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        let new_dh = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
+        if !new_dh.is_null() {
+            let _ = ffi::libusb_detach_kernel_driver(new_dh, INTERFACE);
+            let r = ffi::libusb_claim_interface(new_dh, INTERFACE);
+            if r == 0 {
+                *inner.dev_handle.write() = new_dh;
+                inner.reconnecting.store(false, Ordering::Release);
+                return Ok(());
+            }
+            ffi::libusb_close(new_dh);
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    inner.reconnecting.store(false, Ordering::Release);
+    anyhow::bail!(
+        "could not reopen device {VID:04x}:{PID:04x} within 5 s"
+    );
 }
 
 unsafe fn alloc_iso_transfer(
     dev_handle: *mut ffi::libusb_device_handle,
     endpoint: u8,
-    buf: &Vec<u8>,
+    buf_ptr: *const u8,
+    buf_len: usize,
     user_data: *mut c_void,
 ) -> Result<*mut ffi::libusb_transfer> {
+    anyhow::ensure!(
+        buf_len == PKTS_PER_TRANSFER * ISO_PKT_SIZE,
+        "alloc_iso_transfer buf size mismatch: expected {}, got {}",
+        PKTS_PER_TRANSFER * ISO_PKT_SIZE,
+        buf_len
+    );
     let xfer = ffi::libusb_alloc_transfer(PKTS_PER_TRANSFER as i32);
     anyhow::ensure!(!xfer.is_null(), "libusb_alloc_transfer failed");
     (*xfer).dev_handle = dev_handle;
     (*xfer).endpoint = endpoint;
     (*xfer).transfer_type = ffi::constants::LIBUSB_TRANSFER_TYPE_ISOCHRONOUS;
     (*xfer).timeout = 0;
-    (*xfer).buffer = buf.as_ptr() as *mut u8;
-    (*xfer).length = (PKTS_PER_TRANSFER * ISO_PKT_SIZE) as i32;
+    (*xfer).buffer = buf_ptr as *mut u8;
+    (*xfer).length = buf_len as i32;
     (*xfer).num_iso_packets = PKTS_PER_TRANSFER as i32;
     (*xfer).callback = iso_callback;
     (*xfer).user_data = user_data;
@@ -879,6 +1156,12 @@ pub struct ChannelStateView {
     pub channel_index: u8,
     pub shape: u8,
     pub shape_name: &'static str,
+    /// Raw flags byte (see `CHAN_STATE_FLAG_*` in protocol/wave_types).
+    pub flags: u8,
+    /// Convenience: true iff `flags & CHAN_STATE_FLAG_RESERVED`.
+    /// Exposed because the dashboard cares about this specific flag
+    /// to grey-out channel rows for PWM 4..7.
+    pub reserved: bool,
     pub freq_mhz: u32,
     pub duty_x10: u16,
     pub amplitude: u16,
@@ -912,25 +1195,50 @@ fn shape_name(s: u8) -> &'static str {
 /// must NOT be called from the iso I/O thread (would deadlock with
 /// libusb_handle_events).
 pub struct WaveformDevice {
-    dev_handle: *mut ffi::libusb_device_handle,
-    /// Held only to keep the libusb context alive — calls are made
-    /// directly via dev_handle.
-    _ctx_keepalive: Arc<IsoInner>,
+    /// Shared reference to the iso transport's inner state. We pull
+    /// the live `dev_handle` from here on every control transfer so
+    /// that we always talk to the *current* libusb handle even after
+    /// the I/O thread performs an auto-reconnect (the old handle
+    /// becomes invalid when the SAM3X re-enumerates after a watchdog
+    /// reset).
+    inner: Arc<IsoInner>,
 }
 
-// SAFETY: libusb_device_handle is documented as thread-safe for
-// libusb_control_transfer / libusb_submit_transfer when used on
-// distinct endpoints from different threads. We exclusively use EP0
-// here while IsoTransport uses EP3/EP4. No data race.
+// SAFETY: Arc<IsoInner> is already Send+Sync. The inner libusb
+// device_handle is now locked behind an RwLock, and libusb itself
+// is documented as thread-safe for control_transfer calls on EP0
+// concurrent with transfer calls on disjoint endpoints from other
+// threads.
 unsafe impl Send for WaveformDevice {}
 unsafe impl Sync for WaveformDevice {}
 
 impl WaveformDevice {
+    /// Acquire the current libusb device handle. Returns an error if
+    /// the iso I/O thread is in the middle of a reconnect sequence
+    /// (old handle already closed, new one not yet opened). Callers
+    /// see `WaveformError::ControlTransferFailed(LIBUSB_ERROR_BUSY)`
+    /// and typically just retry after a short delay.
+    fn dh(&self) -> Result<*mut ffi::libusb_device_handle, WaveformError> {
+        if self.inner.reconnecting.load(Ordering::Acquire) {
+            return Err(WaveformError::ControlTransferFailed(
+                ffi::constants::LIBUSB_ERROR_BUSY,
+            ));
+        }
+        let dh = *self.inner.dev_handle.read();
+        if dh.is_null() {
+            return Err(WaveformError::ControlTransferFailed(
+                ffi::constants::LIBUSB_ERROR_NO_DEVICE,
+            ));
+        }
+        Ok(dh)
+    }
+
     fn ctrl_in(&self, b_request: u8, w_index: u16, length: u16) -> Result<Vec<u8>, WaveformError> {
+        let dh = self.dh()?;
         let mut buf = vec![0u8; length as usize];
         let n = unsafe {
             ffi::libusb_control_transfer(
-                self.dev_handle,
+                dh,
                 0xC0, // bmRequestType: vendor IN device
                 b_request,
                 0, // wValue
@@ -952,9 +1260,10 @@ impl WaveformDevice {
     }
 
     fn ctrl_out(&self, b_request: u8, w_index: u16, data: &[u8]) -> Result<(), WaveformError> {
+        let dh = self.dh()?;
         let n = unsafe {
             ffi::libusb_control_transfer(
-                self.dev_handle,
+                dh,
                 0x40, // bmRequestType: vendor OUT device
                 b_request,
                 0,
@@ -1016,6 +1325,8 @@ impl WaveformDevice {
             channel_index: s.channel_index,
             shape: s.shape,
             shape_name: shape_name(s.shape),
+            flags: s.flags,
+            reserved: (s.flags & CHAN_STATE_FLAG_RESERVED) != 0,
             freq_mhz: s.freq_mhz,
             duty_x10: s.duty_x10,
             amplitude: s.amplitude,

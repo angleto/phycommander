@@ -107,6 +107,19 @@ typedef enum {
 /* bit 7 reserved for MODE_RULE_CHAIN. */
 
 /* -------------------------------------------------------------------------
+ *   ChannelState.flags bits (per-channel, returned by GEN_GET_STATE)
+ *
+ *   Currently only one flag is defined. The bits are mirrored in
+ *   `wave_types.rs` on the host side so the dashboard can decode them
+ *   without a version check.
+ * ------------------------------------------------------------------------- */
+#define CHAN_STATE_FLAG_RESERVED  (1u << 0)   /* channel ID exists but is
+                                                 not backed by hardware on
+                                                 this revision (e.g. PWM
+                                                 4..7 on the Arduino Due —
+                                                 no PIOC pins routed). */
+
+/* -------------------------------------------------------------------------
  *   Channel inventory exposed by this firmware revision.
  *
  *   Flat channel ID space (used in wIndex of vendor SETUP requests):
@@ -301,6 +314,17 @@ void waveform_stop_all(void);
  * Command frame's dacN field to the DAC peripheral.
  */
 bool waveform_dac_is_generating(uint8_t dac_idx);
+
+/**
+ * \brief Update the per-channel MANUAL hold value used by the PDC
+ * refill loop when the channel is in SHAPE_OFF (and the PDC is still
+ * running because the OTHER channel is generating). Called from
+ * `apply_command_frame` after a successful DAC write, so the
+ * transition GENERATOR → MANUAL never snaps the DAC to mid-rail.
+ *
+ * No-op if `dac_idx >= WAVE_NUM_DAC`.
+ */
+void waveform_set_manual_hold(uint8_t dac_idx, uint16_t v12);
 
 /* -------------------------------------------------------------------------
  *   Vendor SETUP entrypoints (called from udi_vendor_setup)

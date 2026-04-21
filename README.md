@@ -94,7 +94,7 @@ Every panel collapses to its header with a ▸ chevron; state is persisted in `l
 
 | Qty | Item | Notes | Typical price |
 |-----|------|-------|---------------|
-| 1 | Intel mini-PC with x86\_64 CPU, ≥ 2 GB RAM, USB 2.0 HS port | Reference box: **Intel DN2800MT** (Atom N2800, Cedar Trail) running Ubuntu 24.04 PREEMPT\_RT. Any similar fanless Atom/Celeron box works. A host with **xHCI** (USB 3.0+) instead of the reference **EHCI** controller handles iso-USB microframes more aggressively and can push the effective refresh rate well above 8 kHz — EHCI caps cleanly at HS-iso's 8 kHz, xHCI's per-bus scheduler gives you extra headroom plus lower jitter. | 40–120 € used |
+| 1 | Intel mini-PC with x86\_64 CPU, ≥ 2 GB RAM, USB 2.0 HS port | Reference box: **Intel DN2800MT** (Atom N2800, Cedar Trail) running Ubuntu 24.04 PREEMPT\_RT. Any similar fanless Atom/Celeron box works. A host with **xHCI** (USB 3.0+) instead of the reference **EHCI** controller handles iso-USB microframes more aggressively and can push the effective refresh rate well above 8 kHz — EHCI caps cleanly at HS-iso's 8 kHz, xHCI's per-bus scheduler should give lower jitter. | 40–120 € used |
 | 1 | Arduino Due (SAM3X8E, 84 MHz Cortex-M3) | Native USB 2.0 HS. Stock board, no hardware mods. | 35 € |
 | 1 | USB A → micro-B cable | Connect Due *native* port to the host. Programming port only needed for first flash. | 3 € |
 

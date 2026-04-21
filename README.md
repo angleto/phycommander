@@ -222,8 +222,8 @@ For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing
 
 ## Roadmap
 
-- **v3.5** — live watchdog + crash-state dump from firmware; host-side auto-recovery over USB reset instead of SAM-BA reflash.
-- **v4** — rule-chain mode (`MODE_RULE_CHAIN`) for composing reactive primitives on-chip without round-tripping to the host.
+- **v2.0** — live watchdog + crash-state dump from firmware; host-side auto-recovery over USB reset instead of SAM-BA reflash.
+- **v3.0** — rule-chain mode (`MODE_RULE_CHAIN`) for composing reactive primitives on-chip without round-tripping to the host.
 - **v4.x** — second supported MCU (SAMD51 / RP2350) with the same wire protocol.
 - **Long term** — pluggable front-end PCB with galvanic isolation and ±10 V amplifiers, designed hand-solder-first.
 

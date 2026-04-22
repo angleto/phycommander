@@ -280,6 +280,45 @@ sudo journalctl -u physerver -b
 
 ---
 
+## Real-time tuning (reduce scheduler jitter tail)
+
+On a host booted with `isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3`
+(typical for a PREEMPT_RT DAQ box), two extra steps lower the tail
+of the jitter histogram exposed at `/api/rt_stats.jitter_histogram`:
+
+1. **Pin the scheduler** to an isolated core via `config.toml`:
+
+   ```toml
+   [realtime]
+   cpu_affinity = true
+   cpu_core = 2
+   ```
+
+2. **Pin the USB host controller's IRQ** to the *other* isolated
+   core so its completion work doesn't contend with the scheduler:
+
+   ```bash
+   sudo ./scripts/pin_usb_irq.sh        # auto-detects IRQ, pins to core 3
+   sudo ./scripts/pin_usb_irq.sh 3 23   # or: pin specific IRQ
+   ```
+
+   Make it stick across reboots by dropping a systemd unit or an
+   `@reboot` cron entry that re-runs the script. Alternatively add
+   a rule to `/etc/tmpfiles.d/` that writes the desired affinity
+   to `/proc/irq/<N>/smp_affinity_list`.
+
+   If `irqbalance` is active it will periodically undo the pin —
+   disable it on dedicated DAQ hosts:
+
+   ```bash
+   sudo systemctl disable --now irqbalance
+   ```
+
+Expected improvement: the bucket count for jitter > 1 ms typically
+drops by an order of magnitude on the reference DN2800MT hardware.
+
+---
+
 ## Security
 
 ### Firewall Configuration

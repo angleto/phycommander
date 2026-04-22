@@ -44,9 +44,14 @@ priority = 80
 # Lock memory to prevent paging
 lock_memory = true
 
-# Set CPU affinity (pin to specific core)
-cpu_affinity = false
-# cpu_core = 2
+# Pin the scheduler thread to a specific CPU core. Recommended on
+# hosts booted with `isolcpus=2,3 nohz_full=2,3 rcu_nocbs=2,3` (or
+# similar kernel args) — the iso I/O + scheduler then run on a core
+# the kernel keeps otherwise quiet, dramatically reducing the tail
+# of the jitter histogram. Set `cpu_core` to one of the isolated
+# cores. Leave both defaults (false/none) on hosts without isolation.
+cpu_affinity = true
+cpu_core = 2
 
 # Set DMA latency (Linux only)
 dma_latency = true

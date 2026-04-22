@@ -66,3 +66,7 @@ test/cpp_test/testusb
 
 # Photo originals kept outside git (JPG-converted copies live in docs/images/hardware/)
 phy_picts/
+
+# Private release/publishing notes (never commit)
+PUBLISHING.md
+RELEASING.md

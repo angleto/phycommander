@@ -69,8 +69,37 @@ cargo build
 ### 4. Run Tests
 
 ```bash
-cargo test
+# Host-only unit + integration tests (no hardware required).
+# This is what CI runs.
+cargo test --release --workspace
 ```
+
+#### Hardware selftests (Arduino Due loopback required)
+
+The `physerver/tests/selftest.rs` suite lives behind `#[ignore]` so
+CI and casual contributors don't run it. It needs physical loopback
+wiring (DAC0↔ADC0, DAC1↔ADC1, DOUT[0..15]↔DIN[0..15]) on a flashed
+PhyCommander connected over USB. To run:
+
+```bash
+# All hardware selftests
+cargo test --release --test selftest -- --ignored
+
+# One sub-suite at a time
+cargo test --release --test selftest gpio   -- --ignored
+cargo test --release --test selftest analog -- --ignored
+
+# Pick a specific serial port (otherwise auto-detect picks the first
+# ACM device on the host — fine for a one-Due desk, wrong if you have
+# multiple).
+PHYCMD_PORT=/dev/ttyACM0 cargo test --release --test selftest -- --ignored
+```
+
+Expect the test run to take 10-30 s per sub-suite because of the
+DAC/ADC settling waits and digital scan. If any assertion fires, the
+firmware may not match the host-side protocol layout — the
+`const _: () = assert!(offset_of!(...))` compile-time checks in
+`protocol/types.rs` are the first thing to verify.
 
 ### 5. Run the Server
 

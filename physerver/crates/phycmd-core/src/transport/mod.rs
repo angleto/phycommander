@@ -20,8 +20,9 @@ pub use traits::{PipelinedTransport, Transport, TransportStats};
 pub use usb::UsbTransport;
 #[cfg(feature = "usb")]
 pub use usb_iso::{
-    CapabilitiesView, ChannelStateView, IsoStats, IsoStatsSnapshot, IsoTransport, WaveformDevice,
-    WaveformError,
+    CapabilitiesView, ChannelStateView, IsoReconnectPolicy, IsoStats, IsoStatsSnapshot,
+    IsoTransport, WaveformDevice, WaveformError,
+    DEFAULT_NO_PROGRESS_THRESHOLD_SEC, DEFAULT_REENUMERATE_TIMEOUT,
 };
 #[cfg(feature = "usb")]
 pub use usb_loopback::UsbLoopbackTransport;

@@ -855,6 +855,11 @@ struct IsoStatsResponse {
     iso_out_pkts_ok: u64,
     iso_out_errors: u64,
     commands_taken: u64,
+    /// Server-side smoothed estimate of iso IN packets per second.
+    /// Authoritative rate: compute client-side deltas if you need
+    /// finer granularity but expect browser-clock jitter (±5%) on a
+    /// link that is actually rock-steady.
+    iso_in_rate_hz: f32,
 }
 
 async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsResponse> {
@@ -868,6 +873,7 @@ async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsRespons
             iso_out_pkts_ok: snap.iso_out_pkts_ok,
             iso_out_errors: snap.iso_out_errors,
             commands_taken: snap.commands_taken,
+            iso_in_rate_hz: snap.iso_in_rate_hz,
         }
     });
 

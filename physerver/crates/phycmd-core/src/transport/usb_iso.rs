@@ -51,7 +51,7 @@ use crate::waveforms::WaveformBank;
 
 use anyhow::{Context, Result};
 use libusb1_sys as ffi;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
 use std::os::raw::c_void;
 use std::ptr;
@@ -204,6 +204,31 @@ pub struct IsoStats {
     /// Cumulative number of distinct command snapshots taken from
     /// staging (one per OUT transfer, not per packet).
     pub commands_taken: AtomicU64,
+
+    /// Rolling state for the IN-pkts-per-second estimate. Updated on
+    /// each call to `snapshot()`. Separate from the HTTP client's own
+    /// delta-in-time computation because clients (e.g. browsers) have
+    /// coarse-grained wall clocks that inject ±5% jitter; the server
+    /// measures its own interval with nanosecond-precision `Instant`
+    /// and reports a smoothed rate that is independent of the poller.
+    rate_state: Mutex<IsoRateState>,
+}
+
+#[derive(Debug)]
+struct IsoRateState {
+    last_time: Option<Instant>,
+    last_count: u64,
+    ema_hz: f32,
+}
+
+impl Default for IsoRateState {
+    fn default() -> Self {
+        Self {
+            last_time: None,
+            last_count: 0,
+            ema_hz: 0.0,
+        }
+    }
 }
 
 impl IsoStats {
@@ -218,17 +243,56 @@ impl IsoStats {
         self.iso_out_pkts_ok.store(0, Ordering::Relaxed);
         self.iso_out_errors.store(0, Ordering::Relaxed);
         self.commands_taken.store(0, Ordering::Relaxed);
+        *self.rate_state.lock() = IsoRateState::default();
     }
 
     pub fn snapshot(&self) -> IsoStatsSnapshot {
+        let iso_in_pkts_ok = self.iso_in_pkts_ok.load(Ordering::Relaxed);
+
+        // Rolling EMA of the iso IN packet rate. Called at whatever
+        // cadence the HTTP client picks (typically 1-2 Hz). We only
+        // advance the EMA when ≥200 ms have elapsed since the last
+        // update so back-to-back snapshot() calls don't divide by
+        // near-zero.
+        let iso_in_rate_hz = {
+            let mut st = self.rate_state.lock();
+            let now = Instant::now();
+            match st.last_time {
+                Some(prev) => {
+                    let dt = now.duration_since(prev).as_secs_f32();
+                    if dt >= 0.2 {
+                        let delta = iso_in_pkts_ok.saturating_sub(st.last_count) as f32;
+                        let inst = delta / dt;
+                        // alpha=0.4 gives ~3-sample settling; fresh start
+                        // seeds the EMA with the first instant reading so
+                        // the displayed value is meaningful immediately.
+                        st.ema_hz = if st.ema_hz == 0.0 {
+                            inst
+                        } else {
+                            0.4 * inst + 0.6 * st.ema_hz
+                        };
+                        st.last_time = Some(now);
+                        st.last_count = iso_in_pkts_ok;
+                    }
+                    st.ema_hz
+                }
+                None => {
+                    st.last_time = Some(now);
+                    st.last_count = iso_in_pkts_ok;
+                    0.0
+                }
+            }
+        };
+
         IsoStatsSnapshot {
-            iso_in_pkts_ok: self.iso_in_pkts_ok.load(Ordering::Relaxed),
+            iso_in_pkts_ok,
             iso_in_errors: self.iso_in_errors.load(Ordering::Relaxed),
             iso_in_short: self.iso_in_short.load(Ordering::Relaxed),
             iso_in_crc_errors: self.iso_in_crc_errors.load(Ordering::Relaxed),
             iso_out_pkts_ok: self.iso_out_pkts_ok.load(Ordering::Relaxed),
             iso_out_errors: self.iso_out_errors.load(Ordering::Relaxed),
             commands_taken: self.commands_taken.load(Ordering::Relaxed),
+            iso_in_rate_hz,
         }
     }
 }
@@ -242,6 +306,11 @@ pub struct IsoStatsSnapshot {
     pub iso_out_pkts_ok: u64,
     pub iso_out_errors: u64,
     pub commands_taken: u64,
+    /// Smoothed estimate of iso IN packets per second, computed
+    /// server-side over a ≥200 ms window with EMA alpha=0.4. Zero on
+    /// the first call after a reset; settles within 2-3 snapshot
+    /// cycles afterwards.
+    pub iso_in_rate_hz: f32,
 }
 
 // ---------------------------------------------------------------------
@@ -298,6 +367,11 @@ struct IsoInner {
     /// `enabled`, the iso OUT callback computes per-microframe
     /// commands instead of broadcasting a single staging snapshot.
     waveforms: Arc<WaveformBank>,
+
+    /// Reconnect policy (no-progress threshold and re-enumeration
+    /// timeout). Copied from the caller's [`IsoReconnectPolicy`] at
+    /// construction time; changes after `new()` don't propagate.
+    reconnect_policy: IsoReconnectPolicy,
 
     /// Monotonic packet counter (used as `cmd_seq` in published
     /// `StatusFrame`s — it is not the wire seq_num, which is only
@@ -387,16 +461,28 @@ pub struct IsoTransport {
 }
 
 impl IsoTransport {
-    /// Spawn the iso I/O thread and start servicing the iso EPs.
-    ///
-    /// Errors at this stage (libusb init, device not found, interface
-    /// claim) propagate before the thread starts. Once the thread is
-    /// up, libusb errors are surfaced via `IsoStats` counters and
-    /// `RtStats::transport_errors` rather than panicking.
+    /// Spawn the iso I/O thread and start servicing the iso EPs
+    /// with default reconnect policy. Errors at this stage (libusb
+    /// init, device not found, interface claim) propagate before the
+    /// thread starts. Once the thread is up, libusb errors are
+    /// surfaced via `IsoStats` counters and `RtStats::transport_errors`
+    /// rather than panicking.
     pub fn new(
         staging: Arc<CommandStaging>,
         bus: Arc<StatusBus>,
         stats: Arc<RtStats>,
+    ) -> Result<Self> {
+        Self::new_with_policy(staging, bus, stats, IsoReconnectPolicy::default())
+    }
+
+    /// Same as [`new`] but with a custom reconnect policy. Use this
+    /// on slow hosts or when the firmware watchdog period differs
+    /// from the default (2 s). See [`IsoReconnectPolicy`].
+    pub fn new_with_policy(
+        staging: Arc<CommandStaging>,
+        bus: Arc<StatusBus>,
+        stats: Arc<RtStats>,
+        reconnect_policy: IsoReconnectPolicy,
     ) -> Result<Self> {
         let iso_stats = Arc::new(IsoStats::default());
         let waveforms = Arc::new(WaveformBank::new());
@@ -473,6 +559,7 @@ impl IsoTransport {
             last_urb_ns: AtomicI64::new(0),
             telemetry_detail_enabled: AtomicBool::new(true),
             start: Instant::now(),
+            reconnect_policy,
         });
 
         let waveform_dev = Arc::new(WaveformDevice { inner: Arc::clone(&inner) });
@@ -595,11 +682,37 @@ impl Drop for IoResources {
     }
 }
 
-/// Threshold of consecutive "no progress" 1-second windows that
-/// triggers an auto-reconnect. Picked to be larger than the firmware
-/// watchdog timeout (~2 s) so we reliably catch a single WDT event,
-/// plus a safety margin. Tuned at 4 s of total silence.
-const NO_PROGRESS_RECONNECT_THRESHOLD: u32 = 4;
+/// Default threshold of consecutive "no progress" 1-second windows
+/// that triggers an auto-reconnect. Picked to be larger than the
+/// firmware watchdog timeout (~2 s) so we reliably catch a single
+/// WDT event, plus a safety margin. Tuned at 4 s of total silence.
+/// Overridable per transport via [`IsoReconnectPolicy`].
+pub const DEFAULT_NO_PROGRESS_THRESHOLD_SEC: u32 = 4;
+
+/// Default maximum wall time to wait for the device to re-enumerate
+/// during [`try_reconnect`]. Slow hosts (old chipsets, heavily-loaded
+/// USB hubs) may need this raised; a stock DN2800MT typically sees
+/// the SAM3X back within 1-2 s. Overridable per transport via
+/// [`IsoReconnectPolicy`].
+pub const DEFAULT_REENUMERATE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Policy for how the iso I/O thread handles a stalled link. Every
+/// field has a default tuned for a stock PhyCommander on a DN2800MT
+/// host; override when you know the firmware or host takes longer.
+#[derive(Debug, Clone, Copy)]
+pub struct IsoReconnectPolicy {
+    pub no_progress_threshold_sec: u32,
+    pub reenumerate_timeout: Duration,
+}
+
+impl Default for IsoReconnectPolicy {
+    fn default() -> Self {
+        Self {
+            no_progress_threshold_sec: DEFAULT_NO_PROGRESS_THRESHOLD_SEC,
+            reenumerate_timeout: DEFAULT_REENUMERATE_TIMEOUT,
+        }
+    }
+}
 
 fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
     unsafe {
@@ -628,7 +741,7 @@ fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
                     warn!(
                         "iso: no progress for {}s, firmware may have reset. \
                          Attempting auto-reconnect.",
-                        NO_PROGRESS_RECONNECT_THRESHOLD
+                        inner.reconnect_policy.no_progress_threshold_sec
                     );
                     if let Err(e) = try_reconnect(&inner, ctx_ptr) {
                         warn!("auto-reconnect attempt failed: {e:#}. Retrying in 1s.");
@@ -765,7 +878,7 @@ unsafe fn run_iso_session(
             let now_ok = inner.iso_stats.iso_in_pkts_ok.load(Ordering::Relaxed);
             if now_ok == last_ok {
                 let prev = inner.no_progress_seconds.fetch_add(1, Ordering::Relaxed);
-                if prev + 1 >= NO_PROGRESS_RECONNECT_THRESHOLD {
+                if prev + 1 >= inner.reconnect_policy.no_progress_threshold_sec {
                     break SessionExit::Reconnect;
                 }
             } else {
@@ -808,10 +921,12 @@ unsafe fn try_reconnect(
         *dh_guard = ptr::null_mut();
     }
 
-    // Retry open for up to ~5 seconds — the SAM3X USB re-enumeration
-    // after a watchdog reset typically completes within 1-2 s, but
-    // slow hosts occasionally need a bit longer.
-    let deadline = Instant::now() + Duration::from_secs(5);
+    // Retry open for up to reconnect_policy.reenumerate_timeout —
+    // the SAM3X USB re-enumeration after a watchdog reset typically
+    // completes within 1-2 s, but slow hosts or off-nominal USB
+    // topologies occasionally need longer.
+    let timeout = inner.reconnect_policy.reenumerate_timeout;
+    let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         let new_dh = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
         if !new_dh.is_null() {
@@ -828,7 +943,8 @@ unsafe fn try_reconnect(
     }
     inner.reconnecting.store(false, Ordering::Release);
     anyhow::bail!(
-        "could not reopen device {VID:04x}:{PID:04x} within 5 s"
+        "could not reopen device {VID:04x}:{PID:04x} within {:.1} s",
+        timeout.as_secs_f32()
     );
 }
 

@@ -1208,6 +1208,13 @@ async function pollSysinfo(){try{const r=await fetch('/api/sysinfo');if(r.ok)ren
 
 // ========== RT Stats (server-side jitter, missed ticks, latency) ==========
 let lastRtSnap = null; // for delta calculation between polls
+// Ring of the last N instantaneous rate samples; the displayed Hz is
+// the mean of this window. Smooths out performance.now() jitter
+// (browsers clamp timer resolution for Spectre mitigations, so a
+// single-sample dN/dT can read 7.5-8.5 kHz on an iso link that is
+// actually rock-steady at 7993.7 Hz server-side).
+const RATE_HISTORY_LEN = 6;
+let rateHistory = [];
 
 function renderRtStats(d) {
     // Status bar badges (always-visible RT health)
@@ -1253,16 +1260,38 @@ function renderRtStats(d) {
     // status bar. Both are populated from rt_stats deltas because the
     // WebSocket throughput is throttled at the server (~250 Hz) and
     // would otherwise misrepresent the actual loop rate.
+    //
+    // Individual dN/dT readings oscillate a few hundred Hz due to
+    // browser timer clamping. We average the last RATE_HISTORY_LEN
+    // samples to show the actual transport rate, with the most recent
+    // instant value shown in parentheses for operators who need it.
     let liveHz = '';
     const now = performance.now();
-    if (lastRtSnap && (now - lastRtSnap.t) > 500) {
+
+    // Prefer the server-side smoothed rate when available (iso
+    // transports expose `iso.iso_in_rate_hz` computed with a
+    // nanosecond-precision monotonic clock and EMA smoothing). Fall
+    // back to client-side delta + moving average for bulk/serial
+    // transports that don't publish a rate.
+    const serverHz = d.iso && typeof d.iso.iso_in_rate_hz === 'number' && d.iso.iso_in_rate_hz > 0
+        ? d.iso.iso_in_rate_hz : null;
+
+    if (serverHz !== null) {
+        liveHz = ` <small style="color:#888">(${serverHz.toFixed(1)} Hz)</small>`;
+        document.getElementById('rateValue').textContent = serverHz >= 1000
+            ? (serverHz/1000).toFixed(2) + 'k'
+            : serverHz.toFixed(0);
+    } else if (lastRtSnap && (now - lastRtSnap.t) > 500) {
         const dT = (now - lastRtSnap.t) / 1000;
         const dN = d.tick_ok - lastRtSnap.tick_ok;
-        const hz = dN/dT;
-        liveHz = ` <small style="color:#888">(${hz.toFixed(1)} Hz live)</small>`;
-        document.getElementById('rateValue').textContent = hz >= 1000
-            ? (hz/1000).toFixed(1) + 'k'
-            : hz.toFixed(0);
+        const hzInstant = dN/dT;
+        rateHistory.push(hzInstant);
+        if (rateHistory.length > RATE_HISTORY_LEN) rateHistory.shift();
+        const hzMean = rateHistory.reduce((a,b)=>a+b,0) / rateHistory.length;
+        liveHz = ` <small style="color:#888">(${hzMean.toFixed(1)} Hz avg · ${hzInstant.toFixed(0)} inst)</small>`;
+        document.getElementById('rateValue').textContent = hzMean >= 1000
+            ? (hzMean/1000).toFixed(2) + 'k'
+            : hzMean.toFixed(0);
     } else if (!lastRtSnap) {
         document.getElementById('rateValue').textContent = '-';
     }
@@ -1328,6 +1357,7 @@ document.getElementById('resetTelemetryBtn').onclick = async () => {
         const r = await fetch('/api/reset_telemetry', { method: 'POST' });
         btn.textContent = r.ok ? '✓ Reset' : '✗ Failed';
         lastRtSnap = null;      // so the live-Hz delta restarts cleanly
+        rateHistory = [];       // flush smoothing window on counter reset
         pollRtStats();
     } catch (e) {
         btn.textContent = '✗ Error';

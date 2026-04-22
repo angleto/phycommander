@@ -116,6 +116,29 @@ static uint8_t  s_last_seq    = 0xFFu;
 static uint16_t s_error_count = 0;
 static volatile uint32_t s_uptime_ms = 0;
 
+/* Cached status frame (lazy rebuild).
+ *
+ * build_status_frame() is called once per iso IN microframe
+ * completion (~8 kHz) but the underlying state only materially
+ * changes when SysTick bumps s_uptime_ms (1 kHz) or when a command
+ * is processed (<=1 kHz). The other ~7/8 microframes build a frame
+ * identical to the previous one, including the CRC. The cache here
+ * lets build_status_frame() skip the ~150 cycles of CRC work on
+ * those hits: dirty==false means the cached 64 bytes are authoritative.
+ *
+ * Dirty is set from: SysTick (1 kHz) to pick up uptime_ms, DIN
+ * polling, and any state that changes at the 1-kHz-main-loop rate;
+ * and from apply_command_frame() to pick up the seq echo and
+ * loop_time_us immediately.
+ *
+ * Concurrency: all writers are in ISR context. The rebuild path
+ * (inside build_status_frame) clears dirty FIRST, then rebuilds —
+ * if a higher-priority ISR sets dirty during the rebuild, the
+ * next call simply rebuilds again. No lost updates.
+ */
+static COMPILER_WORD_ALIGNED uint8_t s_status_cached[MSG_SIZE];
+static volatile bool s_status_dirty = true;
+
 /* Watchdog kick cadence, in SysTick ticks (= milliseconds). Picked
  * well below the WDT_MR.WDV timeout (~2 s) so any drop in tick rate
  * of up to 4× still pets the dog before it bites. */
@@ -126,6 +149,14 @@ void SysTick_Handler(void)
 {
 	s_uptime_ms++;
 	waveform_systick_1ms();    /* drives PULSE_TRIG cooldown / pulse end */
+
+	/* Invalidate the cached status frame every 1 ms: at a minimum
+	 * s_uptime_ms just changed, and this rate is the natural bound
+	 * for the DIN / ADC sampling path too. Iso IN builds that land
+	 * within this millisecond use the cached 64 bytes (~0.2 µs
+	 * memcpy); the one that lands right after SysTick pays the
+	 * full rebuild cost (~2.2 µs). See s_status_cached. */
+	s_status_dirty = true;
 
 	/* Kick the watchdog periodically. If the main loop, USB ISR,
 	 * DACC ISR, or SysTick itself wedges for more than ~2 s the
@@ -417,11 +448,31 @@ void apply_command_frame(const uint8_t *rx_buf)
 	uint32_t dt_cyc = dwt_cyccnt() - t0;
 	uint32_t dt_us  = dt_cyc / 84u;           /* 84 MHz MCK on SAM3X */
 	s_last_loop_time_us = dt_us > 0xFFFFu ? 0xFFFFu : (uint16_t)dt_us;
+
+	/* seq_num echo and loop_time_us just changed — the next iso IN
+	 * frame must reflect this, not the pre-command cached value. */
+	s_status_dirty = true;
 }
 
 void build_status_frame(uint8_t *tx_buf)
 {
-	status_msg_t *stat = (status_msg_t *)tx_buf;
+	/* Fast path: a recent rebuild already produced a valid 64-byte
+	 * frame in s_status_cached. Just copy it out. ~16 cycles @ 84 MHz
+	 * = ~0.2 µs vs ~2 µs for a full rebuild+CRC. See header comment
+	 * on s_status_cached for the dirty-flag protocol. */
+	if (!s_status_dirty) {
+		memcpy(tx_buf, s_status_cached, MSG_SIZE);
+		return;
+	}
+
+	/* Clear dirty BEFORE the rebuild so a concurrent writer (any
+	 * higher-priority ISR) can re-mark dirty and force the next
+	 * call to rebuild. If we cleared after, and the writer fired
+	 * mid-rebuild, the cache would go stale until the next
+	 * unrelated dirty event. */
+	s_status_dirty = false;
+
+	status_msg_t *stat = (status_msg_t *)s_status_cached;
 
 	/* Zero only the 64-byte protocol header. The iso path passes a
 	 * 512-byte buffer with [64..511] pre-filled with zeros once at
@@ -448,7 +499,9 @@ void build_status_frame(uint8_t *tx_buf)
 	stat->error_count   = s_error_count;
 
 	/* CRC over first 24 bytes of the status frame */
-	stat->crc = crc16_ccitt(tx_buf, CRC_OVER_STAT_BYTES);
+	stat->crc = crc16_ccitt(s_status_cached, CRC_OVER_STAT_BYTES);
+
+	memcpy(tx_buf, s_status_cached, MSG_SIZE);
 }
 
 /* Bulk path keeps the original combined entry point — apply + build are

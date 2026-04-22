@@ -1,6 +1,6 @@
 # PhyCMD API Reference
 
-**Version 1.0.0**
+**Version 2.0.0**
 
 Complete API documentation for PhyServer interfaces.
 

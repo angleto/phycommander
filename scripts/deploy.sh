@@ -120,7 +120,7 @@ install_systemd_service() {
     sudo tee /etc/systemd/system/physerver.service > /dev/null <<EOF
 [Unit]
 Description=PhyServer - Physical Commander Server
-Documentation=https://github.com/your-org/phycmd
+Documentation=https://github.com/angleto/phycommander
 After=network.target
 Wants=network-online.target
 

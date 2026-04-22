@@ -21,8 +21,8 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/phycmd/phycommander"
-Repository = "https://github.com/phycmd/phycommander"
+Homepage = "https://github.com/angleto/phycommander"
+Repository = "https://github.com/angleto/phycommander"
 
 [tool.maturin]
 # The Rust cdylib is named `phycmd_ext` (see Cargo.toml); the

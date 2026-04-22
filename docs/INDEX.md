@@ -277,9 +277,9 @@ PhyCMD/
 
 ## Version Information
 
-All documentation is for **PhyCMD v1.0.0**
+All documentation is for **PhyCMD v2.0.0**
 
-Last updated: **2025-11-22**
+Last updated: **2026-04-22**
 
 ---
 
@@ -297,8 +297,8 @@ When updating documentation:
 
 ## External Resources
 
-- **GitHub Repository**: https://github.com/your-org/phycmd
-- **Issue Tracker**: https://github.com/your-org/phycmd/issues
+- **GitHub Repository**: https://github.com/angleto/phycommander
+- **Issue Tracker**: https://github.com/angleto/phycommander/issues
 - **Arduino Due**: https://www.arduino.cc/en/Guide/ArduinoDue
 - **BOSSA**: https://www.shumatech.com/web/products/bossa
 - **Rust**: https://www.rust-lang.org/

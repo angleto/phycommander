@@ -60,9 +60,11 @@ tokio = { version = "1.35", features = ["sync", "rt"], default-features = false 
 default = ["usb"]
 usb = ["rusb", "libusb1-sys"]
 
-# Exposes `transport::mock::MockTransport` outside of `cfg(test)`
-# so that sibling crates in the workspace can reuse it in their
-# own integration tests.
+# Exposes `transport::mock::MockTransport` outside of `cfg(test)`.
+# Consumed by sibling crates in the workspace for integration tests
+# AND by `phycmd-py` to back the public `PhyCommander.open_mock()`
+# Python API — so this is not purely a test-only flag. Kept under
+# the `test-mock` name for historical reasons; flip carefully.
 test-mock = []
 
 [dev-dependencies]

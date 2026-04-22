@@ -1,7 +1,12 @@
 # PhyCMD Production Readiness Report
 
+> **Archival document.** Captures the v1.0.0 production-readiness
+> assessment at its release date. Left in the repo as historical
+> record; for current production readiness of v2.0.0+ see the
+> latest report in this directory.
+
 **Date**: 2025-11-22
-**Version**: 1.0.0
+**Version**: 1.0.0 (historical)
 **Reviewer**: Production Readiness Assessment
 **Status**: ✅ **READY FOR PRODUCTION** (with recommendations)
 

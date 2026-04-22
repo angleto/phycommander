@@ -1,8 +1,12 @@
 # PhyCMD Production Readiness Verification Report
 
+> **Archival document.** Independent verification of the v1.0.0
+> assessment, written in Nov 2025. Preserved as historical record;
+> does not reflect v2.0.0+ state.
+
 **Date**: 2025-11-22
 **Reviewer**: Independent Production Readiness Assessment
-**Version**: 1.0.0
+**Version**: 1.0.0 (historical)
 **Methodology**: Deep code inspection, automated testing, build verification, and documentation review
 
 ---

@@ -271,5 +271,7 @@ Given a version number MAJOR.MINOR.PATCH:
 
 ---
 
-[Unreleased]: https://github.com/your-org/phycmd/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/your-org/phycmd/releases/tag/v1.0.0
+[Unreleased]: https://github.com/angleto/phycommander/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/angleto/phycommander/releases/tag/v2.0.0
+[1.1.0]: https://github.com/angleto/phycommander/releases/tag/v1.1.0
+[1.0.0]: https://github.com/angleto/phycommander/releases/tag/v1.0.0

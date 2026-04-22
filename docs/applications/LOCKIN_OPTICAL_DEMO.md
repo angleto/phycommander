@@ -26,7 +26,7 @@ ADC**, thanks to the PREEMPT_RT host loop and the firmware DMA front-end.
 
 The base demo uses 2 channels (DAC0 + ADC0). The full demo, described in
 this document, uses every available DAC, PWM, ADC, and GPIO that
-phycommander exposes (or will expose in v1.1) to turn the same instrument
+phycommander exposes in v2.0.0 to turn the same instrument
 into a 4-channel colorimeter, a Bode plotter, and a motor-chopped reference
 spectrometer — all with one continuous firmware load and one host
 application.

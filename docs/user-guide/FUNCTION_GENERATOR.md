@@ -1,7 +1,7 @@
 # On-chip Function Generator — User Guide
 
 > **Scope.**  This guide covers the firmware-driven waveform and
-> reactive-control modes exposed by the SAM3X8E (PhyCommander v1+
+> reactive-control modes exposed by the SAM3X8E (PhyCommander v2.0.0+
 > firmware). For the wire-level protocol details see
 > [`docs/firmware/PROTOCOL.md`](../firmware/PROTOCOL.md).
 

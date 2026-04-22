@@ -104,6 +104,11 @@ USB:
 
 ### Test Setup
 
+> These measurements were captured on **PhyServer v1.0.0** (Nov 2025).
+> The iso transport and on-chip fn-gen added in v2.0.0 (Apr 2026)
+> change the transport characteristics significantly — see
+> `/api/rt_stats` on a running v2.0.0 instance for up-to-date numbers.
+
 - **Hardware**: Arduino Due (ATSAM3X8E @ 84 MHz)
 - **Computer**: Intel Atom (various models tested)
 - **OS**: Linux 5.x with real-time kernel patches

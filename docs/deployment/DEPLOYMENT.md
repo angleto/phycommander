@@ -111,8 +111,8 @@ rustc --version  # Verify installation
 
 ```bash
 # Clone repository
-git clone https://github.com/your-org/phycmd.git
-cd phycmd/physerver
+git clone https://github.com/angleto/phycommander.git
+cd phycommander/physerver
 
 # Build release version
 cargo build --release
@@ -182,7 +182,7 @@ Create `/etc/systemd/system/physerver.service`:
 ```ini
 [Unit]
 Description=PhyServer - Physical Commander Server
-Documentation=https://github.com/your-org/phycmd
+Documentation=https://github.com/angleto/phycommander
 After=network.target
 Wants=network-online.target
 

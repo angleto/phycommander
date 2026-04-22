@@ -1,7 +1,7 @@
 # PhyCMD User Manual
 
-**Version 1.0.0**
-**Last Updated**: 2025-11-22
+**Version 2.0.0**
+**Last Updated**: 2026-04-22
 
 ## Table of Contents
 
@@ -89,7 +89,7 @@ When you run physerver for the first time:
 
 ```bash
 $ ./target/release/physerver --auto-detect
-INFO PhyServer - Physical Commander Server v1.0.0
+INFO PhyServer - Physical Commander Server v2.0.0
 INFO Auto-detecting PhyCMD device...
 INFO ✓ USB transport detected
 INFO Transport info: max_rate=10000Hz, typical_latency=120µs

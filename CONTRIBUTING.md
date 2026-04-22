@@ -36,8 +36,8 @@ Thank you for your interest in contributing to PhyCMD! This document provides gu
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/phycmd.git
-cd phycmd
+git clone https://github.com/angleto/phycommander.git
+cd phycommander
 ```
 
 ---

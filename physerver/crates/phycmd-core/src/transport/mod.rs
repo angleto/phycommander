@@ -28,7 +28,6 @@ pub use usb_loopback::UsbLoopbackTransport;
 #[cfg(feature = "usb")]
 pub use usb_loopback_pipelined::PipelinedUsbLoopbackTransport;
 
-use crate::protocol::{Command, Status};
 use anyhow::Result;
 
 /// Transport type selection

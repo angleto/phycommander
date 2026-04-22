@@ -40,7 +40,7 @@ use crate::transport::{PipelinedTransport, Transport};
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info, trace, warn};
 
 // -------------------------------------------------------------------------
 //   Stop handle

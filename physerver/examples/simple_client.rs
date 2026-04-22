@@ -22,8 +22,8 @@ fn main() -> anyhow::Result<()> {
         // Create a command
         let mut cmd = Command::default();
         cmd.digital_out = pattern;
-        cmd.dac[0] = ((count % 4096) as u16); // Ramp DAC 0
-        cmd.dac[1] = 4095 - ((count % 4096) as u16); // Inverse ramp DAC 1
+        cmd.dac[0] = (count % 4096) as u16; // Ramp DAC 0
+        cmd.dac[1] = 4095 - (count % 4096) as u16; // Inverse ramp DAC 1
 
         cmd.flags = CommandFlags {
             adc_enable: true,

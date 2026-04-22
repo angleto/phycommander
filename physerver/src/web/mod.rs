@@ -8,7 +8,7 @@ use axum::{
         State,
     },
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };

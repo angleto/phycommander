@@ -3,7 +3,7 @@ use physerver::protocol::{decode_status, encode_command};
 /// Integration tests for physerver
 ///
 /// These tests verify the complete system integration
-use physerver::{Command, CommandFlags, Status, StatusFlags};
+use physerver::{Command, CommandFlags, StatusFlags};
 
 #[test]
 fn test_protocol_integration() {

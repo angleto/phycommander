@@ -69,7 +69,7 @@ impl FwClient {
 
         eprintln!("[selftest] Connesso a {}", port_name);
 
-        let mut client = Self { port, seq: 0 };
+        let client = Self { port, seq: 0 };
         // Flush iniziale
         let _ = client.port.clear(serialport::ClearBuffer::All);
         client

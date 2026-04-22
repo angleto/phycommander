@@ -16,7 +16,7 @@ use rusb::{DeviceHandle, GlobalContext};
 use std::fmt;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 const VENDOR_ID: u16 = 0x2341;
 const PRODUCT_ID: u16 = 0x003e;

@@ -1,6 +1,6 @@
 use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
 use anyhow::{Context, Result};
-use serialport::{SerialPort, SerialPortBuilder};
+use serialport::SerialPort;
 use std::io::{Read, Write};
 use std::time::Duration;
 use tracing::{debug, error, info, warn};

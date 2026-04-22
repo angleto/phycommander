@@ -119,22 +119,6 @@ impl UsbTransport {
         Ok(())
     }
 
-    /// Read bulk data from device
-    fn bulk_read(&mut self, buffer: &mut [u8]) -> Result<usize> {
-        let start = std::time::Instant::now();
-
-        let read = self
-            .device_handle
-            .read_bulk(EP_IN, buffer, Duration::from_millis(TIMEOUT_MS))
-            .context("USB bulk read failed")?;
-
-        let elapsed = start.elapsed().as_micros() as u64;
-        self.stats.avg_latency_us = (self.stats.avg_latency_us + elapsed) / 2;
-
-        debug!("USB bulk read: {} bytes in {}µs", read, elapsed);
-
-        Ok(read)
-    }
 }
 
 impl Transport for UsbTransport {

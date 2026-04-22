@@ -5,7 +5,7 @@
 #[cfg(test)]
 mod load_tests {
     use physerver::{Command, CommandFlags};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     fn test_command_encoding_performance() {
@@ -89,7 +89,6 @@ mod load_tests {
 
     #[test]
     fn test_concurrent_command_creation() {
-        use std::sync::Arc;
         use std::thread;
 
         let iterations_per_thread = 10000;
@@ -143,7 +142,7 @@ mod load_tests {
                 seq_num: (i % 256) as u8,
             };
 
-            let bytes = physerver::protocol::encode_command(&cmd);
+            let _bytes = physerver::protocol::encode_command(&cmd);
 
             // Simulate decode
             let mut status_data = [0u8; 64];

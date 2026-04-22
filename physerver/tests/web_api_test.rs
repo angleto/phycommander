@@ -1,7 +1,6 @@
 /// Integration tests for web API
 ///
 /// These tests verify the REST API and WebSocket functionality
-use axum::http::StatusCode;
 use physerver::{Command, CommandFlags, Status};
 use serde_json::json;
 
@@ -48,6 +47,7 @@ mod web_api_tests {
     #[test]
     fn test_gpio_request_validation() {
         #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
         struct GpioRequest {
             pin: u8,
             value: bool,
@@ -74,6 +74,7 @@ mod web_api_tests {
     #[test]
     fn test_dac_request_validation() {
         #[derive(serde::Deserialize)]
+        #[allow(dead_code)]
         struct DacRequest {
             channel: u8,
             value: u16,

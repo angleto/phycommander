@@ -4,8 +4,9 @@ use nix::sched::CpuSet;
 use nix::sys::mman::{mlockall, MlockAllFlags};
 #[cfg(target_os = "linux")]
 use nix::unistd::Pid;
+#[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
-use std::io::Write;
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 use tracing::{info, warn};
 
@@ -62,6 +63,7 @@ pub fn apply_rt_optimizations(config: &RtConfig) -> Result<()> {
 }
 
 /// Set real-time scheduling priority
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 fn set_realtime_priority(priority: i32) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -106,6 +108,7 @@ fn lock_memory() -> Result<()> {
 }
 
 /// Set CPU affinity to a specific core
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 fn set_cpu_affinity(core: usize) -> Result<()> {
     #[cfg(target_os = "linux")]
     {
@@ -127,6 +130,7 @@ fn set_cpu_affinity(core: usize) -> Result<()> {
 }
 
 /// Set DMA latency to minimize interrupt latency (Linux only)
+#[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
 fn set_dma_latency(latency_us: i32) -> Result<()> {
     #[cfg(target_os = "linux")]
     {

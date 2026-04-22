@@ -319,8 +319,40 @@ static void vendor_bulk_out_cb(udd_ep_status_t status,
  *   s_tx_buf[]/s_in_busy. The bulk loop continues to work in parallel.
  * ------------------------------------------------------------------------- */
 
-static COMPILER_WORD_ALIGNED uint8_t s_iso_rx_buf[UDI_VENDOR_EP_SIZE_ISO_HS];
-static COMPILER_WORD_ALIGNED uint8_t s_iso_tx_buf[UDI_VENDOR_EP_SIZE_ISO_HS];
+/* Double-buffered iso endpoints: keeps a pre-filled buffer always
+ * ready to be picked up at the next microframe SOF.
+ *
+ *   In (device -> host):
+ *     - On boot we pre-fill BOTH buffers with a status frame and
+ *       submit [0]. When that transfer completes, the callback
+ *       immediately submits [1] (already filled from the previous
+ *       cycle / boot), then rebuilds [0] in the remainder of the
+ *       ISR. Net effect: the SOF -> next-buffer-queued latency is
+ *       just the udd_ep_run call (~1-2 µs), independent of how
+ *       long `build_status_frame` takes. The worst case for a
+ *       single callback running long is that build might not finish
+ *       before the NEXT completion fires, not that we miss a
+ *       microframe right now.
+ *
+ *   Out (host -> device):
+ *     - Same symmetry. We always have a buffer armed to receive.
+ *       `apply_command_frame` runs on the just-completed buffer
+ *       after we've re-armed the other one for the next microframe.
+ *
+ * `s_iso_tx_active_idx` / `s_iso_rx_active_idx` are modified only
+ * from ISR context so no atomic is required; they are declared
+ * volatile purely so the compiler doesn't cache them across the
+ * udd_ep_run call boundary.
+ */
+#define ISO_NBUFS 2
+
+static COMPILER_WORD_ALIGNED uint8_t
+    s_iso_tx_buf[ISO_NBUFS][UDI_VENDOR_EP_SIZE_ISO_HS];
+static COMPILER_WORD_ALIGNED uint8_t
+    s_iso_rx_buf[ISO_NBUFS][UDI_VENDOR_EP_SIZE_ISO_HS];
+
+static volatile uint8_t s_iso_tx_active_idx;
+static volatile uint8_t s_iso_rx_active_idx;
 
 /* Diagnostic counters incremented on iso EP errors. Only readable via
  * the bulk path or via a future debug control request. */
@@ -351,14 +383,26 @@ static void vendor_iso_in_cb(udd_ep_status_t status,
 		/* fall through and re-arm — iso link is best-effort */
 	}
 
-	/* Refresh the first 64 bytes with the current status snapshot.
-	 * The padding [64..511] was zero-initialised at boot and never
-	 * written to, so we don't need to memset every time. */
-	build_status_frame(s_iso_tx_buf);
+	/* The completed buffer is the one we submitted last. The peer
+	 * buffer has been pre-filled (at boot for the very first
+	 * completion, by the previous callback after that) and is
+	 * ready to go — submit it first, then build the freed buffer
+	 * for the next cycle. */
+	uint8_t done_idx = s_iso_tx_active_idx;
+	uint8_t next_idx = done_idx ^ 1;
 
 	(void)udd_ep_run(UDI_VENDOR_EP_ISO_IN, false,
-	                 s_iso_tx_buf, sizeof(s_iso_tx_buf),
+	                 s_iso_tx_buf[next_idx], sizeof(s_iso_tx_buf[next_idx]),
 	                 vendor_iso_in_cb);
+	s_iso_tx_active_idx = next_idx;
+
+	/* Refill the buffer we just freed. Padding [64..511] was
+	 * zero-initialised at boot and never touched again. Any extra
+	 * latency here only steals from the time budget BEFORE the
+	 * next completion callback fires — it does not delay the
+	 * microframe currently in flight, because that one is already
+	 * queued on the USB controller. */
+	build_status_frame(s_iso_tx_buf[done_idx]);
 }
 
 static void vendor_iso_out_cb(udd_ep_status_t status,
@@ -371,18 +415,24 @@ static void vendor_iso_out_cb(udd_ep_status_t status,
 		return;
 	}
 
+	uint8_t done_idx = s_iso_rx_active_idx;
+	uint8_t next_idx = done_idx ^ 1;
+
+	/* Arm the NEXT receive slot first so the controller never sees
+	 * a gap between completing a transfer and having a fresh
+	 * descriptor to fill. */
+	(void)udd_ep_run(UDI_VENDOR_EP_ISO_OUT, false,
+	                 s_iso_rx_buf[next_idx], sizeof(s_iso_rx_buf[next_idx]),
+	                 vendor_iso_out_cb);
+	s_iso_rx_active_idx = next_idx;
+
+	/* Only process the first 64 bytes; the rest is reserved padding
+	 * ignored by this firmware revision. */
 	if (status != UDD_EP_TRANSFER_OK) {
 		s_iso_out_errors++;
 	} else if (n >= 64) {
-		/* Process only the first 64 bytes; the rest is reserved
-		 * padding ignored by this firmware revision. */
-		apply_command_frame(s_iso_rx_buf);
+		apply_command_frame(s_iso_rx_buf[done_idx]);
 	}
-
-	/* Re-arm for the next microframe. */
-	(void)udd_ep_run(UDI_VENDOR_EP_ISO_OUT, false,
-	                 s_iso_rx_buf, sizeof(s_iso_rx_buf),
-	                 vendor_iso_out_cb);
 }
 
 /* -------------------------------------------------------------------------
@@ -406,10 +456,16 @@ static bool udi_vendor_enable(void)
 	s_iso_in_errors  = 0;
 	s_iso_out_errors = 0;
 
-	/* Iso TX padding bytes [64..511] must be zero on the wire.
-	 * The first 64 will be overwritten by build_status_frame() on every
-	 * iso IN, but the padding is set once here and never touched again. */
-	for (size_t i = 0; i < sizeof(s_iso_tx_buf); i++) s_iso_tx_buf[i] = 0;
+	/* Iso TX padding bytes [64..511] must be zero on the wire. The
+	 * first 64 will be overwritten by build_status_frame() on every
+	 * iso IN, but the padding is set once here and never touched
+	 * again. Zero both double-buffers. */
+	for (unsigned k = 0; k < ISO_NBUFS; k++) {
+		for (size_t i = 0; i < sizeof(s_iso_tx_buf[k]); i++) s_iso_tx_buf[k][i] = 0;
+	}
+
+	s_iso_tx_active_idx = 0;
+	s_iso_rx_active_idx = 0;
 
 	/* Arm the first BULK-OUT transfer. After this the bulk data path
 	 * is self-sustaining through vendor_bulk_out_cb(). */
@@ -423,15 +479,19 @@ static bool udi_vendor_enable(void)
 	 * schedules iso transfers (i.e. it only uses bulk), udd_ep_run()
 	 * still returns true but no callbacks will fire. If allocation
 	 * fails (e.g. DPRAM exhausted), bulk continues unharmed.
-	 * Pre-fill iso TX with the current status so the first IN packet
-	 * after enumeration is meaningful, not all zeros. */
-	build_status_frame(s_iso_tx_buf);
+	 *
+	 * Pre-fill BOTH tx buffers so the first TWO iso IN packets
+	 * after enumeration are meaningful (buffer [0] is the one we
+	 * submit now; buffer [1] is what the first callback will flip
+	 * to before it gets a chance to refill [0]). */
+	build_status_frame(s_iso_tx_buf[0]);
+	build_status_frame(s_iso_tx_buf[1]);
 
 	(void)udd_ep_run(UDI_VENDOR_EP_ISO_IN, false,
-	                 s_iso_tx_buf, sizeof(s_iso_tx_buf),
+	                 s_iso_tx_buf[0], sizeof(s_iso_tx_buf[0]),
 	                 vendor_iso_in_cb);
 	(void)udd_ep_run(UDI_VENDOR_EP_ISO_OUT, false,
-	                 s_iso_rx_buf, sizeof(s_iso_rx_buf),
+	                 s_iso_rx_buf[0], sizeof(s_iso_rx_buf[0]),
 	                 vendor_iso_out_cb);
 
 	return true;

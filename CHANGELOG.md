@@ -7,12 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed — licensing
+## [2.0.0] - 2026-04-22
+
+Clean re-baseline of the project: the previous `v1.x` history was
+retired from the public remote alongside this release. The v1.x
+branches and tags are no longer available on `origin`; anyone who
+had already cloned them may keep using that code under the old
+licence terms, but no new v1.x fixes will be published. This is the
+first release of the copyleft era.
+
+### Changed — licensing (BREAKING)
 
 Full relicensing of the project with explicit copyleft protection
 across every layer. The previous `MIT OR Apache-2.0` arrangement is
-retired for the software components; a fresh author acts as sole
-copyright holder (no prior external contributions to relicense).
+retired for the software components. Sole author, no prior external
+contributions required relicensing consent.
 
 - **Software** (Rust server, `phycmd-core`, `phycmd-rust`, `phycmd-py`,
   dashboard HTML/JS): **AGPL-3.0-or-later** — network-aware copyleft
@@ -28,8 +37,68 @@ copyright holder (no prior external contributions to relicense).
 - Every source file gained an `SPDX-License-Identifier` header.
 - `LICENSE-MIT` and `LICENSE-APACHE` removed; `LICENSE-AGPL-3.0`,
   `LICENSE-GPL-3.0`, and `LICENSE-CERN-OHL-S-2.0` added.
+- Workspace and firmware version bumped to `2.0.0` across all
+  manifests (`physerver`, `phycmd-core`, `phycmd-rust`, `phycmd-py`,
+  `pyproject.toml`, firmware `USB_DEVICE_MAJOR_VERSION`).
+
+### Changed — DAC reactive path (BREAKING)
+
+The `reactive_dac_write` CPU-to-`DACC_CDR` direct write race was
+structurally broken pre-2.0. Fixed by routing LUT / THRESHOLD / PID
+output through a per-channel `reactive_value` field that the PDC
+refill loop emits on every sample. Downstream firmware/drivers that
+depended on the old (non-working) behaviour must retest.
+
+### Added — host-side auto-reconnect
+
+Iso transport now detects firmware watchdog resets: an I/O thread
+session loop monitors `iso_in_pkts_ok` and, after 4 s of no progress,
+tears down + re-opens the libusb device handle. Firmware now actually
+enables the SAM3X WDT (2 s timeout, 500 ms SysTick kick) so a wedged
+firmware reboots itself and the host re-establishes the stream with
+no operator action.
+
+### Added — API
+
+- `CommandStaging::set_*_with_timeout(value, Duration)` for bounded
+  waits on the staging buffer; new `StagingError::Timeout` variant.
+- `CHAN_STATE_FLAG_RESERVED` exposed in the protocol and surfaced as
+  `ChannelStateView.reserved` so clients can render non-backed
+  channels (currently PWM 4..7 on Due) as unavailable.
+- `/api/waveform/coexistence` REST endpoint + dashboard badge that
+  warns when host-side `WaveformBank` and firmware on-chip generator
+  overlap on the same DAC/PWM channel.
+- `scripts/rt_benchmark.py` stdlib-only harness for RT-loop / iso
+  metrics capture; `docs/technical/XHCI_NOTES.md` with the
+  measurement protocol.
+- IPC `IpcServer` / `IpcClient` now implement `Send + Sync`
+  (documented safety argument); `read_command_with_seq` added.
+  Shared memory is now actually populated on every status frame, and
+  commands pushed by external clients via IPC reach staging. Fixes a
+  silent regression from the iso-mode rework.
+- Iso DMA buffers allocated via custom `AlignedBuffer` with 64 B
+  cache-line alignment (required on non-coherent ARM hosts).
+- libusb version logged at startup.
+
+### Fixed
+
+- `threshold_eval` hysteresis condition restored (`|| true` residue
+  removed).
+- `Capabilities.num_pwm` now matches `WAVE_NUM_PWM_ACTIVE` (4) instead
+  of falsely advertising 8 BUILTIN-capable PWM channels.
+- `refill_buffer` MANUAL fallback holds the last applied DAC value
+  instead of snapping to mid-rail on a GENERATOR → MANUAL transition.
+- Dead `ADC_Handler` + `update_adc_irq_needed` stub removed from
+  firmware; ADC IRQ is now unambiguously off and reactive evaluation
+  documented as SysTick-driven.
+- `tests/selftest.rs` rewritten to use `physerver::protocol`
+  (CRC-validated) instead of the stale pre-CRC raw layout.
+- Obsolete `NUM_TX_SLOTS` comment updated from 16 to 64.
 
 ## [1.1.0] - 2026-04-14
+
+_Removed from the public remote in 2.0.0; notes preserved for
+archival purposes._
 
 First public open-source release. Repo renamed from `phycmd` →
 `phycommander`, default branch is now `v1.1`. Older branches deleted.

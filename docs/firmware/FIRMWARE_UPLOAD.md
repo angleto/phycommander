@@ -1,20 +1,39 @@
 ## Firmware Upload Guide
 
-Complete guide for uploading firmware to Arduino Due using the Programming Port.
+Complete guide for uploading firmware to Arduino Due.
+
+## TL;DR — scripted flash
+
+For the current PhyCommander codebase, use the repo's one-shot script
+(see [Scripted flash (recommended)](#scripted-flash-recommended) for
+the full walkthrough):
+
+```bash
+# build + flash + soft-reset, all in one
+sudo ./scripts/flash_firmware.sh
+```
+
+The script encapsulates four non-obvious quirks that tripped us up
+in the past; if you're writing your own flash flow, read
+[Why the scripted flow exists](#why-the-scripted-flow-exists) first.
 
 ## Overview
 
 The Arduino Due has **two USB ports**:
 
 1. **Programming Port** (closest to DC jack)
-   - Native USB port (SAM3X's USB peripheral)
-   - Used for uploading firmware via BOSSA
-   - Also used for high-speed bulk transfers (physerver with USB transport)
-   - **This is the port you use for firmware upload**
+   - Wired to the ATmega16U2 serving as USB-UART bridge to the SAM3X
+     first UART, and to the SAM3X's ERASE/RESET pins (pulsed on a
+     1200-baud open/close).
+   - Used for uploading firmware via BOSSA.
+   - `udevadm` reports `ID_MODEL_ID=003d`.
 
 2. **Native USB Port** (closest to reset button)
-   - Can also be used for communication
-   - Not typically used for programming
+   - Wired to the SAM3X's own USB peripheral. Appears as
+     `ID_MODEL_ID=003e` (phycmd vendor-class firmware) or `003e`
+     with different strings depending on the flashed firmware.
+   - Used by physerver iso transport at 8 kHz microframe rate.
+   - Never used for firmware upload.
 
 ## Prerequisites
 
@@ -51,37 +70,152 @@ sudo apt-get install gcc-arm-none-eabi
 brew install arm-none-eabi-gcc
 ```
 
-## Method 1: Upload Pre-compiled Binary (Recommended)
+## Scripted flash (recommended)
+
+`scripts/flash_firmware.sh` builds and flashes in one invocation:
+
+```bash
+# from the repo root, on a host with the Due plugged in:
+sudo ./scripts/flash_firmware.sh
+
+# flash an already-built .bin without re-running make:
+sudo ./scripts/flash_firmware.sh --bin path/to/phycmd_fw.bin
+
+# build only (no flash, no sudo needed):
+./scripts/flash_firmware.sh --build-only
+
+# flash a specific port (auto-detection picks ID_MODEL_ID=003d):
+sudo ./scripts/flash_firmware.sh --port /dev/ttyACM0
+```
+
+What it does, in order:
+
+1. `make -C ATSAM3X8E_FW/ATSAM3X8E_FW -j$(nproc)` — produces
+   `build/phycmd_fw.bin`.
+2. Stops `physerver.service` if active, so the Due's programming-port
+   CDC is released to bossac.
+3. Opens the programming port at 1200 baud and closes it. The
+   ATmega16U2 detects that exact sequence and pulses ERASE+RESET
+   on the SAM3X, dropping it into the SAM-BA ROM bootloader.
+4. `bossac -e -w -v -b "$BIN"` — erase + write + verify + set
+   GPNVM1 so the SAM3X boots from flash on next reset. **No -R flag**
+   (see below).
+5. Opens the port at 115200 raw and writes the SAM-BA text command
+   `W400E1A00,A500000D#` — this pokes the SAM3X's RSTC_CR register
+   with `KEY(0xA5) | PROCRST | PERRST`, issuing a full CPU + peripheral
+   reset. The SAM3X boots out of SAM-BA into the freshly written
+   application.
+6. Waits for the application firmware to re-enumerate, restarts
+   `physerver.service`. The stale `/dev/shm/phycmd_state` segment
+   is unlinked automatically by `IpcServer::new()` on startup.
+
+### Why the scripted flow exists
+
+The obvious "press ERASE + bossac -e -w -v -b -R firmware.bin" flow
+common in Arduino documentation does not work reliably here:
+
+- **`bossac -R` does not reset the SAM3X** in this configuration.
+  The `-R` flag issues a SAM-BA `G <appstart>#` command, which jumps
+  to the app but without a peripheral reset — the Due's USB stack,
+  DMA controllers, and configured clock tree stay in the SAM-BA
+  state, and the application often misbehaves or hangs. Use the
+  `RSTC_CR` write instead: clean full reset.
+
+- **Triggering the 1200-baud trick a second time (e.g. to "cycle"
+  the board after flashing) wipes the just-written flash.** The
+  ATmega16U2 pulses the ERASE pin every time it sees 1200-baud
+  open/close, and ERASE means "erase flash". So the sequence must
+  be 1200-baud *once*, write, reset-via-RSTC_CR, and never 1200-baud
+  again until the next upload.
+
+- **Pressing the ERASE button works interactively** but cannot be
+  done remotely. The 1200-baud trick is the equivalent driven
+  entirely over USB from software.
+
+- **`bossac -R` silently hangs on some Due + host combinations**
+  (observed on the DN2800MT reference host) even when it appears
+  to complete successfully from bossac's output. Always verify by
+  watching `lsusb` / `dmesg` re-enumerate into the app firmware
+  after flash before declaring success.
+
+### Recovery if flash aborts
+
+- **Between steps 3 and 5**: the Due is in SAM-BA mode waiting for
+  input. Just re-run the script — the second invocation sees the
+  SAM-BA device, skips to bossac, and completes.
+- **After step 4 but before step 5**: new firmware is already
+  written but the Due hasn't jumped to it. Press the board's
+  physical RESET button (not ERASE!) and the Due boots into the
+  new app.
+- **Corrupt/broken app that prevents re-enum of `003e`**: press the
+  physical ERASE button on the board to force SAM-BA, then re-run
+  the script to flash a known-good binary.
+
+## Method 1: Upload Pre-compiled Binary (manual / reference)
+
+> **Note.** The instructions in this section are a manual
+> reference for someone debugging the flash flow or working
+> without the repo script. For day-to-day updates on the current
+> PhyCommander firmware tree, use
+> [`scripts/flash_firmware.sh`](#scripted-flash-recommended) — it
+> handles the 1200-baud trigger, avoids `-R`, and issues a clean
+> `RSTC_CR` soft-reset after bossac returns.
 
 ### Step 1: Put Arduino Due in Programming Mode
 
-1. **Connect** the Arduino Due's **Programming Port** to your computer via USB
-2. **Press and release** the **Erase button** (small button near the ATSAM chip)
-3. Wait 1 second
-4. The board is now in programming mode (LED should pulse)
+Two equivalent options:
 
-**Note**: On Linux, the device appears as `/dev/ttyACM0` or similar
+- **Remote / scripted**: toggle the programming port at 1200 baud:
+  ```bash
+  stty -F /dev/ttyACM0 1200
+  # the Due re-enumerates into SAM-BA within ~1 s
+  ```
+- **Physical**: press and release the **ERASE button** (the smaller
+  of the two buttons, next to the RESET button). Do NOT press
+  RESET instead — RESET just reboots the application, it does not
+  enter SAM-BA.
+
+On Linux the device appears as `/dev/ttyACM0` in both cases.
 
 ### Step 2: Upload Firmware
 
 ```bash
-# Linux
-bossac -e -w -v -b -R firmware.bin
+# Linux — NB: no -R flag, see below
+bossac --port=ttyACM0 -e -w -v -b firmware.bin
 
 # macOS (may need different port)
-bossac --port=/dev/cu.usbmodem* -e -w -v -b -R firmware.bin
+bossac --port=cu.usbmodem* -e -w -v -b firmware.bin
 
 # Windows
-bossac.exe -e -w -v -b -R -p COM3 firmware.bin
+bossac.exe -p COM3 -e -w -v -b firmware.bin
 ```
 
 **Flags explained**:
 - `-e` = Erase flash
 - `-w` = Write firmware
 - `-v` = Verify after writing
-- `-b` = Boot from flash after upload
-- `-R` = Reset after upload
+- `-b` = Boot from flash after upload (sets GPNVM1)
 - `-p` = Port (Windows only, auto-detected on Linux/macOS)
+
+**Why no `-R`**: the `-R` reset path is unreliable on SAM3X in this
+configuration (it sometimes hangs; it sometimes jumps to the app
+without resetting peripherals, leaving the USB stack in a broken
+state). Use the `RSTC_CR` soft-reset in Step 3 instead.
+
+### Step 3: Soft-reset into the new firmware
+
+After bossac returns, the Due is still in SAM-BA mode. Exit cleanly
+by writing `RSTC_CR = 0xA500000D` through the SAM-BA text protocol:
+
+```bash
+stty -F /dev/ttyACM0 115200 raw -echo -echoe -echok -echoctl -echoke
+printf 'W400E1A00,A500000D#' > /dev/ttyACM0
+# the Due resets mid-write, so we expect no reply
+```
+
+The SAM3X re-enumerates into the newly written application within
+~1-2 seconds. Do **not** trigger a second 1200-baud toggle as a
+"refresh" — that would erase the flash you just wrote.
 
 ### Step 3: Verify
 

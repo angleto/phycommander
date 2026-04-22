@@ -180,3 +180,39 @@ impl StatusFlags {
 // Ensure sizes are correct
 const _: () = assert!(std::mem::size_of::<CommandMessage>() == 64);
 const _: () = assert!(std::mem::size_of::<StatusMessage>() == 64);
+
+// Ensure wire-format field offsets match the firmware's
+// `_Static_assert` layout in ATSAM3X8E_FW/src/main.c. Any drift
+// between the two sides (e.g. someone reorders a field, adds padding
+// under a different #[repr] policy) fails the build here.
+//
+// These offsets are the single source of truth for the PhyCMD-64
+// protocol — cross-check with the `command_msg_t` / `status_msg_t`
+// struct layouts in the firmware whenever you touch this file.
+const _: () = {
+    use std::mem::offset_of;
+    // Command (host → device)
+    assert!(offset_of!(CommandMessage, header) == 0);
+    assert!(offset_of!(CommandMessage, digital_out) == 2);
+    assert!(offset_of!(CommandMessage, dac0) == 4);
+    assert!(offset_of!(CommandMessage, dac1) == 6);
+    assert!(offset_of!(CommandMessage, pwm0) == 8);
+    assert!(offset_of!(CommandMessage, pwm1) == 10);
+    assert!(offset_of!(CommandMessage, flags) == 12);
+    assert!(offset_of!(CommandMessage, seq_num) == 13);
+    assert!(offset_of!(CommandMessage, crc) == 14);
+    assert!(offset_of!(CommandMessage, reserved) == 16);
+
+    // Status (device → host)
+    assert!(offset_of!(StatusMessage, header) == 0);
+    assert!(offset_of!(StatusMessage, digital_in) == 2);
+    assert!(offset_of!(StatusMessage, digital_out) == 4);
+    assert!(offset_of!(StatusMessage, adc) == 6);
+    assert!(offset_of!(StatusMessage, status_flags) == 22);
+    assert!(offset_of!(StatusMessage, seq_num) == 23);
+    assert!(offset_of!(StatusMessage, crc) == 24);
+    assert!(offset_of!(StatusMessage, loop_time_us) == 26);
+    assert!(offset_of!(StatusMessage, uptime_ms) == 28);
+    assert!(offset_of!(StatusMessage, error_count) == 32);
+    assert!(offset_of!(StatusMessage, reserved) == 34);
+};

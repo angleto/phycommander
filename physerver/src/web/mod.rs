@@ -137,6 +137,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/dac/set", post(set_dac))
         .route("/api/adc/read", get(read_adc))
         .route("/api/sysinfo", get(get_sysinfo))
+        .route("/api/version", get(get_version))
         .route("/api/rt_stats", get(get_rt_stats))
         .route("/api/reset_errors", post(reset_errors))
         .route("/api/reset_telemetry", post(reset_telemetry))
@@ -822,6 +823,29 @@ async fn read_adc(State(state): State<Arc<AppState>>) -> Json<AdcResponse> {
 /// cheap enough for a REST endpoint polled every few seconds.
 async fn get_sysinfo() -> Json<crate::sysinfo::SysInfoSnapshot> {
     Json(crate::sysinfo::read_snapshot())
+}
+
+/// Version / build identity. Returns the Cargo package version
+/// (authoritative for API compatibility), the short git hash of the
+/// commit the binary was built from (with `-dirty` suffix when the
+/// working tree wasn't clean), and the UTC build timestamp. Makes
+/// deploy-diagnosis ("is this the binary we just shipped, or a stale
+/// one?") trivial without touching systemd or the filesystem.
+#[derive(Serialize)]
+struct VersionResponse {
+    version: &'static str,
+    git_hash: &'static str,
+    build_date: &'static str,
+    rustc_target: &'static str,
+}
+
+async fn get_version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: env!("CARGO_PKG_VERSION"),
+        git_hash: env!("PHYCMD_GIT_HASH"),
+        build_date: env!("PHYCMD_BUILD_DATE"),
+        rustc_target: env!("PHYCMD_TARGET"),
+    })
 }
 
 /// Return a snapshot of the RT scheduler statistics: tick count,

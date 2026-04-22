@@ -886,7 +886,11 @@ struct IsoStatsResponse {
     iso_in_rate_hz: f32,
 }
 
-async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsResponse> {
+/// Build an [`RtStatsResponse`] from the live scheduler + iso
+/// counters. Shared between the HTTP `/api/rt_stats` handler and
+/// the WebSocket push loop, so both endpoints stay bit-for-bit
+/// identical.
+fn snapshot_rt_stats(state: &AppState) -> RtStatsResponse {
     let iso = state.iso_stats.get().map(|s| {
         let snap = s.snapshot();
         IsoStatsResponse {
@@ -927,7 +931,6 @@ async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsRespons
             iso: None,
         }
     } else {
-        // Scheduler not yet registered (service still booting)
         RtStatsResponse {
             tick_count: 0,
             tick_ok: 0,
@@ -945,7 +948,11 @@ async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsRespons
         }
     };
     response.iso = iso;
-    Json(response)
+    response
+}
+
+async fn get_rt_stats(State(state): State<Arc<AppState>>) -> Json<RtStatsResponse> {
+    Json(snapshot_rt_stats(&state))
 }
 
 /// WebSocket handler
@@ -956,19 +963,36 @@ async fn websocket_handler(
     ws.on_upgrade(|socket| websocket_connection(socket, state))
 }
 
-/// Handle WebSocket connection
+/// Handle WebSocket connection.
+///
+/// Message wire formats sent to the client:
+///   - **Status** (pre-existing): raw `Status` JSON, no envelope.
+///     Emitted on every broadcast tick from the device (~250 Hz
+///     typical). Consumers that just need live GPIO/ADC should
+///     look at these.
+///   - **RT stats** (new): `{"type":"rt_stats","data":{...}}`
+///     emitted at 1 Hz. Eliminates the dashboard's HTTP poll on
+///     `/api/rt_stats`; any future consumer needing scheduler or
+///     iso counters can subscribe to this WS stream instead.
+/// Legacy clients that naively `JSON.parse` and treat everything as
+/// `Status` must guard on the `type` field — see
+/// `physerver/static/index.html` for the reference pattern.
 async fn websocket_connection(mut socket: WebSocket, state: Arc<AppState>) {
     info!("WebSocket client connected");
 
     let mut rx = state.status_broadcast.subscribe();
+    let mut stats_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    // `Delay` missed-tick policy: if the task is slow (e.g. the
+    // client is back-pressuring) we don't want to fire a flood of
+    // stats updates to catch up — skip stale ticks.
+    stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         tokio::select! {
-            // Receive status updates and send to client
+            // Receive status updates and send to client (raw Status JSON).
             status = rx.recv() => {
                 match status {
                     Ok(status) => {
-                        // Apply error_count baseline before serialising
                         let adjusted = state.apply_error_baseline(status);
                         let json = serde_json::to_string(&adjusted).unwrap();
                         if socket.send(axum::extract::ws::Message::Text(json)).await.is_err() {
@@ -979,6 +1003,19 @@ async fn websocket_connection(mut socket: WebSocket, state: Arc<AppState>) {
                         warn!("Broadcast receive error: {}", e);
                         break;
                     }
+                }
+            }
+
+            // Periodic rt_stats push (1 Hz). Wrapped in a typed
+            // envelope so the client can distinguish it from the
+            // Status stream above.
+            _ = stats_tick.tick() => {
+                let snap = snapshot_rt_stats(&state);
+                // Minimal envelope: { "type": "rt_stats", "data": {...} }
+                let envelope = serde_json::json!({ "type": "rt_stats", "data": snap });
+                let json = envelope.to_string();
+                if socket.send(axum::extract::ws::Message::Text(json)).await.is_err() {
+                    break;
                 }
             }
 

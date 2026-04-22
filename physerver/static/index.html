@@ -906,7 +906,18 @@ function connectWs(){
     const p=location.protocol==='https:'?'wss:':'ws:';
     ws=new WebSocket(`${p}//${location.host}/ws`);
     ws.onopen=()=>{document.getElementById('statusDot').classList.add('connected');document.getElementById('statusText').textContent='Connected';};
-    ws.onmessage=e=>{msgCount++;const s=JSON.parse(e.data);updateStatus(s);pushScope(s);};
+    ws.onmessage=e=>{
+        msgCount++;
+        const m=JSON.parse(e.data);
+        // The server sends two kinds of messages on /ws:
+        //   - raw Status (hot stream, no envelope)
+        //   - typed envelope {type:"rt_stats",data:{...}} at 1 Hz
+        // Anything with a `type` field is an envelope; otherwise
+        // treat as legacy Status.
+        if (m.type === 'rt_stats') { renderRtStats(m.data); return; }
+        updateStatus(m);
+        pushScope(m);
+    };
     ws.onclose=()=>{document.getElementById('statusDot').classList.remove('connected');document.getElementById('statusText').textContent='Reconnecting...';setTimeout(connectWs,2000);};
 }
 function updateStatus(s){
@@ -2329,7 +2340,10 @@ function wirePanelCollapse() {
 
 // ========== Boot ==========
 connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
-pollRtStats(); setInterval(pollRtStats, 2000);
+// rt_stats is now pushed over /ws at 1 Hz (typed envelope); we still
+// do one eager HTTP fetch at boot so the panel isn't blank for that
+// first second before the WebSocket tick fires.
+pollRtStats();
 fngenBuildPanel(); fngenInitGlobals(); fngenPollAvailability(); setInterval(fngenPollAvailability, 5000);
 setInterval(fngenPollState, 1000);
 requestAnimationFrame(drawScope);

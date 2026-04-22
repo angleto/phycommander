@@ -69,9 +69,25 @@ unsafe impl Send for IpcClient {}
 unsafe impl Sync for IpcClient {}
 
 impl IpcServer {
-    /// Create a new IPC server (physerver side)
+    /// Create a new IPC server (physerver side).
+    ///
+    /// Unlinks any stale POSIX SHM segment from a previous crashed run
+    /// before creating ours, so systemd restarts don't trip on a
+    /// leftover `/dev/shm/<name>` inode. Safe on POSIX: existing
+    /// readers keep their mapping via their open fd; only new
+    /// openers see the fresh inode.
     pub fn new() -> Result<Self> {
         info!("Creating shared memory segment: {}", SHARED_MEM_NAME);
+
+        #[cfg(target_os = "linux")]
+        {
+            let stale = format!("/dev/shm/{}", SHARED_MEM_NAME);
+            match std::fs::remove_file(&stale) {
+                Ok(()) => warn!("Unlinked stale SHM segment at {}", stale),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => warn!("Could not unlink stale SHM at {}: {} (continuing)", stale, e),
+            }
+        }
 
         let shmem = ShmemConf::new()
             .size(SHARED_MEM_SIZE)

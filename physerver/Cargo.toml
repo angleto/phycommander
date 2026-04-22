@@ -98,6 +98,10 @@ usb = ["rusb"]
 [dev-dependencies]
 criterion = "0.5"
 tempfile = "3"
+# Enable MockTransport for benchmarks + integration tests without
+# leaking it into the release binary (phycmd-core's regular dep
+# above builds with just "usb").
+phycmd-core = { path = "crates/phycmd-core", features = ["usb", "test-mock"] }
 
 [profile.release]
 opt-level = 3
@@ -107,3 +111,15 @@ strip = true
 
 [profile.bench]
 inherits = "release"
+
+# criterion uses its own harness and registers benchmarks via the
+# `criterion_main!` macro. Without `harness = false` cargo would
+# wrap the file in libtest's runner, which silently reports
+# "0 tests" and never actually measures anything.
+[[bench]]
+name = "protocol_bench"
+harness = false
+
+[[bench]]
+name = "transport_bench"
+harness = false

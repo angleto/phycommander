@@ -261,4 +261,6 @@ cargo clippy
 
 ## License
 
-MIT
+AGPL-3.0-or-later. See the top-level `LICENSE` and `LICENSE-AGPL-3.0`
+at the repository root for the full text and the rationale behind
+the choice.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+
 use crate::protocol::{Command, Status};
 use anyhow::{Context, Result};
 use shared_memory::{Shmem, ShmemConf};

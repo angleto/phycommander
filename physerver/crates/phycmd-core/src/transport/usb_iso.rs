@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Angelo Leto <angelo@leto.blue>
+
 //! Asynchronous isochronous USB transport for the SAM3X PhyCommander.
 //!
 //! Unlike [`super::usb::UsbTransport`] (synchronous bulk, one round-trip

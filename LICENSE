@@ -1,38 +1,148 @@
-PhyCMD — licensing summary
-==========================
+PhyCommander — licensing summary
+================================
 
 Copyright © 2014-2026 Angelo Leto <angelo@leto.blue>
 
-This project is dual-licensed for software and separately licensed
-for hardware / design artefacts, as follows:
+This project is licensed under a set of complementary copyleft
+licenses chosen to keep derivative works open. The boundaries below
+are authoritative; each source file carries an SPDX-License-Identifier
+that tracks them.
 
-1.  Software (firmware under ATSAM3X8E_FW/, Rust code under
-    physerver/, dashboard HTML/JS under physerver/static/, scripts,
-    build files): the user may choose EITHER
-      * the Apache License, Version 2.0        → LICENSE-APACHE
-      * the MIT License                        → LICENSE-MIT
-    whichever better suits their use case.
 
-    Unless you explicitly state otherwise, any contribution intentionally
-    submitted for inclusion in this project — as defined in the Apache-2.0
-    license § 5 — shall be dual-licensed as above, without any additional
-    terms or conditions.
+1. Network-facing software: AGPL-3.0-or-later
+---------------------------------------------
 
-2.  Hardware designs, panel CAD, photos of the physical device, and all
-    long-form prose documentation (docs/ content, README narrative):
-    Creative Commons Attribution-ShareAlike 4.0 International
-                                             → LICENSE-CC-BY-SA-4.0
+The Rust streaming server and everything it serves over the network
+is released under the **GNU Affero General Public License, version 3
+or any later version** (see LICENSE-AGPL-3.0).
 
-    This covers docs/hardware/, docs/images/, panel_sketch/,
-    companion_board/, and the Markdown files under docs/ that are
-    written as narrative rather than as code comments.
+In scope:
+  * physerver/src/**                          (binary + web + IPC + telemetry)
+  * physerver/crates/phycmd-core/**            (protocol / transport / scheduler)
+  * physerver/crates/phycmd-rust/**            (public Rust client crate)
+  * physerver/crates/phycmd-py/**              (Python bindings)
+  * physerver/static/**                        (dashboard HTML / JS / CSS / SVG
+                                                assets that are NOT the project
+                                                logo — see §6)
 
-3.  Trademarks, logos, and the project name "PhyCMD / Physical
-    Commander" are NOT licensed. Keep attribution visible in forks and
-    derivatives; do not present modified versions as the original
-    project.
+Practical effect: anyone who runs a modified PhyCommander server as a
+network-available service must provide the corresponding source code
+to the users interacting with it, as specified by AGPL §13. This is
+the clause that prevents a third party from taking this codebase,
+forking it privately, running it as SaaS, and giving nothing back.
 
-Attribution notice for redistribution: keep this LICENSE file together
-with the applicable license texts (LICENSE-MIT, LICENSE-APACHE,
-LICENSE-CC-BY-SA-4.0) and preserve the copyright line at the top of
-each license.
+
+2. Firmware, deployment plumbing, scripts: GPL-3.0-or-later
+-----------------------------------------------------------
+
+Everything that runs on the SAM3X8E or outside the server process is
+released under the **GNU General Public License, version 3 or any
+later version** (see LICENSE-GPL-3.0).
+
+In scope:
+  * ATSAM3X8E_FW/ATSAM3X8E_FW/src/**           (firmware, excluding the
+                                                Atmel Software Framework
+                                                bundled under src/ASF/ which
+                                                retains its upstream
+                                                permissive licenses, see §5)
+  * scripts/**                                 (deployment, benchmarking,
+                                                waveform utilities)
+  * deploy/**                                  (systemd units, udev rules,
+                                                policy-routing helpers)
+
+Practical effect: binary distributions of the firmware or the scripts
+must be accompanied by, or include an offer for, the corresponding
+source code.
+
+
+3. Hardware designs: CERN-OHL-S v2 (Strongly Reciprocal)
+--------------------------------------------------------
+
+Schematics, PCB layouts, mechanical CAD, and enclosure / front-panel
+artwork are released under the **CERN Open Hardware Licence, version 2
+— Strongly Reciprocal** (see LICENSE-CERN-OHL-S-2.0).
+
+In scope:
+  * companion_board/pcb/**                     (KiCad project for the
+                                                passive Due shield
+                                                backplane)
+  * companion_board/panel_sketch/*.svg         (front / rear / backplane
+                                                vectors)
+  * docs/hardware/FrontPanel_2014.dwg          (original 2014 AutoCAD)
+  * any future gerbers / BOMs / CAD under
+    companion_board/ or docs/hardware/
+
+Practical effect: modified hardware designs distributed to others
+must be released under CERN-OHL-S as well, and the complete "Source"
+(as defined by §1.11 of the licence) must be made available. This is
+the natural copyleft analogue of AGPL for physical artefacts.
+
+
+4. Narrative documentation and photos: CC-BY-SA-4.0
+---------------------------------------------------
+
+Long-form prose documentation, tutorials, README narrative, and
+photographs of the physical device are released under the **Creative
+Commons Attribution-ShareAlike 4.0 International** licence (see
+LICENSE-CC-BY-SA-4.0).
+
+In scope:
+  * README.md, CHANGELOG.md, SECURITY.md, CODE_OF_CONDUCT.md,
+    CONTRIBUTING.md
+  * docs/** Markdown files (excluding docs/hardware/* which falls
+    under §3)
+  * phy_picts/**, docs/images/**               (photographs)
+
+
+5. Third-party components
+-------------------------
+
+The Atmel Software Framework bundled in
+`ATSAM3X8E_FW/ATSAM3X8E_FW/src/ASF/` is distributed under the
+per-file Atmel (Microchip) permissive licences — see the header of
+each ASF source. It is GPL-3.0-compatible and its inclusion in a
+larger GPL-licensed firmware does not change its upstream terms.
+
+Rust dependencies declared in `physerver/Cargo.toml` and
+`physerver/crates/*/Cargo.toml` are upstream projects with their own
+licences (overwhelmingly MIT, Apache-2.0, or both); see their
+respective `LICENSE` files or `cargo-deny` / `cargo-about` output
+for a complete inventory.
+
+
+6. Trademarks and project identity
+----------------------------------
+
+The project name "PhyCommander" and its short form "PhyCMD", the
+project logo (files `physerver/static/logo.svg` and
+`physerver/static/logo-mark.svg`), and any distinctive visual
+identity are **NOT** licensed under any of the licences above.
+
+See TRADEMARKS.md for the full policy. Short version: forks must
+rename before presenting themselves as the original project, and the
+logo files cannot be reused except for unmodified attribution to
+this project.
+
+
+7. Contributions
+----------------
+
+Any contribution intentionally submitted for inclusion in this
+project shall be licensed under the licence that applies to the
+modified file (as defined by the boundaries above), without any
+additional terms or conditions. Submitting a pull request constitutes
+agreement to this. If a contribution spans files under different
+licences, each hunk inherits the licence of the file it modifies.
+
+If you need to contribute under a different arrangement (e.g. a
+corporate CLA), contact the author before opening a pull request.
+
+
+8. Attribution requirement on redistribution
+--------------------------------------------
+
+Keep this `LICENSE` file together with the applicable licence texts
+(`LICENSE-AGPL-3.0`, `LICENSE-GPL-3.0`, `LICENSE-CERN-OHL-S-2.0`,
+`LICENSE-CC-BY-SA-4.0`) and preserve the copyright line at the top
+of this file. The per-file `SPDX-License-Identifier` headers must be
+preserved on all source files they currently mark.

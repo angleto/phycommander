@@ -6,9 +6,9 @@ build-backend = "maturin"
 name = "phycmd"
 version = "0.1.0"
 description = "Hard-real-time Python bindings for the PhyCommander control stack"
-authors = [{ name = "PhyCMD Contributors" }]
+authors = [{ name = "Angelo Leto", email = "angelo@leto.blue" }]
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.8"
 keywords = ["real-time", "control", "usb", "phycommander", "embedded"]
 classifiers = [

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2026 Angelo Leto <angelo@leto.blue>
 """
 rt_benchmark.py — record PhyCMD RT-scheduler / iso-transport metrics.
 

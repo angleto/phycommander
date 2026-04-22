@@ -18,8 +18,9 @@
 </p>
 
 <p align="center">
-  <img alt="license" src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue">
-  <img alt="hardware" src="https://img.shields.io/badge/hardware-CC--BY--SA%204.0-lightgrey">
+  <img alt="software" src="https://img.shields.io/badge/software-AGPL--3.0%20%2F%20GPL--3.0-blue">
+  <img alt="hardware" src="https://img.shields.io/badge/hardware-CERN--OHL--S%20v2-red">
+  <img alt="docs" src="https://img.shields.io/badge/docs-CC--BY--SA%204.0-lightgrey">
   <img alt="status" src="https://img.shields.io/badge/status-in%20active%20use-4CAF50">
   <br/>
   Designed & built by <b><a href="https://github.com/angleto">Angelo Leto</a></b> · 2014&nbsp;→&nbsp;2026
@@ -243,9 +244,19 @@ Issues tagged `help wanted` on GitHub track these. Pull requests for smaller pol
 
 PhyCMD is © 2014-2026 **Angelo Leto** ([@angleto](https://github.com/angleto)).
 
-- **Software** (firmware, Rust server, dashboard, scripts): dual-licensed **MIT OR Apache-2.0** — pick whichever fits your use case. See [`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE).
-- **Hardware designs, panel CAD, photos, and long-form prose docs**: **CC-BY-SA 4.0** — attribution + share-alike. See [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0).
-- The top-level [`LICENSE`](LICENSE) summarises the whole arrangement; [`NOTICE`](NOTICE) carries the project attribution that redistributions must preserve.
+The licensing is deliberately copyleft across the whole stack, with
+per-component boundaries chosen to protect each layer with the
+appropriate tool:
+
+- **Network-facing software** — Rust server, `phycmd-core`, `phycmd-rust`, `phycmd-py`, dashboard HTML/JS — is released under **AGPL-3.0-or-later** (see [`LICENSE-AGPL-3.0`](LICENSE-AGPL-3.0)). A third party that takes this code, modifies it, and runs it as a network service (SaaS) has to publish their corresponding source. This is the clause that prevents silent appropriation by cloud operators.
+- **Firmware** (SAM3X8E C code), **deployment plumbing**, and **CLI scripts** are released under **GPL-3.0-or-later** (see [`LICENSE-GPL-3.0`](LICENSE-GPL-3.0)). Binary derivatives distributed to third parties must come with source.
+- **Hardware designs** — PCB (KiCad), front / rear / backplane panels (SVG), mechanical CAD — are released under **CERN-OHL-S v2** (Strongly Reciprocal; see [`LICENSE-CERN-OHL-S-2.0`](LICENSE-CERN-OHL-S-2.0)). The copyleft analogue of AGPL for physical artefacts.
+- **Prose documentation, tutorials, README narrative, and photographs** are released under **CC-BY-SA 4.0** (see [`LICENSE-CC-BY-SA-4.0`](LICENSE-CC-BY-SA-4.0)).
+- The **project name** "PhyCommander" / "PhyCMD" and the **logo** are unregistered trademarks of the author, **not** covered by any of the above licences. See [`TRADEMARKS.md`](TRADEMARKS.md) for what you can and cannot do with the name; short version: forks that diverge from upstream must rename.
+
+The top-level [`LICENSE`](LICENSE) contains the authoritative boundary definitions and every source file carries an `SPDX-License-Identifier`. [`NOTICE`](NOTICE) carries the project attribution that redistributions must preserve.
+
+**If you want to use PhyCommander in a context the above licences don't accommodate** (proprietary product, closed-source SaaS, redistribution without the reciprocal obligations) contact the author at `angelo@leto.blue` about a commercial licence grant.
 
 If you build on PhyCMD — academic paper, product, student project, blog post — credit would be appreciated in whichever form fits (README line, paper citation, slide footer).
 

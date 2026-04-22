@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+
 //! `physerver` crate — the HTTP/IPC service layer of PhyCommander.
 //!
 //! The protocol, transport, and real-time primitives used to live in

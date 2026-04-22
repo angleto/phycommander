@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — licensing
+
+Full relicensing of the project with explicit copyleft protection
+across every layer. The previous `MIT OR Apache-2.0` arrangement is
+retired for the software components; a fresh author acts as sole
+copyright holder (no prior external contributions to relicense).
+
+- **Software** (Rust server, `phycmd-core`, `phycmd-rust`, `phycmd-py`,
+  dashboard HTML/JS): **AGPL-3.0-or-later** — network-aware copyleft
+  to prevent silent SaaS appropriation.
+- **Firmware** (SAM3X8E C code), **deployment plumbing**, and
+  **CLI scripts**: **GPL-3.0-or-later**.
+- **Hardware designs** (KiCad project, panel SVGs, mechanical CAD):
+  **CERN-OHL-S v2** (Strongly Reciprocal).
+- **Prose documentation + photographs**: unchanged, **CC-BY-SA 4.0**.
+- **Project name + logo**: now covered by an explicit trademark
+  policy (`TRADEMARKS.md`). Forks that diverge from upstream must
+  rename before distribution.
+- Every source file gained an `SPDX-License-Identifier` header.
+- `LICENSE-MIT` and `LICENSE-APACHE` removed; `LICENSE-AGPL-3.0`,
+  `LICENSE-GPL-3.0`, and `LICENSE-CERN-OHL-S-2.0` added.
+
 ## [1.1.0] - 2026-04-14
 
 First public open-source release. Repo renamed from `phycmd` →

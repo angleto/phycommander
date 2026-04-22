@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+
 // All modules live in the physerver lib crate (src/lib.rs), which also
 // re-exports the protocol / transport / rt primitives from phycmd-core.
 // This binary imports them from the lib instead of redeclaring `mod`s,

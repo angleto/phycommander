@@ -203,7 +203,8 @@ PhyCMD/
 ├── README.md                          # Start here
 ├── CONTRIBUTING.md                    # Contribution guidelines
 ├── CHANGELOG.md                       # Version history
-├── LICENSE                            # Dual MIT OR Apache-2.0 (software); CC-BY-SA 4.0 (hardware/docs)
+├── LICENSE                            # AGPL-3.0 (server) + GPL-3.0 (firmware) + CERN-OHL-S v2 (hardware) + CC-BY-SA 4.0 (docs)
+├── TRADEMARKS.md                      # Policy on "PhyCommander" name + logo
 │
 └── docs/
     ├── INDEX.md                       # This file

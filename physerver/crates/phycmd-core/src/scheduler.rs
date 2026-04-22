@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Angelo Leto <angelo@leto.blue>
+
 //! Hard-paced real-time scheduler.
 //!
 //! This is the loop that turns staging writes into actual USB

@@ -1,3 +1,7 @@
+/*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+ */
 /**
  * \file
  *

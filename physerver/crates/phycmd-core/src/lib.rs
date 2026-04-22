@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+
 //! phycmd-core — Core protocol, transport, and real-time primitives.
 //!
 //! This crate contains the parts of PhyCommander that are independent of

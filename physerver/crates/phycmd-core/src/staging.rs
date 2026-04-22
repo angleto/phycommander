@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 Angelo Leto <angelo@leto.blue>
+
 //! Command staging buffer shared between user API writers and the
 //! hard-paced RT scheduler.
 //!

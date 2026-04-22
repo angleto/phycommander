@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
+
 //! `phycmd` Python module — pyo3 bindings for the PhyCommander
 //! hard-real-time control stack.
 //!

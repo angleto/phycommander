@@ -423,7 +423,37 @@ static void adc_setup(void)
 	/* Leave FREERUN cleared (adc_init default). Leaving TRGEN at 0
 	 * means the only way to start a conversion is writing ADC_CR
 	 * START — which user_callback_sof_action does on every SOF. */
-	ADC->ADC_CHER = 0x80;
+
+	/* Force ADC_EMR = 0: keeps TAG=0 (so LCDR upper nibble stays
+	 * zero and the PDC writes clean 12-bit samples to g_adc_buf)
+	 * and CMPMODE=0 (no analog-compare IRQ). adc_init does not
+	 * reset EMR; a warm start (USB bus-reset re-enumeration, WDT
+	 * reset) can otherwise leave stale bits that corrupt the sample
+	 * stream. Defensive, not known to fix any currently observed
+	 * symptom. */
+	ADC->ADC_EMR  = 0;
+
+	/* Explicitly disable channels 8-15. SWRST in adc_init zeroes
+	 * CHSR on cold boot, but this write makes the intent "only
+	 * AD0-AD7 convert per START, so PDC.RCR=8 always matches the
+	 * actual conversion count" self-documenting — and keeps a warm
+	 * start from inheriting a stuck extra-channel enable. */
+	ADC->ADC_CHDR = 0xFFFFFF00u;
+
+	/* Previously this block also wrote ADC_CHER = 0x80, which was
+	 * a no-op (the for-loop above already enabled channels 0-7
+	 * individually; CHER is write-1-to-set). Removed — the name
+	 * was misleading and it did nothing observable.
+	 *
+	 * Known limitation: on the current test host we see adc[7]
+	 * (= AD7 = Due "A0") locked at exactly 2048 with zero variance
+	 * regardless of wiring. A sentinel-overwrite diagnostic confirms
+	 * the PDC does write slot 7 and AD7 converts — the SAM3X is
+	 * simply returning 0x800 every time. Needs bench-level probing
+	 * (is PA16 floating? is there external biasing? is the input
+	 * mux physically broken on this chip?) to root-cause. The other
+	 * seven channels work as expected; callers that need A0 loopback
+	 * should route to a different Due analog pin for now. */
 	ADC->ADC_IDR  = ~(1u << 27);
 	ADC->ADC_IER  = 1u << 27;
 

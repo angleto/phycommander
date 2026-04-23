@@ -40,6 +40,11 @@ extern void process_command_frame(const uint8_t *rx_buf, uint8_t *tx_buf);
 extern void apply_command_frame(const uint8_t *rx_buf);
 extern void build_status_frame(uint8_t *tx_buf);
 
+/* Drives the D13 heartbeat LED in main.c SysTick_Handler: 1 Hz when the
+ * host is enumerated, 4 Hz otherwise. Flipped here on interface enable /
+ * disable so the LED reflects real USB configuration state. */
+extern volatile bool s_heartbeat_enumerated;
+
 #include "waveform.h"   /* vendor SETUP requests */
 
 /* -------------------------------------------------------------------------
@@ -494,6 +499,7 @@ static bool udi_vendor_enable(void)
 	                 s_iso_rx_buf[0], sizeof(s_iso_rx_buf[0]),
 	                 vendor_iso_out_cb);
 
+	s_heartbeat_enumerated = true;
 	return true;
 }
 
@@ -510,6 +516,8 @@ static void udi_vendor_disable(void)
 	 * crashing while DAC0 is playing a 1 kHz square wave would leave
 	 * the DAC oscillating in the wild until the device is power-cycled. */
 	waveform_stop_all();
+
+	s_heartbeat_enumerated = false;
 }
 
 /* Scratch for SETUP DATA-stage payloads. Sized to the largest

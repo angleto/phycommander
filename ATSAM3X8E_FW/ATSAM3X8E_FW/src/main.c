@@ -139,6 +139,23 @@ static volatile uint32_t s_uptime_ms = 0;
 static COMPILER_WORD_ALIGNED uint8_t s_status_cached[MSG_SIZE];
 static volatile bool s_status_dirty = true;
 
+/* Heartbeat LED on D13 (PB27, the on-board "L" LED).
+ *
+ * Visual semantics (read this from across the lab bench):
+ *   - slow 1 Hz blink (500 ms ON / 500 ms OFF): firmware running,
+ *     iso link up, USB configured.
+ *   - fast ~4 Hz blink (~125 ms toggle): USB not yet configured
+ *     (device enumerating or host-side physerver not running yet).
+ *   - solid OFF: firmware hung — SysTick isn't ticking.
+ *   - solid ON: firmware has detected an unrecoverable error.
+ *
+ * Controlled entirely from SysTick_Handler below; the pin is
+ * configured as PIO output at the end of main() via heartbeat_init().
+ */
+#define HEARTBEAT_PIN_MASK    (1u << 27)
+volatile bool s_heartbeat_enumerated = false;        /* set by udi_vendor on SET_CONFIGURATION (non-static: also read in udi_vendor.c) */
+static volatile bool s_heartbeat_error      = false; /* set on unrecoverable firmware error */
+
 /* Watchdog kick cadence, in SysTick ticks (= milliseconds). Picked
  * well below the WDT_MR.WDV timeout (~2 s) so any drop in tick rate
  * of up to 4× still pets the dog before it bites. */
@@ -157,6 +174,20 @@ void SysTick_Handler(void)
 	 * memcpy); the one that lands right after SysTick pays the
 	 * full rebuild cost (~2.2 µs). See s_status_cached. */
 	s_status_dirty = true;
+
+	/* Heartbeat LED state machine.
+	 *  error  → solid ON
+	 *  enumerated → 1 Hz square (1000 ms period, 50 % duty)
+	 *  otherwise  → 4 Hz square (250 ms period, 50 % duty)
+	 * Solid OFF is reserved for "SysTick stopped entirely". */
+	if (s_heartbeat_error) {
+		PIOB->PIO_SODR = HEARTBEAT_PIN_MASK;
+	} else {
+		uint32_t period_ms = s_heartbeat_enumerated ? 1000u : 250u;
+		uint32_t phase = s_uptime_ms % period_ms;
+		if (phase < (period_ms / 2u)) PIOB->PIO_SODR = HEARTBEAT_PIN_MASK;
+		else                          PIOB->PIO_CODR = HEARTBEAT_PIN_MASK;
+	}
 
 	/* Kick the watchdog periodically. If the main loop, USB ISR,
 	 * DACC ISR, or SysTick itself wedges for more than ~2 s the
@@ -750,6 +781,15 @@ int main(void)
 	adc_setup();
 	dac_setup();
 	waveform_init();   /* must come after dac_setup — sets up TC0/PDC for DACC */
+
+	/* Heartbeat LED on PB27 (Arduino Due D13 / on-board "L"). PIO
+	 * output, active-low pull-up disabled, starts LOW. Blink pattern
+	 * is driven from SysTick_Handler. */
+	pmc_enable_periph_clk(ID_PIOB);
+	PIOB->PIO_PUDR = HEARTBEAT_PIN_MASK;
+	PIOB->PIO_PER  = HEARTBEAT_PIN_MASK;
+	PIOB->PIO_OER  = HEARTBEAT_PIN_MASK;
+	PIOB->PIO_CODR = HEARTBEAT_PIN_MASK;
 
 	/* Start USB device stack */
 	udc_start();

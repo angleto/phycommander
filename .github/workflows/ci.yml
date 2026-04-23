@@ -2,17 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, develop, "v1.*" ]
+    branches: [ main, master, develop, "v1.*", "v2.*" ]
   pull_request:
-    branches: [ main, master, develop, "v1.*" ]
+    branches: [ main, master, develop, "v1.*", "v2.*" ]
 
 env:
   CARGO_TERM_COLOR: always
-  # Warnings are surfaced but don't block the build — this repo
-  # intentionally keeps some dead_code (transport abstractions) and
-  # unused_imports (re-exports) that would flap on -D warnings across
-  # Rust toolchain versions. Real errors still fail.
-  RUSTFLAGS: "-A dead_code -A unused_imports -A unused_variables"
+  # v2.0 is warning-clean on stable; escalate any new warning to an
+  # error so regressions get caught here rather than in review. The
+  # `-D warnings` hat is the only thing that keeps dead_code and
+  # unused_imports from re-accumulating; do not loosen it without a
+  # good reason.
+  RUSTFLAGS: "-D warnings"
 
 jobs:
 
@@ -53,11 +54,10 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy (advisory)
-        # Clippy runs as an advisory gate: reports lints in the run log
-        # without failing the job. Elevate back to blocking once the
-        # existing backlog (13 errors across phycmd-core, mostly
-        # derivable_impls / should_implement_trait) is worked through.
-        run: cargo clippy --workspace --all-targets --all-features -- -W clippy::all
+        # Clippy remains advisory: pedantic lints are still noisy on
+        # this codebase (derivable_impls, should_implement_trait in
+        # phycmd-core). Gate the default level only.
+        run: cargo clippy --workspace --all-targets --all-features
         continue-on-error: true
 
       - name: Build
@@ -65,6 +65,14 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --all-features --verbose
+
+      - name: Benchmarks compile
+        # We don't run the benches in CI (noisy, slow, and the numbers
+        # would be wrong on a shared runner anyway) — but compiling
+        # them catches protocol-level regressions in the bench code
+        # that would otherwise only show up when a developer runs
+        # `cargo bench` locally.
+        run: cargo bench --workspace --no-run --verbose
 
       - name: Build release
         run: cargo build --release --bin physerver --verbose

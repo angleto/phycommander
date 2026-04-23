@@ -1,0 +1,40 @@
+[package]
+name = "phycmd-fuzz"
+version = "0.0.0"
+edition = "2021"
+authors = ["Angelo Leto <angelo@leto.blue>"]
+license = "AGPL-3.0-or-later"
+publish = false
+
+[package.metadata]
+# `cargo fuzz` walks this metadata to find its targets, so keep the
+# field even if it looks redundant.
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+physerver = { path = ".." }
+phycmd-core = { path = "../crates/phycmd-core" }
+
+[[bin]]
+name = "decode_status"
+path = "fuzz_targets/decode_status.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "decode_command"
+path = "fuzz_targets/decode_command.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "wave_types_roundtrip"
+path = "fuzz_targets/wave_types_roundtrip.rs"
+test = false
+doc = false
+
+# Exclude the fuzz crate from the parent workspace. cargo-fuzz
+# invokes cargo with its own nightly-only flags (-Zbuild-std, -Zsanitizer)
+# that would poison a plain `cargo build --workspace` at the root.
+[workspace]

@@ -70,3 +70,10 @@ phy_picts/
 # Private release/publishing notes (never commit)
 PUBLISHING.md
 RELEASING.md
+
+# cargo-fuzz runtime state — keep the targets + README committed,
+# ignore the generated corpus and crash artifacts.
+physerver/fuzz/corpus/
+physerver/fuzz/artifacts/
+physerver/fuzz/coverage/
+physerver/fuzz/target/

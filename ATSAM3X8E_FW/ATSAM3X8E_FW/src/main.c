@@ -466,6 +466,21 @@ void user_callback_sof_action(void)
 
 static void dac_setup(void)
 {
+	/* PIO: DAC0 is on PB15, DAC1 on PB16 (both peripheral "X1").
+	 * We have to release both pads from the PIO controller AND
+	 * disable their weak pull-ups before the DACC can drive them
+	 * as analog outputs. Without this step the pads stay under
+	 * PIO control in their power-on state (input + pull-up) and
+	 * the DACC writes are absorbed by the pull-up, producing a
+	 * stuck near-3 V output on one channel and an inert pin on
+	 * the other (depending on what the Arduino bootloader left
+	 * behind). The matching "DAC1 works, DAC0 doesn't" pattern
+	 * we chased for hours was exactly this. */
+	pmc_enable_periph_clk(ID_PIOB);
+	const uint32_t dac_mask = (1u << 15) | (1u << 16);
+	PIOB->PIO_PUDR = dac_mask;   /* pull-up disable on PB15 + PB16 */
+	PIOB->PIO_PDR  = dac_mask;   /* release to peripheral (extra function X1) */
+
 	pmc_enable_periph_clk(ID_DACC);
 	dacc_reset(DACC);
 	dacc_set_writeprotect(DACC, 0);

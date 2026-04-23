@@ -308,34 +308,156 @@ static inline uint16_t get_dig_out_echo(void)
 }
 
 /* ============================================================
- *  ADC (8 channels, PDC/DMA free-running)
+ *  ADC (8 channels, PDC/DMA, software-triggered at USB SOF)
+ *
+ *  Why SOF-triggered, not free-running:
+ *    - Free-running mode lets the ADC re-convert at ~156 kHz per
+ *      channel, but the phase of the conversion relative to the
+ *      iso IN microframe rebuild wanders freely. For a lock-in
+ *      amplifier or any FFT-adjacent analysis the host measures
+ *      samples whose acquisition time drifts relative to the
+ *      microframe boundary by up to ~6 µs per cycle.
+ *    - SOF-triggered means every iso-IN frame carries an ADC
+ *      snapshot acquired exactly one microframe earlier, with
+ *      bounded phase jitter equal to the SOF delivery jitter
+ *      (sub-microsecond on stock EHCI/xHCI hosts).
+ *
+ *  Behaviour:
+ *    - adc_setup leaves the ADC armed but not converting. The PDC
+ *      is pointed at g_adc_buf[0], fallback at g_adc_buf[1].
+ *    - user_callback_sof_action (called from the USB SOF ISR at
+ *      1 kHz FS / 8 kHz HS) writes ADC_CR_START. The PDC transfers
+ *      8 × u16 into g_adc_buf[0] (~16 µs wall time). When the
+ *      next SOF fires we start a fresh cycle into the same buffer;
+ *      build_status_frame picks up whatever is there.
+ *    - PDC ENDRX is not wired to an IRQ — we rely on the dual
+ *      RPR/RNPR registers reloading automatically so the DMA is
+ *      always pointed at valid RAM regardless of completion
+ *      timing.
+ *
+ *  Boot-up: we trigger one manual conversion from adc_setup so
+ *  g_adc_buf[0] holds real samples before the first iso IN packet
+ *  rather than leftover zeros from power-on.
  * ============================================================ */
 
 #define ADC_CHANNEL_NUM 8
 uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
+/* Index into g_adc_buf that the READER (build_status_frame) should
+ * sample from. Incremented by the SOF handler after it swaps the PDC
+ * target: the just-completed cycle's buffer is published, the other
+ * one is now the write target. A lone u8 is atomic on ARMv7; both
+ * sides just read/write it with volatile ordering.
+ *
+ * The two entries of the ring we actually use are g_adc_buf[0] and
+ * g_adc_buf[1]; the rest of g_adc_buf[2..15] is legacy ring space
+ * left in place so existing pointers/clients don't need to be
+ * resized. */
+static volatile uint8_t g_adc_publish_idx = 0;
 
 static void adc_setup(void)
 {
 	pmc_enable_periph_clk(ID_ADC);
-	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_FAST);
+	/* ADC_STARTUP_SLOW gives the per-conversion startup machine
+	 * ample time after wake-from-idle; at 8 kHz SOF-triggered
+	 * single-shot we are effectively starting the ADC from idle
+	 * every 125 µs. Without it the first one or two samples of
+	 * each cycle are bogus. */
+	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
 	for (int ch = 0; ch < ADC_CHANNEL_NUM; ch++)
 		adc_enable_channel(ADC, (enum adc_channel_num_t)ch);
 
-	ADC->ADC_MR  |= 0x80;       /* free running */
+	/* Per-channel tracking time: the sample-and-hold cap needs
+	 * time to charge to the input voltage between successive
+	 * channels. TRACKTIM=0 (default) is ~1 ADC cycle ≈ 50 ns at
+	 * 20 MHz, which is FINE for a DAC driving a ~100 Ω on-chip
+	 * output but UNUSABLE for a floating pin (MΩ source Z): the
+	 * cap carries residual charge from the previous channel and
+	 * every other sample looks noisy/biased.
+	 *
+	 * TRACKTIM=15 gives 16 ADC cycles = ~800 ns at 20 MHz — plenty
+	 * for a 1 MΩ source Z. Cost is +~6 µs per 8-channel cycle
+	 * (still well under the 125 µs microframe budget).
+	 *
+	 * SETTLING=3 (11 cycles) gives the sample-and-hold comparator
+	 * enough time to stabilise after each channel switch; the
+	 * ADC errata warns against SETTLING<2 with high-Z inputs. */
+	uint32_t mr = ADC->ADC_MR;
+	mr &= ~(ADC_MR_TRACKTIM_Msk | ADC_MR_SETTLING_Msk);
+	mr |= ADC_MR_TRACKTIM(15);
+	mr |= ADC_MR_SETTLING_AST17;
+	ADC->ADC_MR = mr;
+
+	/* Leave FREERUN cleared (adc_init default). Leaving TRGEN at 0
+	 * means the only way to start a conversion is writing ADC_CR
+	 * START — which user_callback_sof_action does on every SOF. */
 	ADC->ADC_CHER = 0x80;
 	ADC->ADC_IDR  = ~(1u << 27);
 	ADC->ADC_IER  = 1u << 27;
+
+	/* PDC ring: primary + secondary. When the primary run completes
+	 * the controller auto-loads the secondary; we re-point primary
+	 * -> [0] and secondary -> [1] on every SOF so the DMA always
+	 * has two full buffers queued. */
 	ADC->ADC_RPR  = (uint32_t)g_adc_buf[0];
 	ADC->ADC_RCR  = ADC_CHANNEL_NUM;
 	ADC->ADC_RNPR = (uint32_t)g_adc_buf[1];
 	ADC->ADC_RNCR = ADC_CHANNEL_NUM;
-	ADC->ADC_PTCR = 1;
-	ADC->ADC_CR   = 2;
-	/* ADC IRQ disabled — we just read the latest snapshot from
-	 * g_adc_buf[0] in the status frame builder. Sufficient for
-	 * protocol bring-up. */
+	ADC->ADC_PTCR = 1;     /* enable receive transfers */
+
+	/* Bootstrap: one manual trigger so g_adc_buf[0] isn't all zeros
+	 * before the first SOF arrives (e.g. during standalone debug
+	 * with the USB cable unplugged). publish_idx starts at 0 so the
+	 * reader returns g_adc_buf[0] even before any cycle completes. */
+	g_adc_publish_idx = 0;
+	ADC->ADC_CR   = ADC_CR_START;
+}
+
+/* Called from the UDC SOF ISR (hooked via UDC_SOF_EVENT in
+ * conf_usb.h). Runs at 8 kHz on HS.
+ *
+ * Double-buffer with atomic publish:
+ *   Buffer layout: g_adc_buf[0] and g_adc_buf[1] alternate as
+ *   "write target" and "reader target". At every SOF the cycle
+ *   that was started at the previous SOF is guaranteed done
+ *   (8 channels × ~1.5 µs = 12 µs << 125 µs), so we:
+ *     1. flip g_adc_publish_idx to point at the just-completed
+ *        buffer (what was the PDC write target); readers picking
+ *        up the new publish_idx get fresh coherent data.
+ *     2. point the PDC at the OTHER buffer for the new cycle.
+ *     3. trigger START.
+ *   Reader (build_status_frame) samples g_adc_publish_idx once
+ *   and reads all 8 slots from that buffer. The writer never
+ *   touches the currently-published buffer, so no torn reads.
+ *
+ * This fixes two bugs of the previous firmware:
+ *   - PDC would drain after 16 samples and never re-arm; ADC
+ *     values frozen at boot.
+ *   - A naive "always rewrite RPR to g_adc_buf[0]" handler did
+ *     re-arm but let the reader see g_adc_buf[0] mid-write,
+ *     producing torn samples across the 8 channels.
+ */
+void user_callback_sof_action(void);
+void user_callback_sof_action(void)
+{
+	/* The buffer the PDC was just filling (the "previous" write
+	 * target) is complete now — that was the one NOT currently
+	 * published. Flip publish to it. */
+	uint8_t old_publish = g_adc_publish_idx;
+	uint8_t new_publish = old_publish ^ 1u;      /* just-completed buffer */
+	uint8_t new_writer  = old_publish;           /* other buffer for new cycle */
+
+	ADC->ADC_RPR  = (uint32_t)g_adc_buf[new_writer];
+	ADC->ADC_RCR  = ADC_CHANNEL_NUM;
+	ADC->ADC_RNCR = 0;
+
+	/* Publish the just-completed data BEFORE triggering the new
+	 * cycle — readers racing this ISR still see a consistent
+	 * non-in-flight buffer. */
+	g_adc_publish_idx = new_publish;
+
+	ADC->ADC_CR = ADC_CR_START;
 }
 
 /* ============================================================
@@ -426,13 +548,74 @@ void apply_command_frame(const uint8_t *rx_buf)
 		if (v1 > DAC_MAX) v1 = DAC_MAX;
 		bool gen0 = waveform_dac_is_generating(0);
 		bool gen1 = waveform_dac_is_generating(1);
-		if (!gen0) {
-			dacc_write_conversion_data(DACC, v0);
-			waveform_set_manual_hold(0, v0);
+
+		/* Always remember the latest manual setpoint so that a
+		 * subsequent GEN → MANUAL transition lands at the correct
+		 * value instead of snapping to mid-rail. The refill buffer
+		 * for the OTHER (still-generator-driven) channel also uses
+		 * this hold when producing an OFF-channel sample. */
+		waveform_set_manual_hold(0, v0);
+		waveform_set_manual_hold(1, v1);
+
+		if (!gen0 && !gen1) {
+			/* Both channels in MANUAL mode and the PDC is idle.
+			 *
+			 * dac_setup configures DACC_MR.WORD=1 (32-bit access
+			 * width on the AHB side — NOT "two items per word")
+			 * and TAG=1 (flexible selection via CHTAG in bits
+			 * 12-13). Each 32-bit write to DACC_CDR transfers
+			 * exactly ONE sample: bits 0-11 are the 12-bit value
+			 * and bits 12-13 are the CHTAG that selects CH0 or
+			 * CH1. Upper bits are ignored on SAM3X DACC.
+			 *
+			 * We write each channel in turn. Before the second
+			 * write we wait for TXRDY (bit 0 of DACC_ISR) to
+			 * confirm the DACC has consumed the first item —
+			 * without this the second write can squash the
+			 * first in the internal holding register and the
+			 * slower channel (CH0) never gets its conversion.
+			 *
+			 * Earlier revisions of this block tried to pack both
+			 * items into a single word thinking WORD=1 meant
+			 * "two items"; it does not on this SAM3X. And a
+			 * version without the TXRDY wait worked for DAC1
+			 * but left DAC0 silent because the CH1 write
+			 * arrived before the CH0 conversion completed. */
+			DACC->DACC_CDR = ((uint32_t)v0) | 0x0000u;   /* CH0 */
+			while (!(DACC->DACC_ISR & DACC_ISR_TXRDY)) { /* spin */ }
+			DACC->DACC_CDR = ((uint32_t)v1) | 0x1000u;   /* CH1 */
 		}
-		if (!gen1) {
-			DACC->DACC_CDR = v1 | 0x1000u;   /* tag → CH1 */
-			waveform_set_manual_hold(1, v1);
+		/* When at least one channel is generator-driven we leave
+		 * the DACC peripheral to the PDC: the refill_buffer loop
+		 * in waveform.c reads waveform_set_manual_hold and emits
+		 * the held value on every OFF slot, so the transition
+		 * manual ⇌ generator stays glitch-free without us
+		 * touching DACC_CDR from here. */
+	}
+
+	/* Apply manual PWM duty on pwm0 / pwm1 — symmetric with the DAC
+	 * path above. The wire protocol carries only two manual PWM
+	 * channels (pwm0, pwm1); the firmware supports four (pwm0..3)
+	 * via the on-chip function generator vendor-SETUP plane
+	 * (POST /api/fngen/play_builtin). A channel currently driven
+	 * by the generator must not be stomped from here — the
+	 * waveform_pwm_is_generating() guard returns true for exactly
+	 * those slots. Duty = 0 on a manual-active channel parks the
+	 * pin low and releases the PWM peripheral slot. */
+	if (cmd->flags & FLAG_PWM_ENABLE) {
+		if (!waveform_pwm_is_generating(0)) {
+			if (cmd->pwm0 == 0) {
+				waveform_stop_pwm_manual(0);
+			} else {
+				waveform_set_pwm_manual(0, cmd->pwm0);
+			}
+		}
+		if (!waveform_pwm_is_generating(1)) {
+			if (cmd->pwm1 == 0) {
+				waveform_stop_pwm_manual(1);
+			} else {
+				waveform_set_pwm_manual(1, cmd->pwm1);
+			}
 		}
 	}
 
@@ -484,9 +667,12 @@ void build_status_frame(uint8_t *tx_buf)
 	stat->digital_in  = get_dig_in_value();
 	stat->digital_out = get_dig_out_echo();
 
-	/* ADC: read latest PDC snapshot */
+	/* ADC: read the currently-published buffer. Snapshot the
+	 * index first; if the SOF handler swaps it mid-loop, the
+	 * writer goes to the OTHER buffer — our reads stay coherent. */
+	uint8_t adc_idx = g_adc_publish_idx;
 	for (int i = 0; i < ADC_CHANNEL_NUM; i++)
-		stat->adc[i] = g_adc_buf[0][i];
+		stat->adc[i] = g_adc_buf[adc_idx][i];
 
 	/* Status flags */
 	uint8_t sf = STATUS_USB_CONFIGURED;

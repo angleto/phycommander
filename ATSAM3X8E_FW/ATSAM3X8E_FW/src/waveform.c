@@ -195,6 +195,13 @@ typedef struct {
 } pwm_state_t;
 #define WAVE_NUM_PWM_ACTIVE 4u
 static volatile pwm_state_t s_pwm[WAVE_NUM_PWM_ACTIVE];
+/* Tracks whether channel N was started by the MANUAL streaming path
+ * (waveform_set_pwm_manual) versus the generator path (play_builtin
+ * etc.). Used by apply_command_frame to decide whether the cmd.pwmN
+ * field should reach the hardware: manual writes are allowed on
+ * "off" and "already-manual" channels, blocked on generator-driven
+ * channels. */
+static volatile uint8_t s_pwm_is_manual[WAVE_NUM_PWM_ACTIVE];
 static uint8_t s_pwm_init_done = 0;
 
 /* Forward declarations so waveform_stop_all() / play_builtin() above the
@@ -384,6 +391,17 @@ static void dacc_pdc_stop(void)
 	DACC->DACC_PTCR = DACC_PTCR_TXTDIS;
 	DACC->DACC_IDR  = ~0u;
 	NVIC_DisableIRQ(DACC_IRQn);
+	/* Return the DACC to "software-triggered" mode so that the
+	 * streaming manual DAC path (apply_command_frame →
+	 * dacc_write_conversion_data) actually produces conversions.
+	 *
+	 * While the PDC is running we had DACC_MR.TRGEN=1 with
+	 * TRGSEL=TC0, meaning DACC only converts on each TC0 tick.
+	 * Leaving TRGEN=1 after the PDC stops would silently break
+	 * manual slider control: writes to DACC_CDR would queue but
+	 * never convert, and the DAC pin would stay stuck at the last
+	 * PDC-driven value. */
+	DACC->DACC_MR &= ~DACC_MR_TRGEN;
 }
 
 /**
@@ -1061,6 +1079,7 @@ void waveform_stop_all(void)
 	}
 	for (uint8_t i = 0; i < WAVE_NUM_PWM_ACTIVE; i++) {
 		pwm_hw_stop(i);
+		s_pwm_is_manual[i] = 0;
 	}
 	update_pdc_running();
 }
@@ -1076,6 +1095,49 @@ void waveform_set_manual_hold(uint8_t dac_idx, uint16_t v12)
 	if (dac_idx >= WAVE_NUM_DAC) return;
 	if (v12 > DACC_VAL_MASK) v12 = DACC_VAL_MASK;
 	s_chan[dac_idx].reactive_value = v12;
+}
+
+/* PWM manual control — driven by the streaming cmd.pwmN fields in
+ * apply_command_frame. Uses a fixed 1 kHz carrier and the 0..65535
+ * input is rescaled to the PWM peripheral's internal CPRD (2^16 →
+ * full range with sub-bit resolution available at higher prescalers).
+ * See docs/user-guide/FUNCTION_GENERATOR.md for the reasoning behind
+ * 1 kHz as the manual default. */
+#define PWM_MANUAL_FREQ_MHZ   1000000u   /* 1 kHz in mHz */
+
+bool waveform_pwm_is_generating(uint8_t pwm_idx)
+{
+	if (pwm_idx >= WAVE_NUM_PWM_ACTIVE) return false;
+	/* Generator mode == "this channel was started by play_builtin /
+	 * play_pid with a shape selector". We flag that state by
+	 * setting s_pwm[idx].freq_mHz to a non-manual value. The simpler
+	 * bookkeeping: a separate "manual" flag in s_pwm tracks who
+	 * started the channel. */
+	return s_pwm[pwm_idx].active && !s_pwm_is_manual[pwm_idx];
+}
+
+void waveform_set_pwm_manual(uint8_t pwm_idx, uint16_t duty_u16)
+{
+	if (pwm_idx >= WAVE_NUM_PWM_ACTIVE) return;
+	/* Don't stomp on generator mode. */
+	if (s_pwm[pwm_idx].active && !s_pwm_is_manual[pwm_idx]) return;
+
+	/* Convert u16 → duty_x10 (per-mille). pwm_hw_play wants the
+	 * 0..1000 representation that the rest of the generator layer
+	 * uses; rescale with rounding. */
+	uint16_t duty_x10 = (uint16_t)(((uint32_t)duty_u16 * 1000u + 32768u) / 65535u);
+	if (duty_x10 > 1000u) duty_x10 = 1000u;
+
+	s_pwm_is_manual[pwm_idx] = 1;
+	(void)pwm_hw_play(pwm_idx, PWM_MANUAL_FREQ_MHZ, duty_x10);
+}
+
+void waveform_stop_pwm_manual(uint8_t pwm_idx)
+{
+	if (pwm_idx >= WAVE_NUM_PWM_ACTIVE) return;
+	if (!s_pwm[pwm_idx].active || !s_pwm_is_manual[pwm_idx]) return;
+	pwm_hw_stop(pwm_idx);
+	s_pwm_is_manual[pwm_idx] = 0;
 }
 
 uint16_t waveform_reactive_dout_mask(void)
@@ -1349,6 +1411,11 @@ bool waveform_play_builtin(uint16_t channel_id, const void *data, uint16_t len)
 	if (kind == CHAN_KIND_PWM) {
 		if (spec->shape != SHAPE_SQUARE) return false;
 		if (idx >= WAVE_NUM_PWM_ACTIVE)  return false;   /* PWM4..7 not pinned on Due */
+		/* Generator takes ownership of the channel; a prior manual
+		 * slider value on this channel is overwritten, and
+		 * waveform_pwm_is_generating(idx) now returns true so the
+		 * streaming cmd.pwmN path stops writing. */
+		s_pwm_is_manual[idx] = 0;
 		return pwm_hw_play(idx, spec->freq_mHz, spec->duty_x10);
 	}
 	if (kind != CHAN_KIND_DAC) return false;        /* DOUT BUILTIN reserved for future */
@@ -1430,6 +1497,7 @@ bool waveform_stop(uint16_t channel_id)
 		update_pdc_running();
 	} else if (kind == CHAN_KIND_PWM) {
 		pwm_hw_stop(idx);
+		s_pwm_is_manual[idx] = 0;
 	} else if (kind == CHAN_KIND_DOUT) {
 		s_thr_dout[idx].active = 0;
 	}

@@ -57,7 +57,16 @@
  * USB Device Callbacks definitions (Optional)
  */
 /* #define  UDC_VBUS_EVENT(b_vbus_high)      user_callback_vbus_action(b_vbus_high) */
-/* #define  UDC_SOF_EVENT()                  user_callback_sof_action() */
+
+/* Enable the SOF callback. user_callback_sof_action() lives in
+ * main.c and triggers the ADC for the next microframe, phase-locking
+ * sample acquisition to USB SOF. Callable from ISR context only.
+ * The prototype is declared here so every translation unit that
+ * expands UDC_SOF_EVENT (including ASF's uotghs_device.c) sees
+ * a proper declaration. */
+extern void user_callback_sof_action(void);
+#define  UDC_SOF_EVENT()                  user_callback_sof_action()
+
 /* #define  UDC_SUSPEND_EVENT()              user_callback_suspend_action() */
 /* #define  UDC_RESUME_EVENT()               user_callback_resume_action() */
 

@@ -330,6 +330,44 @@ bool waveform_dac_is_generating(uint8_t dac_idx);
  */
 void waveform_set_manual_hold(uint8_t dac_idx, uint16_t v12);
 
+/**
+ * \brief Returns true iff PWM channel `pwm_idx` (0..3) is currently
+ * generator-driven (a `play_builtin` / `play_pid` etc. is active on
+ * it). `apply_command_frame()` uses this to decide whether the
+ * streaming cmd.pwmN duty should reach the hardware: if the channel
+ * is in generator mode, writing a manual duty here would glitch the
+ * running waveform.
+ *
+ * Returns false for `pwm_idx >= WAVE_NUM_PWM_ACTIVE`.
+ */
+bool waveform_pwm_is_generating(uint8_t pwm_idx);
+
+/**
+ * \brief Apply a manual duty cycle on PWM channel `pwm_idx`. Duty is
+ * a u16 in [0, 65535] where 0 = always-low and 65535 = always-high.
+ * Uses a fixed 1 kHz carrier (chosen as a sensible default for
+ * manual slider control); scripts that need a different carrier
+ * should use the fngen `play_builtin` path with shape = square
+ * instead.
+ *
+ * The channel is started on the first call after boot (or after a
+ * fngen stop) and then updated live on subsequent calls via the
+ * PWM peripheral's UPD registers — the change lands at the next
+ * period boundary without glitching the output.
+ *
+ * No-op if `pwm_idx >= WAVE_NUM_PWM_ACTIVE` or if the channel is
+ * currently in generator mode.
+ */
+void waveform_set_pwm_manual(uint8_t pwm_idx, uint16_t duty_u16);
+
+/**
+ * \brief Stop the manual PWM on channel `pwm_idx`: parks the pin
+ * low. Called when the streaming duty returns to zero AND the
+ * channel is no longer generator-driven. Also called indirectly
+ * when fngen takes over via `play_builtin`.
+ */
+void waveform_stop_pwm_manual(uint8_t pwm_idx);
+
 /* -------------------------------------------------------------------------
  *   Vendor SETUP entrypoints (called from udi_vendor_setup)
  *

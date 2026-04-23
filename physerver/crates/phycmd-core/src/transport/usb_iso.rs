@@ -632,6 +632,15 @@ impl IsoTransport {
         Arc::clone(&self.iso_stats)
     }
 
+    /// True while the I/O thread is inside the auto-reconnect
+    /// sequence (device closed, waiting for re-enumeration). Exposed
+    /// so the healthcheck endpoint can return 503 while a reconnect
+    /// is in flight without spamming metrics with a bogus "rate=0"
+    /// reading.
+    pub fn is_reconnecting(&self) -> bool {
+        self.inner.reconnecting.load(Ordering::Acquire)
+    }
+
     /// Latest decoded status (the most recent iso IN packet that
     /// passed CRC). Useful for non-broadcast read paths.
     pub fn latest_status(&self) -> crate::protocol::Status {

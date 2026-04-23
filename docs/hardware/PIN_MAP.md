@@ -89,31 +89,39 @@ Duty = 0 → pin LOW, duty = max → pin HIGH (standard convention).
 > streaming manual duty. `pwm2` and `pwm3` are generator-only —
 > drive them via `POST /api/fngen/play_builtin/pwm{2,3}`.
 
-### 3.2 Planned extension to 12 channels (D2–D13)
+### 3.2 Planned extension to 8 channels (D2–D9)
 
-Arduino Due can produce PWM on 12 pins total. The extra 8 pins use
-the **TC (Timer Counter) peripheral** instead of the PWM peripheral
-— a more elaborate firmware change than "add another channel",
-because TC channels need their own clock tree and software-driven
-per-channel duty updates. The wire protocol also needs to grow
-(current frame has only 2 PWM fields; the fngen vendor plane can
-reach more without a wire bump but is slower to update).
+Target: **8 PWMs** (`pwm0`..`pwm7`) covering pins `D2`..`D9`. The
+first 4 use the SAM3X PWM peripheral (already active, §3.1); the
+new 4 use the **TC (Timer Counter) peripheral** via peripheral-B
+pin muxing. TC channels need their own clock setup and the
+per-channel duty updates go through `TC_RA`/`TC_RB` rather than
+`PWM_CDTYUPD`, so `waveform.c::pwm_hw_play` will dispatch on the
+channel index.
 
 | Planned index | Due label | SAM3X pin | Peripheral | Status |
 |---|---|---|---|---|
-| `pwm4` | `D2` | PB25 | TC0 ch0 TIOA | ⏳ Planned |
-| `pwm5` | `D3` | PC28 | TC2 ch1 TIOA | ⏳ Planned |
-| `pwm6` | `D4` | PC26 | TC ch via peripheral B | ⏳ Planned |
-| `pwm7` | `D5` | PC25 | TC2 ch0 TIOA | ⏳ Planned |
-| `pwm8` | `D10` | PC29 | TC7 ch2 TIOB | ⏳ Planned |
-| `pwm9` | `D11` | PD7 | TC8 ch0 TIOA | ⏳ Planned |
-| `pwm10` | `D12` | PD8 | TC8 ch0 TIOB | ⏳ Planned |
-| `pwm11` | `D13` | PB27 | TC0 ch0 TIOB | ❌ Reserved for status LED — do NOT user-expose |
+| `pwm4` | `D5` | PC25 | TC2 ch0 TIOA (TC6) | ⏳ Planned |
+| `pwm5` | `D4` | PC26 | TC2 ch0 TIOB (TC6) | ⏳ Planned |
+| `pwm6` | `D3` | PC28 | TC2 ch1 TIOA (TC7) | ⏳ Planned |
+| `pwm7` | `D2` | PB25 | TC0 ch0 TIOA (TC0) | ⏳ Planned |
 
-Implementation sketch: parameterise `waveform.c::pwm_hw_play` to
-dispatch on peripheral (PWMH vs TC) based on the channel index,
-add TC per-channel setup, and extend `WAVE_NUM_PWM_ACTIVE` to 11
-(12 pins minus LED_BUILTIN).
+`D10`..`D12` are left free for future expansion (additional PWMs or
+alternate uses). `D13` (`PB27`) is reserved as the firmware
+heartbeat LED — see §5.
+
+Implementation outline:
+1. Extend `WAVE_NUM_PWM_ACTIVE` from 4 to 8.
+2. Add a `s_pwm[idx].peripheral_kind` tag (`PWM_HW` or `TC_HW`) and
+   per-kind `_play`/`_stop` helpers. TC setup picks a prescaler to
+   fit the requested frequency, writes `TC_CMR` + `TC_RC` (period)
+   + `TC_RA` (duty), enables the channel via `TC_CCR`.
+3. Mux the pins: PC25/26 release to peripheral B; PC28 and PB25
+   similarly.
+4. Wire the `fngen play_builtin/pwm{4..7}` endpoints — no wire-
+   protocol change needed because the on-chip function generator
+   already reaches all channels by index through the vendor SETUP
+   plane.
 
 ---
 

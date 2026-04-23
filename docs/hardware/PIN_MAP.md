@@ -7,6 +7,13 @@ the board); internal references in the firmware use the SAM3X PIO
 symbol (e.g. `PIO_PC21_IDX`), which the Arduino label table below
 translates.
 
+![Arduino Due pinout reference](arduino-due-pinout.png)
+
+See [`arduino-due-pinout.png`](arduino-due-pinout.png) for the
+full-resolution reference (the Arduino.cc pinout diagram). Every D-
+and A-label mentioned in the sections below is the one shown on
+that image and silkscreened on the top layer of the board.
+
 > **Conventions**
 >
 > - "Due label" = the number silkscreened on the Arduino Due PCB

@@ -481,14 +481,14 @@
                                 <tr><td class="pin">14</td><td class="sig">DIN13</td><td class="note">PC15</td></tr>
                                 <tr><td class="pin">15</td><td class="sig">DIN14</td><td class="note">PC13</td></tr>
                                 <tr><td class="pin">16</td><td class="sig">DIN15</td><td class="note">PB21</td></tr>
-                                <tr><td class="pin">17</td><td class="sig">ADC0</td><td class="note">Due A0, 0–3.3V 12-bit</td></tr>
-                                <tr><td class="pin">18</td><td class="sig">ADC1</td><td class="note">Due A1</td></tr>
-                                <tr><td class="pin">19</td><td class="sig">ADC2</td><td class="note">Due A2</td></tr>
-                                <tr><td class="pin">20</td><td class="sig">ADC3</td><td class="note">Due A3</td></tr>
-                                <tr><td class="pin">21</td><td class="sig">ADC4</td><td class="note">Due A4</td></tr>
-                                <tr><td class="pin">22</td><td class="sig">ADC5</td><td class="note">Due A5</td></tr>
-                                <tr><td class="pin">23</td><td class="sig">ADC6</td><td class="note">Due A6</td></tr>
-                                <tr><td class="pin">24</td><td class="sig">ADC7</td><td class="note">Due A7</td></tr>
+                                <tr><td class="pin">17</td><td class="sig">ADC0</td><td class="note">Due A7 (SAM3X AD0), 0–3.3V 12-bit</td></tr>
+                                <tr><td class="pin">18</td><td class="sig">ADC1</td><td class="note">Due A6 (SAM3X AD1)</td></tr>
+                                <tr><td class="pin">19</td><td class="sig">ADC2</td><td class="note">Due A5 (SAM3X AD2)</td></tr>
+                                <tr><td class="pin">20</td><td class="sig">ADC3</td><td class="note">Due A4 (SAM3X AD3)</td></tr>
+                                <tr><td class="pin">21</td><td class="sig">ADC4</td><td class="note">Due A3 (SAM3X AD4)</td></tr>
+                                <tr><td class="pin">22</td><td class="sig">ADC5</td><td class="note">Due A2 (SAM3X AD5)</td></tr>
+                                <tr><td class="pin">23</td><td class="sig">ADC6</td><td class="note">Due A1 (SAM3X AD6)</td></tr>
+                                <tr><td class="pin">24</td><td class="sig">ADC7</td><td class="note">Due A0 (SAM3X AD7)</td></tr>
                                 <tr><td class="pin">25</td><td class="sig">AGND</td><td class="note">analog ground</td></tr>
                             </tbody>
                         </table>
@@ -780,7 +780,13 @@ let ws=null, msgCount=0, lastRateTs=performance.now(), lastRateCount=0, scopePau
 // When scope is paused, freeze the "now" anchor used by drawScope so
 // the visible window stays at whatever the user saw when they clicked.
 let scopePausedAt = null;
-let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enable:true,pwm_enable:false,reset_seq:false,watchdog_disable:false}, seq_num:0 };
+// Defaults: both DAC and PWM enable flags on. The firmware gates
+// apply_command_frame's DAC and PWM writes on these flags — without
+// them the hardware stays idle even though the wire frame carries
+// valid values. pwm_enable used to default false which silently
+// neutered the PWM sliders for anyone who didn't know to flip the
+// flag via /api/command first.
+let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enable:true,pwm_enable:true,reset_seq:false,watchdog_disable:false}, seq_num:0 };
 
 // Scope data ring buffer
 const SCOPE_MAX = 10000;
@@ -1979,17 +1985,33 @@ async function fngenPollState() {
         }
     }
 
-    // Disable DAC manual sliders when generator is driving that DAC.
-    for (let i = 0; i < 2; i++) {
-        const s = fngenLastState['dac' + i];
-        const slider = document.getElementById('dac' + i + 'S');
-        const vLabel = document.getElementById('dac' + i + 'V');
-        if (slider && vLabel) {
+    // Disable DAC / PWM manual sliders when the on-chip generator is
+    // driving that channel. The firmware's apply_command_frame() also
+    // ignores manual writes on a generator-active channel (see
+    // waveform_dac_is_generating / waveform_pwm_is_generating), so
+    // this is primarily a UX cue — the slider moves would be silently
+    // dropped otherwise, which was confusing.
+    const channelsToLock = [
+        { prefix: 'dac', n: 2, label: 'DAC' },
+        // NB: the wire protocol (CommandMessage.pwm0/pwm1) only
+        // carries two manual PWM channels. pwm2 and pwm3 exist in
+        // the firmware but are generator-only for now — their
+        // fngen rows handle start/stop independently.
+        { prefix: 'pwm', n: 2, label: 'PWM' },
+    ];
+    for (const { prefix, n, label } of channelsToLock) {
+        for (let i = 0; i < n; i++) {
+            const s = fngenLastState[prefix + i];
+            const slider = document.getElementById(prefix + i + 'S');
+            const vLabel = document.getElementById(prefix + i + 'V');
+            if (!slider || !vLabel) continue;
             const locked = !!(s && s.shape !== 0);
             slider.disabled = locked;
             slider.style.opacity = locked ? '0.35' : '';
             vLabel.textContent = locked ? `(gen: ${s.shape_name})` : String(slider.value);
-            slider.title = locked ? 'DAC' + i + ' is driven by the on-chip generator. Stop the generator to use this slider.' : '';
+            slider.title = locked
+                ? `${label}${i} is driven by the on-chip generator. Stop the generator to use this slider.`
+                : '';
         }
     }
 

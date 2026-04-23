@@ -804,6 +804,13 @@ async fn set_dac(State(state): State<Arc<AppState>>, Json(req): Json<DacRequest>
 
     let mut cmd = state.current_command.write().await;
     cmd.dac[req.channel as usize] = req.value;
+    // The firmware gates DAC writes on FLAG_DAC_ENABLE. Silently
+    // skipping the write when a caller only asks for a DAC value was
+    // a real footgun: `curl /api/dac/set` would update the cached
+    // command but the firmware would ignore it because
+    // dac_enable was still false. Force the flag true here so every
+    // call to /api/dac/set actually drives the pin.
+    cmd.flags.dac_enable = true;
 
     info!("DAC channel {} set to {}", req.channel, req.value);
 

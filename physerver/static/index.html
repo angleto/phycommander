@@ -906,6 +906,34 @@ document.getElementById('scopeMeasOn').onchange = function(){
 function updateGpioOut(){gpioOut.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(cmd.digital_out&(1<<i))!==0));}
 function updateGpioIn(v){gpioIn.querySelectorAll('.gpio-button').forEach((b,i)=>b.classList.toggle('active',(v&(1<<i))!==0));}
 
+// Pull the command that the server is currently holding and push it
+// into the local `cmd` object + every slider / GPIO button. Without
+// this, a reload reverts the UI to all-zero even though physerver has
+// retained the last values set via REST or WS; the next slider drag
+// would then snap DAC/PWM back to 0 because sendCmd ships the whole
+// struct. Called once at boot.
+async function pullCommand(){
+    try{
+        const r = await fetch('/api/command');
+        if(!r.ok) return;
+        const srv = await r.json();
+        // Only mirror fields that actually drive UI controls. Flags
+        // are deliberately not copied: the dashboard forces
+        // adc/dac/pwm_enable true (see the `cmd` default above) and
+        // we don't want a stale server value to silently disable
+        // them on reload.
+        if(Array.isArray(srv.dac) && srv.dac.length>=2){ cmd.dac[0]=srv.dac[0]|0; cmd.dac[1]=srv.dac[1]|0; }
+        if(Array.isArray(srv.pwm) && srv.pwm.length>=2){ cmd.pwm[0]=srv.pwm[0]|0; cmd.pwm[1]=srv.pwm[1]|0; }
+        if(typeof srv.digital_out === 'number') cmd.digital_out = srv.digital_out & 0xFFFF;
+        const syncSlider=(id,val)=>{const s=document.getElementById(id+'S'),v=document.getElementById(id+'V');if(s){s.value=String(val);} if(v){v.textContent=String(val);} };
+        syncSlider('dac0', cmd.dac[0]);
+        syncSlider('dac1', cmd.dac[1]);
+        syncSlider('pwm0', cmd.pwm[0]);
+        syncSlider('pwm1', cmd.pwm[1]);
+        updateGpioOut();
+    }catch(e){ /* server down or wrong shape: leave defaults */ }
+}
+
 // ========== WebSocket ==========
 function sendCmd(){if(ws&&ws.readyState===1)ws.send(JSON.stringify(cmd));}
 function connectWs(){
@@ -2361,7 +2389,7 @@ function wirePanelCollapse() {
 }
 
 // ========== Boot ==========
-connectWs(); updateGpioOut(); pollSysinfo(); setInterval(pollSysinfo,5000);
+connectWs(); updateGpioOut(); pullCommand(); pollSysinfo(); setInterval(pollSysinfo,5000);
 // rt_stats is now pushed over /ws at 1 Hz (typed envelope); we still
 // do one eager HTTP fetch at boot so the panel isn't blank for that
 // first second before the WebSocket tick fires.

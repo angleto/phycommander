@@ -184,14 +184,23 @@ async fn main() -> Result<()> {
     if !args.no_web {
         let web_state_clone = web_state.clone();
         let web_port = config.web.port;
+        let auth = config.auth.clone();
+        let scheme = if auth.tls_cert_file.is_some() && auth.tls_key_file.is_some() {
+            "https"
+        } else {
+            "http"
+        };
 
         tokio::spawn(async move {
-            if let Err(e) = web::start_web_server(web_state_clone, web_port).await {
+            if let Err(e) = web::start_web_server(web_state_clone, web_port, auth).await {
                 error!("Web server error: {}", e);
             }
         });
 
-        info!("Web server started on http://{}:{}", config.web.bind_address, config.web.port);
+        info!(
+            "Web server started on {}://{}:{}",
+            scheme, config.web.bind_address, config.web.port
+        );
     }
 
     let update_rate = config.transport.update_rate;
@@ -403,6 +412,51 @@ async fn main() -> Result<()> {
             stop_handle.stop();
         }
     });
+
+    // Systemd integration: notify READY + start a watchdog kicker
+    // task if the service unit configured WatchdogSec=. The kicker
+    // only pings sd_notify(WATCHDOG=1) when the healthcheck passes,
+    // so a stalled iso transport or a stuck USB reconnect causes
+    // systemd to restart us — no more silent "service is up,
+    // seq_num frozen" deployments. Running under `cargo run`
+    // (WATCHDOG_USEC unset) is a no-op.
+    {
+        // Best-effort READY notification — no-op outside systemd.
+        if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Ready]) {
+            warn!("sd_notify(READY) failed: {e}");
+        }
+        if let Some(watchdog) = sd_notify::watchdog_enabled() {
+            let interval = watchdog / 3;
+            info!(
+                "systemd watchdog: kicking every {} ms (WatchdogSec = {} ms)",
+                interval.as_millis(),
+                watchdog.as_millis()
+            );
+            let wd_state = web_state.clone();
+            tokio::spawn(async move {
+                let mut ticker = tokio::time::interval(interval);
+                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    ticker.tick().await;
+                    let checks = web::compute_health(&wd_state).await;
+                    if checks.healthy() {
+                        if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Watchdog]) {
+                            warn!("sd_notify(WATCHDOG) failed: {e}");
+                        }
+                    } else {
+                        // Log only at debug so a sustained degraded
+                        // state doesn't flood the journal. WatchdogSec
+                        // will trip within one systemd-configured
+                        // interval if we keep skipping.
+                        tracing::debug!(
+                            "skipping watchdog kick: health degraded ({:?})",
+                            checks
+                        );
+                    }
+                }
+            });
+        }
+    }
 
     // Block the main thread until the RT thread exits. When SIGTERM
     // hits us (systemd stop), tokio's main will exit, which drops

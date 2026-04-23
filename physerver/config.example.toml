@@ -62,3 +62,26 @@ enabled = true
 
 # Shared memory name
 shm_name = "phycmd_state"
+
+[auth]
+# Optional HTTP auth + TLS termination. All three keys default to
+# absent — when none are set, the web server behaves exactly like
+# pre-2.x: plain HTTP, no auth. This section is opt-in.
+#
+# bearer_token: when set, every request to /api/* (except
+# /api/health) and /metrics must carry `Authorization: Bearer <tok>`.
+# The token is compared in constant time. Don't check this into git.
+# Example:
+#   bearer_token = "s3cret-please-rotate"
+#
+# tls_cert_file / tls_key_file: when BOTH are set the server speaks
+# HTTPS on the configured port. A self-signed cert is fine for LAN
+# (the browser warns once per session; WebSocket + fetch work).
+# Generate a cert with:
+#   openssl req -x509 -newkey rsa:2048 -nodes \
+#     -keyout /etc/physerver/tls.key \
+#     -out /etc/physerver/tls.crt \
+#     -days 365 -subj "/CN=phycommander.local"
+# Example:
+#   tls_cert_file = "/etc/physerver/tls.crt"
+#   tls_key_file  = "/etc/physerver/tls.key"

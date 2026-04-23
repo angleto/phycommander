@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
 
 use crate::protocol::{Command, Status};
+use anyhow::Context as _;
 use axum::{
     extract::{
         ws::{WebSocket, WebSocketUpgrade},
@@ -138,6 +139,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/adc/read", get(read_adc))
         .route("/api/sysinfo", get(get_sysinfo))
         .route("/api/version", get(get_version))
+        .route("/api/health", get(get_health))
+        .route("/metrics", get(get_metrics))
         .route("/api/rt_stats", get(get_rt_stats))
         .route("/api/reset_errors", post(reset_errors))
         .route("/api/reset_telemetry", post(reset_telemetry))
@@ -848,6 +851,177 @@ async fn get_version() -> Json<VersionResponse> {
     })
 }
 
+/// Liveness / readiness probe for systemd, prometheus blackbox,
+/// reverse-proxy health checks, etc. Returns 200 only when the iso
+/// transport is actively moving packets (iso_in_rate_hz >= 1 kHz),
+/// the firmware reports usb_configured, and the transport isn't
+/// mid-reconnect. Anything else returns 503 with a diagnostic JSON
+/// body so operators can tell at a glance which check tripped.
+///
+/// The 1 kHz lower bound is deliberately an order of magnitude
+/// below the nominal 8 kHz so the probe tolerates brief dips (EMA
+/// warmup right after a reset_telemetry, single dropped URB) but
+/// still catches a genuine transport stall.
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    checks: HealthChecks,
+}
+
+#[derive(Serialize, Clone, Copy, Debug)]
+pub struct HealthChecks {
+    pub iso_rate_ok: bool,
+    pub iso_in_rate_hz: f32,
+    pub usb_configured: bool,
+    pub reconnecting: bool,
+    pub transport_mode: &'static str,
+}
+
+impl HealthChecks {
+    /// Overall health verdict: true iff every individual check
+    /// passes. Kept as a method rather than a boolean field so the
+    /// JSON response shows the per-check breakdown and callers
+    /// never disagree on "what does healthy mean?".
+    pub fn healthy(&self) -> bool {
+        self.iso_rate_ok && self.usb_configured && !self.reconnecting
+    }
+}
+
+/// Compute the current health view from the shared `AppState`.
+/// Shared between the `/api/health` HTTP handler and the systemd
+/// watchdog task in `main.rs`; there must be exactly one definition
+/// of "healthy" in the binary or systemd and the probe will drift
+/// apart.
+pub async fn compute_health(state: &AppState) -> HealthChecks {
+    let (iso_rate_hz, reconnecting, mode) =
+        match (state.iso_stats.get(), state.iso_transport.get()) {
+            (Some(stats), Some(t)) => {
+                let snap = stats.snapshot();
+                (snap.iso_in_rate_hz, t.is_reconnecting(), "iso")
+            }
+            // Non-iso deployment (bulk or serial): the rate estimate
+            // lives in a different path and we can't use it here. Fall
+            // back to usb_configured only.
+            _ => (f32::NAN, false, "non-iso"),
+        };
+
+    let usb_configured = state.current_status.read().await.flags.usb_configured;
+
+    // 1 kHz threshold: an order of magnitude under nominal 8 kHz, so
+    // transient EMA warmup / brief URB hiccups don't flap the probe,
+    // but a genuine transport stall (rate -> 0) trips it quickly.
+    // For non-iso mode (NaN) we skip this check.
+    let iso_rate_ok = iso_rate_hz.is_nan() || iso_rate_hz >= 1000.0;
+
+    HealthChecks {
+        iso_rate_ok,
+        iso_in_rate_hz: if iso_rate_hz.is_nan() { 0.0 } else { iso_rate_hz },
+        usb_configured,
+        reconnecting,
+        transport_mode: mode,
+    }
+}
+
+async fn get_health(
+    State(state): State<Arc<AppState>>,
+) -> (axum::http::StatusCode, Json<HealthResponse>) {
+    use axum::http::StatusCode;
+
+    let checks = compute_health(&state).await;
+    let healthy = checks.healthy();
+
+    let body = HealthResponse {
+        status: if healthy { "ok" } else { "degraded" },
+        checks,
+    };
+
+    let code = if healthy { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    (code, Json(body))
+}
+
+/// Prometheus exposition format (`text/plain; version=0.0.4`).
+/// Returns the same counters as `/api/rt_stats` but in a shape that
+/// any stock prometheus/grafana-agent can scrape without a custom
+/// collector. Label-less; this is one single instance per host.
+async fn get_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    let snap = snapshot_rt_stats(&state);
+
+    let mut out = String::with_capacity(2048);
+    use std::fmt::Write;
+
+    let _ = writeln!(out, "# HELP phycmd_tick_total Scheduler tick count since startup.");
+    let _ = writeln!(out, "# TYPE phycmd_tick_total counter");
+    let _ = writeln!(out, "phycmd_tick_total {}", snap.tick_count);
+
+    let _ = writeln!(out, "# HELP phycmd_tick_ok_total Scheduler ticks completed without error.");
+    let _ = writeln!(out, "# TYPE phycmd_tick_ok_total counter");
+    let _ = writeln!(out, "phycmd_tick_ok_total {}", snap.tick_ok);
+
+    let _ = writeln!(out, "# HELP phycmd_missed_ticks_total Scheduler deadlines missed.");
+    let _ = writeln!(out, "# TYPE phycmd_missed_ticks_total counter");
+    let _ = writeln!(out, "phycmd_missed_ticks_total {}", snap.missed_ticks);
+
+    let _ = writeln!(out, "# HELP phycmd_transport_errors_total Transport-layer errors.");
+    let _ = writeln!(out, "# TYPE phycmd_transport_errors_total counter");
+    let _ = writeln!(out, "phycmd_transport_errors_total {}", snap.transport_errors);
+
+    let _ = writeln!(out, "# HELP phycmd_jitter_us_mean_abs Mean absolute scheduler jitter (us).");
+    let _ = writeln!(out, "# TYPE phycmd_jitter_us_mean_abs gauge");
+    let _ = writeln!(out, "phycmd_jitter_us_mean_abs {}", snap.mean_abs_jitter_us);
+
+    let _ = writeln!(out, "# HELP phycmd_jitter_us_max Maximum scheduler jitter since reset (us).");
+    let _ = writeln!(out, "# TYPE phycmd_jitter_us_max gauge");
+    let _ = writeln!(out, "phycmd_jitter_us_max {}", snap.jitter_max_us);
+
+    let _ = writeln!(out, "# HELP phycmd_latency_us_mean Mean scheduler wake-to-done latency (us).");
+    let _ = writeln!(out, "# TYPE phycmd_latency_us_mean gauge");
+    let _ = writeln!(out, "phycmd_latency_us_mean {}", snap.mean_latency_us);
+
+    // Jitter histogram as a proper Prometheus histogram. Bucket
+    // bounds are the upper edges (exclusive) of each band in us.
+    let _ = writeln!(out, "# HELP phycmd_jitter_us Scheduler jitter distribution (us, absolute).");
+    let _ = writeln!(out, "# TYPE phycmd_jitter_us histogram");
+    let mut cumulative: u64 = 0;
+    for (i, &edge) in snap.jitter_buckets_us.iter().enumerate() {
+        cumulative += snap.jitter_histogram[i] as u64;
+        let _ = writeln!(out, "phycmd_jitter_us_bucket{{le=\"{}\"}} {}", edge, cumulative);
+    }
+    cumulative += snap.jitter_histogram[snap.jitter_buckets_us.len()] as u64;
+    let _ = writeln!(out, "phycmd_jitter_us_bucket{{le=\"+Inf\"}} {}", cumulative);
+    let _ = writeln!(out, "phycmd_jitter_us_count {}", cumulative);
+
+    if let Some(iso) = &snap.iso {
+        let _ = writeln!(out, "# HELP phycmd_iso_in_pkts_ok_total Iso IN packets decoded OK.");
+        let _ = writeln!(out, "# TYPE phycmd_iso_in_pkts_ok_total counter");
+        let _ = writeln!(out, "phycmd_iso_in_pkts_ok_total {}", iso.iso_in_pkts_ok);
+
+        let _ = writeln!(out, "# HELP phycmd_iso_in_errors_total Iso IN transport errors.");
+        let _ = writeln!(out, "# TYPE phycmd_iso_in_errors_total counter");
+        let _ = writeln!(out, "phycmd_iso_in_errors_total {}", iso.iso_in_errors);
+
+        let _ = writeln!(out, "# HELP phycmd_iso_in_short_total Iso IN packets < 64 bytes.");
+        let _ = writeln!(out, "# TYPE phycmd_iso_in_short_total counter");
+        let _ = writeln!(out, "phycmd_iso_in_short_total {}", iso.iso_in_short);
+
+        let _ = writeln!(out, "# HELP phycmd_iso_in_crc_errors_total Iso IN CRC failures.");
+        let _ = writeln!(out, "# TYPE phycmd_iso_in_crc_errors_total counter");
+        let _ = writeln!(out, "phycmd_iso_in_crc_errors_total {}", iso.iso_in_crc_errors);
+
+        let _ = writeln!(out, "# HELP phycmd_iso_out_pkts_ok_total Iso OUT packets sent OK.");
+        let _ = writeln!(out, "# TYPE phycmd_iso_out_pkts_ok_total counter");
+        let _ = writeln!(out, "phycmd_iso_out_pkts_ok_total {}", iso.iso_out_pkts_ok);
+
+        let _ = writeln!(out, "# HELP phycmd_iso_in_rate_hz Smoothed iso IN packet rate (Hz).");
+        let _ = writeln!(out, "# TYPE phycmd_iso_in_rate_hz gauge");
+        let _ = writeln!(out, "phycmd_iso_in_rate_hz {}", iso.iso_in_rate_hz);
+    }
+
+    (
+        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
+        out,
+    )
+}
+
 /// Return a snapshot of the RT scheduler statistics: tick count,
 /// missed ticks, latency/jitter histogram, etc. Populated by the
 /// RtScheduler running in a dedicated SCHED_FIFO thread.
@@ -1042,16 +1216,116 @@ async fn websocket_connection(mut socket: WebSocket, state: Arc<AppState>) {
     info!("WebSocket client disconnected");
 }
 
-/// Start the web server
-pub async fn start_web_server(state: Arc<AppState>, port: u16) -> anyhow::Result<()> {
-    let app = create_router(state);
+/// Per-request middleware that enforces a bearer token on every
+/// non-probe endpoint when [`AuthConfig::bearer_token`] is set.
+///
+/// `/api/health` and `/metrics` are intentionally left open — those
+/// are consumed by systemd, prometheus, k8s probes, reverse proxies,
+/// etc. Requiring a token there would force every operator to
+/// configure auth into their probe machinery for zero security gain
+/// (the endpoints only expose counters and a pass/fail bit that any
+/// attacker could also get by watching `/api/status` succeed).
+async fn bearer_auth_middleware(
+    axum::extract::State(expected): axum::extract::State<Arc<Option<String>>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
 
-    let addr = format!("0.0.0.0:{}", port);
-    info!("Starting web server on http://{}", addr);
+    // Off when bearer_token isn't configured — the Arc is always
+    // cheap to clone and this is the fast path.
+    let Some(expected) = expected.as_ref() else {
+        return next.run(req).await;
+    };
 
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    // Probe endpoints: always allowed.
+    let path = req.uri().path();
+    if matches!(path, "/api/health" | "/metrics") {
+        return next.run(req).await;
+    }
 
-    axum::serve(listener, app).await?;
+    let authorized = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(|t| constant_time_eq(t.as_bytes(), expected.as_bytes()))
+        .unwrap_or(false);
+
+    if authorized {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            [("www-authenticate", "Bearer")],
+            "unauthorized\n",
+        )
+            .into_response()
+    }
+}
+
+/// Timing-safe token comparison — if we did a plain `==` an attacker
+/// could learn a correct prefix by measuring request latency. This
+/// isn't a paranoia measure: with a high-rate LAN attacker and low
+/// RTT, even a few ns of timing leak is exploitable over a few
+/// minutes of brute force.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Start the web server.
+///
+/// Behaviour:
+///   - No TLS, no auth: plain HTTP with `axum::serve` (pre-2.x behaviour).
+///   - Auth only: wrap the router in a bearer-token middleware; still HTTP.
+///   - TLS only: serve HTTPS via `axum_server` + rustls (browser warns on
+///     self-signed cert but WebSocket / fetch work fine on LAN).
+///   - Both: HTTPS + bearer.
+pub async fn start_web_server(
+    state: Arc<AppState>,
+    port: u16,
+    auth: crate::config::AuthConfig,
+) -> anyhow::Result<()> {
+    let token = Arc::new(auth.bearer_token.clone());
+    let has_auth = token.is_some();
+
+    let mut app = create_router(state);
+    if has_auth {
+        app = app.layer(axum::middleware::from_fn_with_state(
+            Arc::clone(&token),
+            bearer_auth_middleware,
+        ));
+        info!("HTTP bearer-token auth is active (probes on /api/health and /metrics remain open)");
+    }
+
+    let addr: std::net::SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+
+    match (auth.tls_cert_file, auth.tls_key_file) {
+        (Some(cert), Some(key)) => {
+            info!("Starting web server on https://{}", addr);
+            let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+                .await
+                .context("Failed to load TLS cert/key")?;
+            axum_server::bind_rustls(addr, config)
+                .serve(app.into_make_service())
+                .await?;
+        }
+        (None, None) => {
+            info!("Starting web server on http://{}", addr);
+            let listener = tokio::net::TcpListener::bind(&addr).await?;
+            axum::serve(listener, app).await?;
+        }
+        _ => anyhow::bail!(
+            "auth.tls_cert_file and auth.tls_key_file must both be set or both be absent"
+        ),
+    }
 
     Ok(())
 }

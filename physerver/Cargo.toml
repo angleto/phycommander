@@ -90,6 +90,8 @@ crc = "3.0"
 
 # Time
 chrono = "0.4"
+sd-notify = "0.5.0"
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
 
 [features]
 default = ["usb"]

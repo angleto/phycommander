@@ -16,6 +16,11 @@ pub struct Config {
 
     /// IPC configuration
     pub ipc: IpcConfig,
+
+    /// Optional auth + TLS settings. Absent in a plain file means
+    /// "HTTP, no auth" — same as pre-2.x behaviour.
+    #[serde(default)]
+    pub auth: AuthConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +98,32 @@ pub struct IpcConfig {
     pub shm_name: String,
 }
 
+/// Optional HTTP authentication + TLS termination. Defaults are
+/// off — existing deployments behave identically to pre-2.x until
+/// the operator opts in.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AuthConfig {
+    /// When set, every non-`/api/health` request must carry
+    /// `Authorization: Bearer <token>`. `/api/health` is left open so
+    /// external probes (systemd, k8s, reverse proxy) don't need the
+    /// token. Set via env or config file — do not hard-code in a
+    /// checked-in config.
+    #[serde(default)]
+    pub bearer_token: Option<String>,
+
+    /// PEM-encoded TLS certificate. When both `tls_cert_file` and
+    /// `tls_key_file` are set the server speaks HTTPS on the
+    /// configured port instead of plain HTTP. A self-signed cert is
+    /// fine for LAN deployments — browsers will still warn once per
+    /// session but WebSocket + fetch work normally.
+    #[serde(default)]
+    pub tls_cert_file: Option<String>,
+
+    /// PEM-encoded TLS private key. See `tls_cert_file`.
+    #[serde(default)]
+    pub tls_key_file: Option<String>,
+}
+
 // Default values
 fn default_serial_port() -> String {
     "/dev/ttyACM0".to_string()
@@ -150,6 +181,7 @@ impl Default for Config {
                 dma_latency: true,
             },
             ipc: IpcConfig { enabled: true, shm_name: default_shm_name() },
+            auth: AuthConfig::default(),
         }
     }
 }

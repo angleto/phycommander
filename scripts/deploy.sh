@@ -125,7 +125,10 @@ After=network.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+# See deploy/systemd/physerver.service for the full notes.
+Type=notify
+NotifyAccess=main
+WatchdogSec=5s
 User=$USER
 Group=dialout
 ExecStart=/usr/local/bin/physerver --config /etc/physerver/config.toml

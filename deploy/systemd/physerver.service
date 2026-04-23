@@ -8,7 +8,17 @@ StartLimitIntervalSec=300
 StartLimitBurst=100
 
 [Service]
-Type=simple
+# Type=notify: physerver calls sd_notify(READY=1) once the RT
+# scheduler and iso transport are up, so systemd knows when the
+# service is actually ready instead of right after fork().
+Type=notify
+NotifyAccess=main
+
+# Kick the systemd watchdog every third of WatchdogSec. physerver
+# sends WATCHDOG=1 only while the internal health probe passes
+# (iso rate >= 1 kHz, usb_configured, no reconnect in flight).
+# If the probe fails for ~5 s the service is restarted.
+WatchdogSec=5s
 
 # Runs as the dedicated `angelo` user (member of the `dialout` group
 # for tty access and the `realtime` group for memlock / nice limits).

@@ -104,6 +104,9 @@ tempfile = "3"
 # leaking it into the release binary (phycmd-core's regular dep
 # above builds with just "usb").
 phycmd-core = { path = "crates/phycmd-core", features = ["usb", "test-mock"] }
+# Lightweight sync HTTP client for the bench_loopback test suite.
+# Default TLS features off: the tests talk to a local http:// URL.
+ureq = { version = "2", default-features = false, features = ["json"] }
 
 [profile.release]
 opt-level = 3

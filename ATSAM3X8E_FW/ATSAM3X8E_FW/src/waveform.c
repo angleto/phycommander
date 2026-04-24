@@ -1334,6 +1334,16 @@ static bool pwm_hw_play_tc(uint8_t idx, uint32_t freq_hz, uint16_t duty_x10)
 	 * at duty=1 the SET event fires immediately (RA/RB = 0) and the
 	 * pin stays HIGH for the rest of the period. */
 	uint32_t match_reg = rc - duty_reg;   /* = rc when duty=0, 0 when duty=1 */
+	/* SAM3X TC quirk: after SWTRG the counter is reset to 0, but the
+	 * RA/RB compare-match does NOT fire on that initial 0. It only
+	 * fires on transitions the counter reaches by incrementing. So a
+	 * literal match_reg=0 would leave the pin stuck LOW for the whole
+	 * period at duty=1, which is exactly the bench_loopback failure on
+	 * pwm4 at duty=1 (commit 35ae77d's note about "SET fires
+	 * immediately" turns out to be wishful thinking on this silicon).
+	 * Push the match to 1 tick after reset so duty≈1 produces
+	 * >99.9% high with a single-tick LOW per period. */
+	if (match_reg == 0) match_reg = 1;
 	if (use_tiob) {
 		cmr |= TC_CMR_BCPB_SET | TC_CMR_BCPC_CLEAR | TC_CMR_BSWTRG_CLEAR;
 		tc->TC_CHANNEL[local_ch].TC_CMR = cmr;

@@ -1171,11 +1171,18 @@ static void pwm_hw_init(void)
 {
 	if (s_pwm_init_done) return;
 
-	/* Route PC21..PC24 to PWM peripheral B. Disable PIO control
-	 * (give the pin to the peripheral) and select peripheral B. */
+	/* Peripheral B select for PC21..PC24 is programmed now (safe,
+	 * doesn't touch PIO_PDR so the pin stays under PIO control),
+	 * and the PIO routing is deferred to pwm_hw_claim_pin(), called
+	 * from pwm_hw_play() for the specific channel being enabled.
+	 * Releasing all four pads at init time made starting one PWM
+	 * channel visibly disturb ADC readings on pins the user had
+	 * wired to the other three pads (PWM peripheral's "channel
+	 * disabled" output state is not a clean high-Z — it toggles
+	 * with internal activity and couples through ground to the
+	 * nearby ADC inputs). */
 	pmc_enable_periph_clk(ID_PIOC);
 	uint32_t mask = (1u << 21) | (1u << 22) | (1u << 23) | (1u << 24);
-	PIOC->PIO_PDR  = mask;                /* pin release to peripheral */
 	PIOC->PIO_ABSR |= mask;               /* B peripheral select       */
 	PIOC->PIO_PUDR = mask;                /* no pull-up                */
 
@@ -1199,6 +1206,16 @@ static void pwm_hw_init(void)
 	}
 
 	s_pwm_init_done = 1;
+}
+
+/* Hand a specific PC2{1..4} pad over to the PWM peripheral. Idempotent.
+ * Called from pwm_hw_play() for each channel's first enable so pads
+ * belonging to channels that never start stay in their PIO-default
+ * state and do not bleed noise into nearby ADC pins. */
+static void pwm_hw_claim_pin(uint8_t pio_pin)
+{
+	uint32_t mask = 1u << pio_pin;
+	PIOC->PIO_PDR  = mask;   /* PIO gives the pad to peripheral B */
 }
 
 /* Pick a prescaler (PREA) that keeps the period in [256, 65535] —
@@ -1246,6 +1263,10 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 		PWM->PWM_CH_NUM[ch].PWM_CPRD = cprd;
 		PWM->PWM_CH_NUM[ch].PWM_CDTY = cdty;
 		pwm_channel_enable(PWM, 1u << ch);
+		/* Hand the pad to the PWM peripheral only AFTER the channel
+		 * is configured and enabled, so the pin never sees a
+		 * disabled-PWM output drive. */
+		pwm_hw_claim_pin(s_pwm[idx].pio_pin);
 	} else {
 		/* Live update: use the update registers so PWM applies the
 		 * new CPRD/CDTY synchronously at the next period boundary. */

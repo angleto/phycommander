@@ -1391,7 +1391,18 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 
 	uint32_t cpre, cprd;
 	pwm_hw_pick_clock(freq_hz, &cpre, &cprd);
-	uint32_t cdty = (cprd * duty_x10) / 1000u;
+
+	/* Duty inversion for the PWML-routed pads (PC21..PC24). On SAM3X
+	 * those Arduino-Due digital pins are peripheral-B mapped to
+	 * PWML4..PWML7 — the LOW-side output, which is always the
+	 * complement of the PWMHx waveform with CPOL=1. Without inversion
+	 * a user commanding duty=0 sees the pin stuck HIGH (PWMH always
+	 * LOW → PWML always HIGH), and vice versa for duty=1. Flip the
+	 * cdty calculation so the caller's "duty = fraction of HIGH time
+	 * on the physical pin" contract holds on the silkscreen side. */
+	uint16_t hw_duty_x10 = 1000u - duty_x10;
+	if (duty_x10 > 1000u) hw_duty_x10 = 0;
+	uint32_t cdty = (cprd * hw_duty_x10) / 1000u;
 	if (cdty > cprd) cdty = cprd;
 
 	uint32_t ch = s_pwm[idx].pwm_channel;

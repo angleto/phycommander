@@ -1318,17 +1318,30 @@ static bool pwm_hw_play_tc(uint8_t idx, uint32_t freq_hz, uint16_t duty_x10)
 	             | TC_CMR_WAVE
 	             | TC_CMR_WAVSEL_UP_RC
 	             | TC_CMR_EEVT_XC0;
+
+	/* Edge-aligned PWM with user-intuitive "duty = HIGH fraction" on
+	 * the silkscreen pin: the output starts LOW at every period, goes
+	 * HIGH at the RA/RB match (= `rc - duty_reg` into the period), and
+	 * returns LOW at the RC match (= end of period). So `duty_reg`
+	 * here is the count of HIGH ticks per period, and the register
+	 * holds RC minus that count.
+	 *
+	 * The previous revision used the opposite pairing (start HIGH,
+	 * CLEAR at RB, SET at RC) which broke at the duty=0 / duty=1
+	 * edges because RB=0 and RB=RC clash with the period-reset match.
+	 * The SET-at-RB / CLEAR-at-RC convention handles both extremes
+	 * cleanly: at duty=0 the SET event never fires (RA/RB = RC), and
+	 * at duty=1 the SET event fires immediately (RA/RB = 0) and the
+	 * pin stays HIGH for the rest of the period. */
+	uint32_t match_reg = rc - duty_reg;   /* = rc when duty=0, 0 when duty=1 */
 	if (use_tiob) {
-		/* RB defines the duty match; TIOB clears at RB, sets at RC.
-		 * BSWTRG=SET raises the pin on a software trigger so the
-		 * first period starts with a clean HIGH level. */
-		cmr |= TC_CMR_BCPB_CLEAR | TC_CMR_BCPC_SET | TC_CMR_BSWTRG_SET;
+		cmr |= TC_CMR_BCPB_SET | TC_CMR_BCPC_CLEAR | TC_CMR_BSWTRG_CLEAR;
 		tc->TC_CHANNEL[local_ch].TC_CMR = cmr;
-		tc->TC_CHANNEL[local_ch].TC_RB  = duty_reg;
+		tc->TC_CHANNEL[local_ch].TC_RB  = match_reg;
 	} else {
-		cmr |= TC_CMR_ACPA_CLEAR | TC_CMR_ACPC_SET | TC_CMR_ASWTRG_SET;
+		cmr |= TC_CMR_ACPA_SET | TC_CMR_ACPC_CLEAR | TC_CMR_ASWTRG_CLEAR;
 		tc->TC_CHANNEL[local_ch].TC_CMR = cmr;
-		tc->TC_CHANNEL[local_ch].TC_RA  = duty_reg;
+		tc->TC_CHANNEL[local_ch].TC_RA  = match_reg;
 	}
 	tc->TC_CHANNEL[local_ch].TC_RC = rc;
 

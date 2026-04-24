@@ -411,7 +411,7 @@ static void adc_setup(void)
 	 * single-shot we are effectively starting the ADC from idle
 	 * every 125 µs. Without it the first one or two samples of
 	 * each cycle are bogus. */
-	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
+	adc_init(ADC, sysclk_get_peripheral_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
 	/* Enable AD0..AD7. */
@@ -808,7 +808,7 @@ int main(void)
 	board_init();
 
 	/* SysTick at 1 kHz for uptime_ms */
-	SysTick_Config(sysclk_get_main_hz() / 1000);
+	SysTick_Config(sysclk_get_cpu_hz() / 1000);
 
 	/* DWT cycle counter — used by apply_command_frame to fill
 	 * status.loop_time_us. No-op on production runs since the

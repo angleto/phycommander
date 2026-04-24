@@ -298,7 +298,7 @@ static void tc_dac_setup(uint32_t trigger_hz)
 	/* TIMER_CLOCK1 = MCK / 2 = 42 MHz on the SAM3X8E.
 	 * TIOA generates a 50%-duty square wave at trigger_hz so each
 	 * rising edge produces exactly one DACC conversion. */
-	uint32_t tc_clock = sysclk_get_main_hz() / 2u;
+	uint32_t tc_clock = sysclk_get_peripheral_hz() / 2u;
 	uint32_t rc = tc_clock / trigger_hz;   /* counter wraps every RC ticks → trigger_hz */
 	if (rc < 4u)        rc = 4u;
 	if (rc > 0xFFFFu)   rc = 0xFFFFu;
@@ -1192,9 +1192,9 @@ static void pwm_hw_init(void)
 	/* Initialise with CLKA = MCK (no prescaling). Per-channel CMR
 	 * is configured later with a dynamic CPRE. CLKB left unused. */
 	pwm_clock_t clock_cfg = {
-		.ul_clka = sysclk_get_main_hz(),
+		.ul_clka = sysclk_get_peripheral_hz(),
 		.ul_clkb = 0,
-		.ul_mck  = sysclk_get_main_hz(),
+		.ul_mck  = sysclk_get_peripheral_hz(),
 	};
 	pwm_init(PWM, &clock_cfg);
 
@@ -1223,7 +1223,7 @@ static void pwm_hw_claim_pin(uint8_t pio_pin)
  * the requested frequency. Returns actual CPRD + CPRE bits. */
 static void pwm_hw_pick_clock(uint32_t freq_hz, uint32_t *out_cpre, uint32_t *out_cprd)
 {
-	uint32_t mck = sysclk_get_main_hz();
+	uint32_t mck = sysclk_get_peripheral_hz();
 	if (freq_hz == 0) freq_hz = 1;
 	uint32_t cpre;
 	uint32_t cprd;
@@ -1258,11 +1258,11 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 	 * registers so the change is picked up at the next period boundary
 	 * without disabling. */
 	if (!s_pwm[idx].active) {
-		pwm_channel_disable(PWM, 1u << ch);
+		pwm_channel_disable(PWM, ch);
 		PWM->PWM_CH_NUM[ch].PWM_CMR = (cpre & PWM_CMR_CPRE_Msk) | PWM_CMR_CPOL;
 		PWM->PWM_CH_NUM[ch].PWM_CPRD = cprd;
 		PWM->PWM_CH_NUM[ch].PWM_CDTY = cdty;
-		pwm_channel_enable(PWM, 1u << ch);
+		pwm_channel_enable(PWM, ch);
 		/* Hand the pad to the PWM peripheral only AFTER the channel
 		 * is configured and enabled, so the pin never sees a
 		 * disabled-PWM output drive. */
@@ -1275,11 +1275,11 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 		/* If cpre changed we need a full restart — rare, but handle it. */
 		uint32_t cur_cpre = PWM->PWM_CH_NUM[ch].PWM_CMR & PWM_CMR_CPRE_Msk;
 		if (cur_cpre != cpre) {
-			pwm_channel_disable(PWM, 1u << ch);
+			pwm_channel_disable(PWM, ch);
 			PWM->PWM_CH_NUM[ch].PWM_CMR = (cpre & PWM_CMR_CPRE_Msk) | PWM_CMR_CPOL;
 			PWM->PWM_CH_NUM[ch].PWM_CPRD = cprd;
 			PWM->PWM_CH_NUM[ch].PWM_CDTY = cdty;
-			pwm_channel_enable(PWM, 1u << ch);
+			pwm_channel_enable(PWM, ch);
 		}
 	}
 
@@ -1294,7 +1294,7 @@ static void pwm_hw_stop(uint8_t idx)
 	if (idx >= WAVE_NUM_PWM_ACTIVE) return;
 	if (!s_pwm[idx].active) return;
 	uint32_t ch = s_pwm[idx].pwm_channel;
-	pwm_channel_disable(PWM, 1u << ch);
+	pwm_channel_disable(PWM, ch);
 	s_pwm[idx].active = 0;
 	/* Park the pin low by giving it back to PIO and clearing it. */
 	uint32_t mask = 1u << s_pwm[idx].pio_pin;
@@ -1708,7 +1708,7 @@ bool waveform_set_adc_rate(uint32_t rate_hz)
 	 * channels (PDC RX continues to fill g_adc_buf as before). */
 	pmc_enable_periph_clk(ID_TC0);   /* idempotent */
 
-	uint32_t tc_clock = sysclk_get_main_hz() / 2u;     /* TIMER_CLOCK1 = MCK/2 */
+	uint32_t tc_clock = sysclk_get_peripheral_hz() / 2u;     /* TIMER_CLOCK1 = MCK/2 */
 	uint32_t rc = tc_clock / rate_hz;
 	if (rc < 4u)        rc = 4u;
 	if (rc > 0xFFFFu)   rc = 0xFFFFu;

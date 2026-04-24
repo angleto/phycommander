@@ -808,17 +808,19 @@ const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9
 const gpioOut=document.getElementById('gpioOutputs'), gpioIn=document.getElementById('gpioInputs'), adcDisp=document.getElementById('adcDisplay');
 for(let i=0;i<16;i++){const b=document.createElement('button');b.className='gpio-button';b.textContent=i;b.onclick=()=>{cmd.digital_out^=(1<<i);updateGpioOut();sendCmd()};gpioOut.appendChild(b);}
 for(let i=0;i<16;i++){const d=document.createElement('div');d.className='gpio-button input';d.textContent=i;gpioIn.appendChild(d);}
-// ADC cells cover Due pins A1..A8 (8 channels; Due A0 is skipped
-// because the bench chip's AD7 is stuck). The firmware now reorders
-// its `status.adc[]` array so that `adc[i]` IS the reading on Due
-// A(i+1) — `adc[0]` = A1, `adc[7]` = A8 — so this panel is a direct
-// 1:1 mapping.
-for (let i = 0; i < 8; i++) {
+// ADC cells cover 8 Due pins: A1..A6 + A10 + A11. A0 (AD7),
+// A7 (AD0, unused by current harness), A8 (AD10) and A9 (AD11)
+// are skipped — AD7/AD10/AD11 are stuck silicon on the bench
+// chip; A7 is simply free for other purposes in the current
+// wiring. The firmware enables AD1..AD6 + AD12 + AD13 and the
+// adc_slot_map[] inside build_status_frame reorders them into
+// the user-intuitive order below.
+const ADC_LABELS = ['A1','A2','A3','A4','A5','A6','A10','A11'];
+ADC_LABELS.forEach((ai, i) => {
     const c=document.createElement('div');c.className='adc-ch';
-    const ai = i + 1;
-    c.innerHTML=`<div class="lbl">A${ai}</div><div class="val" id="a${ai}">0</div><div class="bar" id="ab${ai}"></div>`;
+    c.innerHTML=`<div class="lbl">${ai}</div><div class="val" id="a${ai}">0</div><div class="bar" id="ab${ai}"></div>`;
     adcDisp.appendChild(c);
-}
+});
 
 // DAC sliders — streaming via Command frame (REST /api/dac/set auto-
 // sets dac_enable; the oninput below mirrors into `cmd` + sendCmd()
@@ -873,7 +875,7 @@ for(let i=0;i<8;i++){
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=i<2;
     cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
-    l.appendChild(cb);l.appendChild(document.createTextNode('A'+(i+1)));scopeAdcEl.appendChild(l);
+    l.appendChild(cb);l.appendChild(document.createTextNode(ADC_LABELS[i]));scopeAdcEl.appendChild(l);
 }
 // DAC (Out) — indices 8-9
 for(let i=8;i<10;i++){
@@ -1009,13 +1011,13 @@ function connectWs(){
 }
 function updateStatus(s){
     updateGpioIn(s.digital_in);
-    // Firmware already reorders adc[0..7] to Due A1..A8.
-    for (let i = 0; i < 8; i++) {
-        const ai = i + 1;
+    // Firmware reorders adc[0..7] to Due A1..A7 + A9 (A8 is skipped
+    // because AD10 is silicon-faulted on the bench chip).
+    ADC_LABELS.forEach((ai, i) => {
         const v = s.adc[i];
         document.getElementById('a'+ai).textContent = v;
         document.getElementById('ab'+ai).style.width = (v/4095*100).toFixed(1)+'%';
-    }
+    });
     document.getElementById('uptimeValue').textContent=fmtUp(s.uptime_ms);
     document.getElementById('loopTimeValue').textContent=s.loop_time_us+'us';
     document.getElementById('errorCountValue').textContent=s.error_count;
@@ -1113,7 +1115,7 @@ const frameA=document.getElementById('scopeAnalogFrame'), frameP=document.getEle
 
 // Helpers: split scopeAnalogCh into ADC+DAC (0-9) vs PWM (10-11).
 function chArr(ch){return ch<8?scopeBuf.adc[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10]||[];}
-function chLabel(ch){return ch<8?'A'+(ch+1):ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
+function chLabel(ch){return ch<8?ADC_LABELS[ch]:ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
 function chMax(ch){return ch<10?4095:65535;}
 
 // Render one analog-style trace plot. Returns true if anything was drawn.

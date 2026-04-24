@@ -65,31 +65,33 @@ the SAM3X calls AD5. Keep the three name spaces straight:
 
 | Due label | SAM3X pin | SAM3X AD | `status.adc[]` | Status |
 |---|---|---|---|---|
-| `A0` | PA16 | AD7 | — | ❌ Excluded — AD7 stuck at 0x800 on bench chip (analog-mux fault). Not surfaced in the status frame |
+| `A0` | PA16 | AD7 | — | ❌ Excluded — AD7 stuck at 0x800 on bench chip |
 | `A1` | PA24 | AD6 | `adc[0]` | ✅ Active |
 | `A2` | PA23 | AD5 | `adc[1]` | ✅ Active |
 | `A3` | PA22 | AD4 | `adc[2]` | ✅ Active |
 | `A4` | PA6  | AD3 | `adc[3]` | ✅ Active |
 | `A5` | PA4  | AD2 | `adc[4]` | ✅ Active |
 | `A6` | PA3  | AD1 | `adc[5]` | ✅ Active |
-| `A7` | PA2  | AD0 | `adc[6]` | ✅ Active |
-| `A8` | PB17 | AD10 | `adc[7]` | ✅ Active — fills the slot AD7 would have occupied; see `adc_setup` in main.c |
-| `A9` | PB18 | AD11 | — | ⚠️ Reserved |
-| `A10` | PB19 | AD12 | — | ⚠️ Reserved |
-| `A11` | PB20 | AD13 | — | ⚠️ Reserved |
+| `A7` | PA2  | AD0 | — | ⚠️ Not wired in current harness — excluded from the 8-slot block |
+| `A8` | PB17 | AD10 | — | ❌ Excluded — AD10 stuck at 0x800 on bench chip |
+| `A9` | PB18 | AD11 | — | ❌ Excluded — AD11 stuck at 0x800 on bench chip |
+| `A10` | PB19 | AD12 | `adc[6]` | ✅ Active |
+| `A11` | PB20 | AD13 | `adc[7]` | ✅ Active |
 
-> **API numbering is intuitive**: `status.adc[0]` is the first
-> working analog pin (Due `A1`); `status.adc[i]` is Due `A(i+1)`
-> for i=0..7. The firmware reorders the raw PDC buffer (which is
-> still indexed by SAM3X AD channel, AD0..AD6 + AD10) into this
-> user-facing layout in `build_status_frame` — see the
-> `adc_slot_map[]` there. The dashboard's ADC panel labels the 8
-> cells `A1..A8` and reads them directly by `adc[i]` index.
+> **API numbering is intuitive**: `status.adc[i]` follows the physical
+> wiring block A1, A2, A3, A4, A5, A6, A10, A11 in that order. A0, A7,
+> A8, A9 are skipped — AD7/AD10/AD11 are silicon-faulted on the bench
+> chip (all three read a stuck 0x800), and A7 is simply free in the
+> current harness. The firmware enables AD1..AD6 + AD12 + AD13 and
+> reorders the PDC buffer in `build_status_frame` — see
+> `adc_slot_map[]`. The dashboard's ADC panel labels the 8 cells
+> `A1..A6, A10, A11` to match.
 >
-> To revert on a fresh chip where AD7 works: in `adc_setup` drop
-> the `adc_enable_channel(10)` call and put the for-loop back to
-> `ch = 0..7`; in `build_status_frame` delete the `adc_slot_map`
-> reorder and go back to `stat->adc[i] = g_adc_buf[adc_idx][i]`.
+> To revert on a fresh chip where all ADC channels work: in
+> `adc_setup` drop the `adc_enable_channel(12/13)` calls and put the
+> for-loop back to `ch = 0..7`; in `build_status_frame` delete the
+> `adc_slot_map` reorder and go back to
+> `stat->adc[i] = g_adc_buf[adc_idx][i]`.
 
 Sampling is **SOF-synchronous** (125 µs per cycle at HS, one conversion
 cycle per USB microframe). See `main.c::user_callback_sof_action`.

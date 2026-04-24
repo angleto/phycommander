@@ -78,16 +78,23 @@ Hardware: SAM3X PWM peripheral, PWMH4–PWMH7. CPOL=1, carrier 1 kHz
 for manual streaming, user-selectable frequency for `fngen` mode.
 Duty = 0 → pin LOW, duty = max → pin HIGH (standard convention).
 
-| Wire field | Due label | SAM3X pin | Peripheral | Status |
-|---|---|---|---|---|
-| `pwm[0]` (streaming) / fngen `pwm0` | `D9` | PC21 | PWMH4 | ✅ Active |
-| `pwm[1]` (streaming) / fngen `pwm1` | `D8` | PC22 | PWMH5 | ✅ Active |
-| fngen `pwm2` | `D7` | PC23 | PWMH6 | ✅ Active |
-| fngen `pwm3` | `D6` | PC24 | PWMH7 | ✅ Active |
+| Wire field | Due label | Silkscreen label | SAM3X pin | Peripheral | Status |
+|---|---|---|---|---|---|
+| `pwm[0]` (streaming) / fngen `pwm0` | `D9` | `PWM9` | PC21 | PWMH4 | ✅ Active |
+| `pwm[1]` (streaming) / fngen `pwm1` | `D8` | `PWM8` | PC22 | PWMH5 | ✅ Active |
+| fngen `pwm2` | `D7` | `PWM7` | PC23 | PWMH6 | ✅ Active |
+| fngen `pwm3` | `D6` | `PWM6` | PC24 | PWMH7 | ✅ Active |
 
 > The 64-byte wire frame carries two PWM slots (`pwm0`, `pwm1`) for
 > streaming manual duty. `pwm2` and `pwm3` are generator-only —
 > drive them via `POST /api/fngen/play_builtin/pwm{2,3}`.
+>
+> ⚠️ **Naming gotcha.** The Arduino Due silkscreens each PWM pin with
+> the D-pin number (`PWM2`..`PWM13` for `D2`..`D13`), NOT with a
+> sequential 0..3 index. Firmware `pwm[0]` therefore lands on the pin
+> the board calls `PWM9`, not `PWM2`. When someone says "PWM0" on
+> hardware they usually mean silkscreen `PWM2` on `D2` — map back to
+> our index space before wiring.
 
 ### 3.2 Planned extension to 8 channels (D2–D9)
 

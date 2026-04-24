@@ -575,6 +575,21 @@ static void dac_setup(void)
 	dacc_set_writeprotect(DACC, 0);
 	dacc_set_transfer_mode(DACC, 1);
 	dacc_enable_flexible_selection(DACC);
+
+	/* DACC_MR.REFRESH: "Refresh Period = 1024 * REFRESH / DACC Clock".
+	 * With REFRESH=0 the chip's internal refresh is DISABLED and the
+	 * analog output voltage starts decaying ~20 µs after the last
+	 * conversion — the manual write path here lands every ~1 ms so
+	 * the pin would sit mostly at its decayed idle value between
+	 * writes. Set REFRESH=16 → 1024*16 / 42 MHz ≈ 390 µs which is
+	 * fast enough to keep the voltage flat. (Datasheet §44.6.7.) */
+	{
+		uint32_t mr = DACC->DACC_MR;
+		mr &= ~DACC_MR_REFRESH_Msk;
+		mr |=  DACC_MR_REFRESH(16);
+		DACC->DACC_MR = mr;
+	}
+
 	DACC->DACC_CHER = 3;  /* enable channels 0 and 1 */
 }
 
@@ -663,35 +678,14 @@ void apply_command_frame(const uint8_t *rx_buf)
 
 		if (!gen0 && !gen1) {
 			/* Both channels in MANUAL mode and the PDC is idle.
-			 *
-			 * dac_setup configures DACC_MR.WORD=1 + TAG=1. In
-			 * that mode the DACC interprets each 32-bit CDR
-			 * write as TWO packed samples — not one. From the
-			 * SAM3X ASF driver doc (dacc.c §enable_flexible):
-			 *
-			 *   "if the WORD field is set, the 2 bits DACC_CDR
-			 *    [13:12] are used for channel selection of the
-			 *    first data and the 2 bits DACC_CDR[29:28] for
-			 *    channel selection of the second data."
-			 *
-			 * Layout:
-			 *   bits  [11:0]  = sample1 value
+			 * In DACC WORD=1 + flexible selection the 32-bit
+			 * write encodes TWO samples:
+			 *   bits [11:0]  = sample1 value
 			 *   bits [13:12] = sample1 CHTAG
 			 *   bits [27:16] = sample2 value
 			 *   bits [29:28] = sample2 CHTAG
-			 *
-			 * An earlier revision did two sequential single-
-			 * sample writes with a TXRDY spin in between — that
-			 * looked right on paper but in WORD=1 every write
-			 * actually carries a phantom second sample. The
-			 * first write sent (v0, CH0) + (0, CH0); the second
-			 * sent (v1, CH1) + (0, CH0); net effect: CH0 stuck
-			 * bouncing v0 ↔ 0 at the command rate while CH1
-			 * (the "last written" channel) looked healthy. DAC0
-			 * read ~0.94 V on a multimeter regardless of the
-			 * commanded value; DAC1 tracked correctly. Packing
-			 * both samples into one word makes the two-channel
-			 * intent match what the DACC actually interprets. */
+			 * Packing v0 at low + v1 at high gives one-write
+			 * update of both channels. */
 			const uint32_t word =
 			      ((uint32_t)(v0 & 0x0FFFu))           /* sample 1 data */
 			    | (0u << 12)                            /* sample 1 CHTAG = CH0 */

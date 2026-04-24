@@ -188,12 +188,23 @@ static volatile pulse_state_t s_pulse[MAX_PULSE_TRIG_SLOTS];
  * complementary / phase-shifted modes. */
 typedef struct {
 	uint8_t  active;          /* 1 iff this PWM channel is running */
-	uint8_t  pwm_channel;     /* hardware PWM channel 4..7 (see map above) */
-	uint8_t  pio_pin;         /* PIOC pin index 21..24 */
+	uint8_t  pwm_channel;     /* PWM peripheral channel 4..7 (unused when tc != NULL) */
+	Pio     *pio;             /* PIO controller of the output pad */
+	uint8_t  pio_pin;         /* bit position within the PIO controller */
+	Tc      *tc;              /* NULL → PWM peripheral, else Timer Counter peripheral */
+	uint8_t  tc_local_ch;     /* 0..2 local channel inside the TC block (if tc != NULL) */
+	uint8_t  tc_pmc_id;       /* PMC peripheral ID for the TC local channel */
+	uint8_t  tc_use_tiob;     /* 0 → drive TIOA via RA/ACPA, 1 → drive TIOB via RB/BCPB */
 	uint32_t freq_mHz;
 	uint16_t duty_x10;
 } pwm_state_t;
-#define WAVE_NUM_PWM_ACTIVE 4u
+/* Indices 0..3 use the PWM peripheral (PWMH4..7 or PWML4..7 depending on
+ * which pad was routed — see pwm_hw_init). Indices 4..5 are TC-waveform
+ * outputs on PC29 (TIOB7, D10) and PD7 (TIOA8, D11), added so the user
+ * can wire Due pins D10/D11 as PWM without a full dispatch refactor.
+ * PWM12 (D12) / PWM13 (D13) deliberately NOT added: D13 stays as the
+ * heartbeat LED and D12 is unused for now. */
+#define WAVE_NUM_PWM_ACTIVE 6u
 static volatile pwm_state_t s_pwm[WAVE_NUM_PWM_ACTIVE];
 /* Tracks whether channel N was started by the MANUAL streaming path
  * (waveform_set_pwm_manual) versus the generator path (play_builtin
@@ -1198,24 +1209,151 @@ static void pwm_hw_init(void)
 	};
 	pwm_init(PWM, &clock_cfg);
 
-	/* Populate channel map for PWM0..3. */
-	for (uint8_t i = 0; i < WAVE_NUM_PWM_ACTIVE; i++) {
-		s_pwm[i].pwm_channel = 4 + i;     /* PWMH4..7 */
+	/* Populate channel map for PWM0..3 (PWM peripheral on PIOC21..24). */
+	for (uint8_t i = 0; i < 4u; i++) {
+		s_pwm[i].pwm_channel = 4 + i;     /* PWMH/L 4..7 */
+		s_pwm[i].pio          = PIOC;
 		s_pwm[i].pio_pin     = 21 + i;    /* PIOC21..24 */
+		s_pwm[i].tc          = NULL;      /* PWM peripheral path */
+		s_pwm[i].tc_local_ch = 0;
+		s_pwm[i].tc_pmc_id   = 0;
+		s_pwm[i].tc_use_tiob = 0;
 		s_pwm[i].active      = 0;
 	}
+
+	/* PWM4 → Due D10 → PC29, peripheral B = TIOB7 = TC2 block, local
+	 * channel 1. PMC ID 34 (= ID_TC7). */
+	s_pwm[4].pwm_channel = 0;
+	s_pwm[4].pio         = PIOC;
+	s_pwm[4].pio_pin     = 29;
+	s_pwm[4].tc          = TC2;
+	s_pwm[4].tc_local_ch = 1;
+	s_pwm[4].tc_pmc_id   = ID_TC7;
+	s_pwm[4].tc_use_tiob = 1;
+	s_pwm[4].active      = 0;
+
+	/* PWM5 → Due D11 → PD7, peripheral B = TIOA8 = TC2 block, local
+	 * channel 2. PMC ID 35 (= ID_TC8). Note: PIOD, not PIOC. */
+	pmc_enable_periph_clk(ID_PIOD);
+	s_pwm[5].pwm_channel = 0;
+	s_pwm[5].pio         = PIOD;
+	s_pwm[5].pio_pin     = 7;
+	s_pwm[5].tc          = TC2;
+	s_pwm[5].tc_local_ch = 2;
+	s_pwm[5].tc_pmc_id   = ID_TC8;
+	s_pwm[5].tc_use_tiob = 0;
+	s_pwm[5].active      = 0;
+
+	/* Pre-configure ABSR for the two TC pads (peripheral B), pull-ups
+	 * off. PIO_PDR is deferred to pwm_hw_claim_pin so the pads stay
+	 * under PIO until their channel is actually driven. */
+	PIOC->PIO_ABSR |= (1u << 29);
+	PIOC->PIO_PUDR  = (1u << 29);
+	PIOD->PIO_ABSR |= (1u << 7);
+	PIOD->PIO_PUDR  = (1u << 7);
 
 	s_pwm_init_done = 1;
 }
 
-/* Hand a specific PC2{1..4} pad over to the PWM peripheral. Idempotent.
- * Called from pwm_hw_play() for each channel's first enable so pads
- * belonging to channels that never start stay in their PIO-default
- * state and do not bleed noise into nearby ADC pins. */
-static void pwm_hw_claim_pin(uint8_t pio_pin)
+/* Hand the specific PIO pad for a PWM slot over to its peripheral.
+ * Idempotent. Called from pwm_hw_play() for each channel's first
+ * enable so pads belonging to channels that never start stay in their
+ * PIO-default state and do not bleed noise into nearby ADC pins. */
+static void pwm_hw_claim_pin(uint8_t idx)
 {
-	uint32_t mask = 1u << pio_pin;
-	PIOC->PIO_PDR  = mask;   /* PIO gives the pad to peripheral B */
+	uint32_t mask = 1u << s_pwm[idx].pio_pin;
+	s_pwm[idx].pio->PIO_PDR = mask;   /* PIO releases the pad to its peripheral */
+}
+
+/* Pick a TC clock (TCCLKS value) and RC period for the requested
+ * output frequency. Returns TCCLKS in `*out_tcclks` and RC in `*out_rc`.
+ * TIMER_CLOCK1..4 are MCK/{2,8,32,128}; SLCK is ignored. */
+static void pwm_hw_tc_pick_clock(uint32_t freq_hz, uint32_t *out_tcclks, uint32_t *out_rc)
+{
+	static const uint8_t  dividers[]  = {2u, 8u, 32u, 128u};
+	static const uint8_t  tcclks_vals[] = {0u, 1u, 2u, 3u};
+	uint32_t mck = sysclk_get_peripheral_hz();
+	if (freq_hz == 0u) freq_hz = 1u;
+	for (unsigned i = 0; i < sizeof(dividers); i++) {
+		uint32_t clk = mck / dividers[i];
+		uint32_t rc  = clk / freq_hz;
+		if (rc >= 4u && rc <= 65535u) {
+			*out_tcclks = tcclks_vals[i];
+			*out_rc     = rc;
+			return;
+		}
+	}
+	/* Fallback: slowest clock, clipped RC. */
+	*out_tcclks = 3u;
+	uint32_t clk = mck / 128u;
+	uint32_t rc  = clk / freq_hz;
+	if (rc < 4u) rc = 4u;
+	if (rc > 65535u) rc = 65535u;
+	*out_rc = rc;
+}
+
+/* Configure a single TC-based PWM channel. Writes CMR + RA/RB + RC
+ * then issues a software trigger to kick the counter into motion.
+ * Called from pwm_hw_play() when s_pwm[idx].tc != NULL. */
+static bool pwm_hw_play_tc(uint8_t idx, uint32_t freq_hz, uint16_t duty_x10)
+{
+	Tc *tc = s_pwm[idx].tc;
+	uint8_t local_ch = s_pwm[idx].tc_local_ch;
+	bool use_tiob = (s_pwm[idx].tc_use_tiob != 0);
+
+	pmc_enable_periph_clk(s_pwm[idx].tc_pmc_id);
+
+	uint32_t tcclks, rc;
+	pwm_hw_tc_pick_clock(freq_hz, &tcclks, &rc);
+	uint32_t duty_reg = ((uint32_t)duty_x10 * rc) / 1000u;
+	if (duty_reg > rc) duty_reg = rc;
+
+	/* EEVT=XC0 (not the default TIOB) so TIOB is free to be used as
+	 * an OUTPUT — with EEVT=TIOB the peripheral configures TIOB as
+	 * the external-event INPUT and the BCPB/BCPC rules don't drive
+	 * the pin. Observed on the bench: without this, commanding D10
+	 * (TIOB7) at 1 kHz / 50 % actually produced ~50 kHz / ~97 %
+	 * because TIOB was half-input, half-output. */
+	uint32_t cmr = (tcclks & 0x07u)
+	             | TC_CMR_WAVE
+	             | TC_CMR_WAVSEL_UP_RC
+	             | TC_CMR_EEVT_XC0;
+	if (use_tiob) {
+		/* RB defines the duty match; TIOB clears at RB, sets at RC.
+		 * BSWTRG=SET raises the pin on a software trigger so the
+		 * first period starts with a clean HIGH level. */
+		cmr |= TC_CMR_BCPB_CLEAR | TC_CMR_BCPC_SET | TC_CMR_BSWTRG_SET;
+		tc->TC_CHANNEL[local_ch].TC_CMR = cmr;
+		tc->TC_CHANNEL[local_ch].TC_RB  = duty_reg;
+	} else {
+		cmr |= TC_CMR_ACPA_CLEAR | TC_CMR_ACPC_SET | TC_CMR_ASWTRG_SET;
+		tc->TC_CHANNEL[local_ch].TC_CMR = cmr;
+		tc->TC_CHANNEL[local_ch].TC_RA  = duty_reg;
+	}
+	tc->TC_CHANNEL[local_ch].TC_RC = rc;
+
+	/* CLKEN + SWTRG: enable clock and reset counter so the new period
+	 * starts cleanly. */
+	tc->TC_CHANNEL[local_ch].TC_CCR = TC_CCR_CLKEN | TC_CCR_SWTRG;
+
+	s_pwm[idx].freq_mHz = freq_hz * 1000u;
+	s_pwm[idx].duty_x10 = duty_x10;
+	s_pwm[idx].active   = 1;
+	pwm_hw_claim_pin(idx);
+	return true;
+}
+
+/* Stop a TC-based PWM channel and park its pin LOW via PIO. */
+static void pwm_hw_stop_tc(uint8_t idx)
+{
+	Tc *tc = s_pwm[idx].tc;
+	uint8_t local_ch = s_pwm[idx].tc_local_ch;
+	tc->TC_CHANNEL[local_ch].TC_CCR = TC_CCR_CLKDIS;
+	s_pwm[idx].active = 0;
+	uint32_t mask = 1u << s_pwm[idx].pio_pin;
+	s_pwm[idx].pio->PIO_CODR = mask;
+	s_pwm[idx].pio->PIO_OER  = mask;
+	s_pwm[idx].pio->PIO_PER  = mask;
 }
 
 /* Pick a prescaler (PREA) that keeps the period in [256, 65535] —
@@ -1246,6 +1384,11 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 	uint32_t freq_hz = (freq_mHz + 500u) / 1000u;
 	if (freq_hz == 0) freq_hz = 1;
 
+	/* TC-backed PWM (idx 4+5 → D10, D11) has its own register path. */
+	if (s_pwm[idx].tc != NULL) {
+		return pwm_hw_play_tc(idx, freq_hz, duty_x10);
+	}
+
 	uint32_t cpre, cprd;
 	pwm_hw_pick_clock(freq_hz, &cpre, &cprd);
 	uint32_t cdty = (cprd * duty_x10) / 1000u;
@@ -1266,7 +1409,7 @@ static bool pwm_hw_play(uint8_t idx, uint32_t freq_mHz, uint16_t duty_x10)
 		/* Hand the pad to the PWM peripheral only AFTER the channel
 		 * is configured and enabled, so the pin never sees a
 		 * disabled-PWM output drive. */
-		pwm_hw_claim_pin(s_pwm[idx].pio_pin);
+		pwm_hw_claim_pin(idx);
 	} else {
 		/* Live update: use the update registers so PWM applies the
 		 * new CPRD/CDTY synchronously at the next period boundary. */
@@ -1293,14 +1436,18 @@ static void pwm_hw_stop(uint8_t idx)
 {
 	if (idx >= WAVE_NUM_PWM_ACTIVE) return;
 	if (!s_pwm[idx].active) return;
+	if (s_pwm[idx].tc != NULL) {
+		pwm_hw_stop_tc(idx);
+		return;
+	}
 	uint32_t ch = s_pwm[idx].pwm_channel;
 	pwm_channel_disable(PWM, ch);
 	s_pwm[idx].active = 0;
 	/* Park the pin low by giving it back to PIO and clearing it. */
 	uint32_t mask = 1u << s_pwm[idx].pio_pin;
-	PIOC->PIO_CODR = mask;
-	PIOC->PIO_OER  = mask;
-	PIOC->PIO_PER  = mask;    /* PIO controller owns the pin again */
+	s_pwm[idx].pio->PIO_CODR = mask;
+	s_pwm[idx].pio->PIO_OER  = mask;
+	s_pwm[idx].pio->PIO_PER  = mask;
 }
 
 /* -------------------------------------------------------------------------

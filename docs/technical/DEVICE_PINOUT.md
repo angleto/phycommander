@@ -58,6 +58,7 @@ All signals are native **3.3 V CMOS** — backplane PCB v2 is pure passive routi
 | **DB25-1** | DB25 female | FULL SENSING | 16 DIN + 8 ADC + AGND |
 | **DB25-2** | DB25 female | FULL CONTROL | 16 DOUT + 2 DAC + 3 PWM + 5V + 3.3V + AREF + GND |
 | **DB25-3** | DB25 female | Control-duplicate + COMMS | 16 DOUT (dup) + UART + SPI + I2C + 5V + GND |
+|  | | | **⚠ As-built on the original Intel DN2800MT chassis, the bottom-left DB25 (DB25-3 position) is wired to the host motherboard's onboard parallel port, NOT to the Arduino Due. The planned backplane-PCB routing above describes the intended shield design (not yet fabricated — see README). Treat DB25-3 on the current bench as a parallel-port breakout, not as an Arduino-driven I/O.** |
 | **DB15-1** | DB15 female | Mixed ch 0–3 | 4 DIN + 4 DOUT + 2 ADC + 2 DAC + 3.3V + AGND + GND |
 | **DB15-2** | DB15 female | Mixed ch 4–7 + PWM | 4 DIN + 4 DOUT + 2 ADC + 3 PWM + 3.3V + GND |
 | **DB15-3** | DB15 female | Analog focus + DIN 8–11 | 4 ADC + 2 DAC + 4 DIN + 2 DOUT + AREF + 3.3V + AGND |

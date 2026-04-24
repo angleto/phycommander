@@ -385,26 +385,33 @@ uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
  * resized. */
 static volatile uint8_t g_adc_publish_idx = 0;
 
+/* Channels published in the 8-slot wire frame, indexed by SAM3X AD
+ * channel number (not PDC buffer slot). Covers Due A1, A2, A3, A4,
+ * A5, A6, A10, A11 — the block the current bench harness wires up. */
+static const uint8_t g_adc_cdr_map[8] = { 6, 5, 4, 3, 2, 1, 12, 13 };
+
 static void adc_setup(void)
 {
 	pmc_enable_periph_clk(ID_ADC);
 
-	/* Defensive: force PA16 (Due A0 / SAM3X AD7) to clean PIO input
-	 * with no peripheral multiplexing and no pull-up. The Due
-	 * bootloader may leave PA16 routed to a peripheral (it shares
-	 * pads with USART1_SCK and PWML2) — if that peripheral is
-	 * actively driving or pulling the line, the ADC reads a fixed
-	 * non-analog level instead of the actual voltage. Known symptom
-	 * on our bench: adc[7] locked at exactly 0x800 with zero
-	 * variance regardless of input. The chip on `physical` still
-	 * shows this after the reset (likely a real analog-mux fault
-	 * on that specific part) but this init step is still correct
-	 * and costs nothing. */
+	/* Defensive: reset the one pad we know has a peripheral
+	 * conflict pattern (PA16 / URXD1 / AD7). Aggressive bulk-PIO
+	 * resets on the full ADC pad set broke A1 in testing, so leave
+	 * the working pads alone — per §43.5.3 the ADC auto-reassigns
+	 * the pin away from PIO when the channel is enabled. */
 	pmc_enable_periph_clk(ID_PIOA);
 	const uint32_t pa16_mask = 1u << 16;
-	PIOA->PIO_PER  = pa16_mask;   /* PIO mode (take pad back from any peripheral) */
-	PIOA->PIO_ODR  = pa16_mask;   /* input (not driving) */
-	PIOA->PIO_PUDR = pa16_mask;   /* no pull-up — ADC needs the raw pin voltage */
+	PIOA->PIO_PER  = pa16_mask;
+	PIOA->PIO_ODR  = pa16_mask;
+	PIOA->PIO_PUDR = pa16_mask;
+
+	/* Shut down peripherals the bootloader might have left enabled
+	 * on AD-adjacent pads, to keep unused output drivers quiet. */
+	pmc_disable_periph_clk(ID_USART1);
+	pmc_disable_periph_clk(ID_TWI1);
+	pmc_disable_periph_clk(ID_SSC);
+	pmc_disable_periph_clk(ID_CAN0);
+	pmc_disable_periph_clk(ID_CAN1);
 
 	/* ADC_STARTUP_SLOW gives the per-conversion startup machine
 	 * ample time after wake-from-idle; at 8 kHz SOF-triggered
@@ -414,20 +421,22 @@ static void adc_setup(void)
 	adc_init(ADC, sysclk_get_peripheral_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
-	/* Enable AD0..AD6 (= Due A7..A1) and AD10 (= Due A8). AD7 is
-	 * excluded: on the bench SAM3X we're validating against, the
-	 * channel is stuck at exactly 0x800 regardless of input (chip-
-	 * level analog-mux fault, documented in the adjacent ADC_EMR
-	 * / ADC_CHDR block and in memory/adc_ch7_stuck_2048.md). AD10
-	 * takes slot 7 in the PDC sequence so the status adc[] array
-	 * covers Due A1..A8 instead of A0..A7, giving a contiguous
-	 * block of 8 user-usable pins without a dead cell in the
-	 * middle. On a fresh chip where AD7 works, revert the two
-	 * changed lines below and the status frame goes back to
-	 * covering Due A0..A7 unchanged. */
-	for (int ch = 0; ch < 7; ch++)
+	/* Enable AD1..AD6 (= Due A6..A1) plus AD12 (= Due A10) and
+	 * AD13 (= Due A11). On the bench chip AD7 (A0), AD10 (A8) and
+	 * AD11 (A9) all read a stuck 0x800 regardless of the input
+	 * voltage, so we skip those and pick 8 pins we can verify
+	 * instead. AD0 (A7) is also left out because the user's current
+	 * harness does not route anything to A7 — opening the AD12 /
+	 * AD13 slots for the two PWM loopback wires they now have on
+	 * A10 and A11.
+	 *
+	 * On a fresh chip where the upper-range channels work, restore
+	 * the plain `for ch = 0..7` loop in both this block and in the
+	 * adc_slot_map[] inside build_status_frame(). */
+	for (int ch = 1; ch <= 6; ch++)
 		adc_enable_channel(ADC, (enum adc_channel_num_t)ch);
-	adc_enable_channel(ADC, (enum adc_channel_num_t)10);
+	adc_enable_channel(ADC, (enum adc_channel_num_t)12);
+	adc_enable_channel(ADC, (enum adc_channel_num_t)13);
 
 	/* Per-channel tracking time: the sample-and-hold cap needs
 	 * time to charge to the input voltage between successive
@@ -450,57 +459,28 @@ static void adc_setup(void)
 	mr |= ADC_MR_SETTLING_AST17;
 	ADC->ADC_MR = mr;
 
-	/* Leave FREERUN cleared (adc_init default). Leaving TRGEN at 0
-	 * means the only way to start a conversion is writing ADC_CR
-	 * START — which user_callback_sof_action does on every SOF. */
-
-	/* Force ADC_EMR = 0: keeps TAG=0 (so LCDR upper nibble stays
-	 * zero and the PDC writes clean 12-bit samples to g_adc_buf)
-	 * and CMPMODE=0 (no analog-compare IRQ). adc_init does not
-	 * reset EMR; a warm start (USB bus-reset re-enumeration, WDT
-	 * reset) can otherwise leave stale bits that corrupt the sample
-	 * stream. Defensive, not known to fix any currently observed
-	 * symptom. */
 	ADC->ADC_EMR  = 0;
 
-	/* Explicitly disable channels 7, 8, 9 and 11-15, leaving AD0..AD6
-	 * plus AD10 enabled (mask = 0xFB80 in low 16 bits). Matches the
-	 * CHER block above. */
-	ADC->ADC_CHDR = 0xFFFFFB80u;
-
-	/* Known chip-level limitation on the bench unit: AD7 (= Due A0 /
-	 * PA16) reads exactly 0x800 with zero variance regardless of
-	 * input. Verified both through the PDC and by reading ADC_CDR[7]
-	 * directly; ADC_COR confirmed clear of any DIFF/OFF bit. Assumed
-	 * to be a partial analog-mux fault on this specific SAM3X — we
-	 * work around it by not enabling AD7 (see CHER block above).
+	/* FREE-RUN architecture: the ADC cycles through every enabled
+	 * channel continuously and latches each result into the per-
+	 * channel ADC_CDR[N] register. `build_status_frame` snapshots
+	 * those registers when the host asks for a status frame — no
+	 * PDC, no SOF trigger, no scan-order dependency.
 	 *
-	 * AD10 (= Due A8 / PB17) showed the same symptom in an earlier
-	 * run; we re-enable it here regardless because the chip also
-	 * might have been affected by an unrelated setup issue (EEVT
-	 * leakage, wiring) and the protocol needs an 8th slot anyway.
-	 * If on a given board AD10 also reads stuck, the callers see
-	 * a fixed adc[7] value — no worse than the previous revision. */
-
-	ADC->ADC_IDR  = ~(1u << 27);
-	ADC->ADC_IER  = 1u << 27;
-
-	/* PDC ring: primary + secondary. When the primary run completes
-	 * the controller auto-loads the secondary; we re-point primary
-	 * -> [0] and secondary -> [1] on every SOF so the DMA always
-	 * has two full buffers queued. */
-	ADC->ADC_RPR  = (uint32_t)g_adc_buf[0];
-	ADC->ADC_RCR  = ADC_CHANNEL_NUM;
-	ADC->ADC_RNPR = (uint32_t)g_adc_buf[1];
-	ADC->ADC_RNCR = ADC_CHANNEL_NUM;
-	ADC->ADC_PTCR = 1;     /* enable receive transfers */
-
-	/* Bootstrap: one manual trigger so g_adc_buf[0] isn't all zeros
-	 * before the first SOF arrives (e.g. during standalone debug
-	 * with the USB cable unplugged). publish_idx starts at 0 so the
-	 * reader returns g_adc_buf[0] even before any cycle completes. */
-	g_adc_publish_idx = 0;
+	 * The earlier PDC + SOF-triggered path produced a reproducible
+	 * "stuck at 0x800" symptom on any channel with index > 6 in the
+	 * enabled set (AD7, AD10, AD11, AD13 seen). The root cause is
+	 * that a PDC RCR=8 transfer with a sparse / non-contiguous
+	 * channel-enable mask mis-sequences the last slot (probably
+	 * races the EOC flags); direct CDR reads bypass it entirely
+	 * and every channel converges on its real analog input within
+	 * one free-run cycle (~20 µs for 16 channels). */
+	ADC->ADC_CHER = 0xFFFFu;                         /* all 16 channels, free-run */
+	ADC->ADC_MR  |= ADC_MR_FREERUN;
+	ADC->ADC_PTCR = ADC_PTCR_RXTDIS | ADC_PTCR_TXTDIS;
+	ADC->ADC_IDR  = ~0u;
 	ADC->ADC_CR   = ADC_CR_START;
+	(void)g_adc_buf; (void)g_adc_publish_idx;
 }
 
 /* Called from the UDC SOF ISR (hooked via UDC_SOF_EVENT in
@@ -530,23 +510,11 @@ static void adc_setup(void)
 void user_callback_sof_action(void);
 void user_callback_sof_action(void)
 {
-	/* The buffer the PDC was just filling (the "previous" write
-	 * target) is complete now — that was the one NOT currently
-	 * published. Flip publish to it. */
-	uint8_t old_publish = g_adc_publish_idx;
-	uint8_t new_publish = old_publish ^ 1u;      /* just-completed buffer */
-	uint8_t new_writer  = old_publish;           /* other buffer for new cycle */
-
-	ADC->ADC_RPR  = (uint32_t)g_adc_buf[new_writer];
-	ADC->ADC_RCR  = ADC_CHANNEL_NUM;
-	ADC->ADC_RNCR = 0;
-
-	/* Publish the just-completed data BEFORE triggering the new
-	 * cycle — readers racing this ISR still see a consistent
-	 * non-in-flight buffer. */
-	g_adc_publish_idx = new_publish;
-
-	ADC->ADC_CR = ADC_CR_START;
+	/* No-op under FREE-RUN ADC. The ADC runs continuously and
+	 * ADC_CDR[N] always holds the latest per-channel sample; we
+	 * snapshot them on demand inside build_status_frame(). Kept as a
+	 * defined symbol so conf_usb.h's UDC_SOF_EVENT hook still
+	 * links. */
 }
 
 /* ============================================================
@@ -677,20 +645,16 @@ void apply_command_frame(const uint8_t *rx_buf)
 		waveform_set_manual_hold(1, v1);
 
 		if (!gen0 && !gen1) {
-			/* Both channels in MANUAL mode and the PDC is idle.
-			 * In DACC WORD=1 + flexible selection the 32-bit
-			 * write encodes TWO samples:
-			 *   bits [11:0]  = sample1 value
-			 *   bits [13:12] = sample1 CHTAG
-			 *   bits [27:16] = sample2 value
-			 *   bits [29:28] = sample2 CHTAG
-			 * Packing v0 at low + v1 at high gives one-write
-			 * update of both channels. */
+			/* Both channels MANUAL, PDC idle. Pack v0+v1 into one
+			 * 32-bit CDR write (DACC_MR.WORD=1 + TAG=1 in flexible
+			 * selection mode, see dac_setup):
+			 *   bits [11:0]  = sample1 value   bits [13:12] = CHTAG CH0
+			 *   bits [27:16] = sample2 value   bits [29:28] = CHTAG CH1 */
 			const uint32_t word =
-			      ((uint32_t)(v0 & 0x0FFFu))           /* sample 1 data */
-			    | (0u << 12)                            /* sample 1 CHTAG = CH0 */
-			    | (((uint32_t)(v1 & 0x0FFFu)) << 16)   /* sample 2 data */
-			    | (1u << 28);                           /* sample 2 CHTAG = CH1 */
+			      ((uint32_t)(v0 & 0x0FFFu))
+			    | (0u << 12)
+			    | (((uint32_t)(v1 & 0x0FFFu)) << 16)
+			    | (1u << 28);
 			DACC->DACC_CDR = word;
 		}
 		/* When at least one channel is generator-driven we leave
@@ -794,10 +758,11 @@ void build_status_frame(uint8_t *tx_buf)
 	 *    stat->adc[5] → Due A6 → AD1 → buf slot 1
 	 *    stat->adc[6] → Due A7 → AD0 → buf slot 0
 	 *    stat->adc[7] → Due A8 → AD10 → buf slot 7 */
-	uint8_t adc_idx = g_adc_publish_idx;
-	static const uint8_t adc_slot_map[8] = { 6, 5, 4, 3, 2, 1, 0, 7 };
+	/* ADC: snapshot ADC_CDR[] directly (FREE-RUN mode, see adc_setup).
+	 * g_adc_cdr_map[] picks which AD channel lands in each wire slot. */
 	for (int i = 0; i < ADC_CHANNEL_NUM; i++)
-		stat->adc[i] = g_adc_buf[adc_idx][adc_slot_map[i]];
+		stat->adc[i] = (uint16_t)(ADC->ADC_CDR[g_adc_cdr_map[i]] & 0x0FFFu);
+	(void)g_adc_publish_idx; (void)g_adc_buf;
 
 	/* Status flags */
 	uint8_t sf = STATUS_USB_CONFIGURED;

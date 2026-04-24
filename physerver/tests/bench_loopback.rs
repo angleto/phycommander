@@ -25,8 +25,8 @@
 //!   DAC1     A2        1          PHYCMD_DAC1_ADC
 //!   pwm0     A4 (D9)   3          PHYCMD_PWM0_ADC
 //!   pwm1     A3 (D8)   2          PHYCMD_PWM1_ADC
-//!   pwm2     A11 (D7)  7          PHYCMD_PWM2_ADC
-//!   pwm3     A10 (D6)  6          PHYCMD_PWM3_ADC
+//!   pwm2     A10 (D7)  6          PHYCMD_PWM2_ADC
+//!   pwm3     A11 (D6)  7          PHYCMD_PWM3_ADC
 //!   pwm4     A5 (D10)  4          PHYCMD_PWM4_ADC
 //!   pwm5     A6 (D11)  5          PHYCMD_PWM5_ADC
 //!
@@ -352,8 +352,8 @@ fn bench_pwm_duty_endpoints() {
     let wiring: [(u8, usize); 6] = [
         (0, env_adc_slot("PHYCMD_PWM0_ADC", 3)),
         (1, env_adc_slot("PHYCMD_PWM1_ADC", 2)),
-        (2, env_adc_slot("PHYCMD_PWM2_ADC", 7)),
-        (3, env_adc_slot("PHYCMD_PWM3_ADC", 6)),
+        (2, env_adc_slot("PHYCMD_PWM2_ADC", 6)),
+        (3, env_adc_slot("PHYCMD_PWM3_ADC", 7)),
         (4, env_adc_slot("PHYCMD_PWM4_ADC", 4)),
         (5, env_adc_slot("PHYCMD_PWM5_ADC", 5)),
     ];
@@ -425,8 +425,8 @@ fn bench_pwm_duty_monotonic() {
         match pwm {
             0 => 3,
             1 => 2,
-            2 => 7,
-            3 => 6,
+            2 => 6,
+            3 => 7,
             4 => 4,
             5 => 5,
             _ => 99,

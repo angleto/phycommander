@@ -636,30 +636,40 @@ void apply_command_frame(const uint8_t *rx_buf)
 		if (!gen0 && !gen1) {
 			/* Both channels in MANUAL mode and the PDC is idle.
 			 *
-			 * dac_setup configures DACC_MR.WORD=1 (32-bit access
-			 * width on the AHB side — NOT "two items per word")
-			 * and TAG=1 (flexible selection via CHTAG in bits
-			 * 12-13). Each 32-bit write to DACC_CDR transfers
-			 * exactly ONE sample: bits 0-11 are the 12-bit value
-			 * and bits 12-13 are the CHTAG that selects CH0 or
-			 * CH1. Upper bits are ignored on SAM3X DACC.
+			 * dac_setup configures DACC_MR.WORD=1 + TAG=1. In
+			 * that mode the DACC interprets each 32-bit CDR
+			 * write as TWO packed samples — not one. From the
+			 * SAM3X ASF driver doc (dacc.c §enable_flexible):
 			 *
-			 * We write each channel in turn. Before the second
-			 * write we wait for TXRDY (bit 0 of DACC_ISR) to
-			 * confirm the DACC has consumed the first item —
-			 * without this the second write can squash the
-			 * first in the internal holding register and the
-			 * slower channel (CH0) never gets its conversion.
+			 *   "if the WORD field is set, the 2 bits DACC_CDR
+			 *    [13:12] are used for channel selection of the
+			 *    first data and the 2 bits DACC_CDR[29:28] for
+			 *    channel selection of the second data."
 			 *
-			 * Earlier revisions of this block tried to pack both
-			 * items into a single word thinking WORD=1 meant
-			 * "two items"; it does not on this SAM3X. And a
-			 * version without the TXRDY wait worked for DAC1
-			 * but left DAC0 silent because the CH1 write
-			 * arrived before the CH0 conversion completed. */
-			DACC->DACC_CDR = ((uint32_t)v0) | 0x0000u;   /* CH0 */
-			while (!(DACC->DACC_ISR & DACC_ISR_TXRDY)) { /* spin */ }
-			DACC->DACC_CDR = ((uint32_t)v1) | 0x1000u;   /* CH1 */
+			 * Layout:
+			 *   bits  [11:0]  = sample1 value
+			 *   bits [13:12] = sample1 CHTAG
+			 *   bits [27:16] = sample2 value
+			 *   bits [29:28] = sample2 CHTAG
+			 *
+			 * An earlier revision did two sequential single-
+			 * sample writes with a TXRDY spin in between — that
+			 * looked right on paper but in WORD=1 every write
+			 * actually carries a phantom second sample. The
+			 * first write sent (v0, CH0) + (0, CH0); the second
+			 * sent (v1, CH1) + (0, CH0); net effect: CH0 stuck
+			 * bouncing v0 ↔ 0 at the command rate while CH1
+			 * (the "last written" channel) looked healthy. DAC0
+			 * read ~0.94 V on a multimeter regardless of the
+			 * commanded value; DAC1 tracked correctly. Packing
+			 * both samples into one word makes the two-channel
+			 * intent match what the DACC actually interprets. */
+			const uint32_t word =
+			      ((uint32_t)(v0 & 0x0FFFu))           /* sample 1 data */
+			    | (0u << 12)                            /* sample 1 CHTAG = CH0 */
+			    | (((uint32_t)(v1 & 0x0FFFu)) << 16)   /* sample 2 data */
+			    | (1u << 28);                           /* sample 2 CHTAG = CH1 */
+			DACC->DACC_CDR = word;
 		}
 		/* When at least one channel is generator-driven we leave
 		 * the DACC peripheral to the PDC: the refill_buffer loop

@@ -475,7 +475,16 @@ static void adc_setup(void)
 	 * races the EOC flags); direct CDR reads bypass it entirely
 	 * and every channel converges on its real analog input within
 	 * one free-run cycle (~20 µs for 16 channels). */
-	ADC->ADC_CHER = 0xFFFFu;                         /* all 16 channels, free-run */
+	/* Enable ONLY the channels g_adc_cdr_map[] actually reads: AD1..AD6
+	 * (Due A1..A6) plus AD12/AD13 (Due A10/A11). Turning on channels we
+	 * don't use is not free — the AD<n> analog input pins are peripheral-
+	 * muxed with PIO pins, and enabling the channel pulls the pad into
+	 * the ADC sample-and-hold, disabling its PIO behaviour. Most visibly,
+	 * AD14 lives on PB21, which is our DIGITAL_INPUT_15 pin — setting
+	 * bit 14 in CHER here silently kills DIN[15]. Mask below is:
+	 *   bits: 1 2 3 4 5 6 12 13  =>  0x307E */
+	ADC->ADC_CHER = (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4)
+	              | (1u << 5) | (1u << 6) | (1u << 12) | (1u << 13);
 	ADC->ADC_MR  |= ADC_MR_FREERUN;
 	ADC->ADC_PTCR = ADC_PTCR_RXTDIS | ADC_PTCR_TXTDIS;
 	ADC->ADC_IDR  = ~0u;

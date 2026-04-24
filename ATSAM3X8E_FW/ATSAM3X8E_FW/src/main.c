@@ -414,9 +414,20 @@ static void adc_setup(void)
 	adc_init(ADC, sysclk_get_peripheral_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
-	/* Enable AD0..AD7. */
-	for (int ch = 0; ch < ADC_CHANNEL_NUM; ch++)
+	/* Enable AD0..AD6 (= Due A7..A1) and AD10 (= Due A8). AD7 is
+	 * excluded: on the bench SAM3X we're validating against, the
+	 * channel is stuck at exactly 0x800 regardless of input (chip-
+	 * level analog-mux fault, documented in the adjacent ADC_EMR
+	 * / ADC_CHDR block and in memory/adc_ch7_stuck_2048.md). AD10
+	 * takes slot 7 in the PDC sequence so the status adc[] array
+	 * covers Due A1..A8 instead of A0..A7, giving a contiguous
+	 * block of 8 user-usable pins without a dead cell in the
+	 * middle. On a fresh chip where AD7 works, revert the two
+	 * changed lines below and the status frame goes back to
+	 * covering Due A0..A7 unchanged. */
+	for (int ch = 0; ch < 7; ch++)
 		adc_enable_channel(ADC, (enum adc_channel_num_t)ch);
+	adc_enable_channel(ADC, (enum adc_channel_num_t)10);
 
 	/* Per-channel tracking time: the sample-and-hold cap needs
 	 * time to charge to the input voltage between successive
@@ -452,19 +463,24 @@ static void adc_setup(void)
 	 * symptom. */
 	ADC->ADC_EMR  = 0;
 
-	/* Explicitly disable channels 8-15 (SWRST already leaves them
-	 * disabled; the write documents the intent and survives warm
-	 * restarts). */
-	ADC->ADC_CHDR = 0xFFFFFF00u;
+	/* Explicitly disable channels 7, 8, 9 and 11-15, leaving AD0..AD6
+	 * plus AD10 enabled (mask = 0xFB80 in low 16 bits). Matches the
+	 * CHER block above. */
+	ADC->ADC_CHDR = 0xFFFFFB80u;
 
 	/* Known chip-level limitation on the bench unit: AD7 (= Due A0 /
-	 * PA16) and AD10 (= Due A8 / PB17) read exactly 0x800 with zero
-	 * variance regardless of input. Verified both through the PDC
-	 * and by reading ADC_CDR[ch] directly; ADC_COR confirmed clear
-	 * of any DIFF/OFF bit. Assumed to be a partial analog-mux fault
-	 * on this specific SAM3X. The seven other channels (AD0..AD6)
-	 * work correctly; host-side code that needs 8 channels should
-	 * tolerate the fixed-2048 reading on adc[7]. */
+	 * PA16) reads exactly 0x800 with zero variance regardless of
+	 * input. Verified both through the PDC and by reading ADC_CDR[7]
+	 * directly; ADC_COR confirmed clear of any DIFF/OFF bit. Assumed
+	 * to be a partial analog-mux fault on this specific SAM3X — we
+	 * work around it by not enabling AD7 (see CHER block above).
+	 *
+	 * AD10 (= Due A8 / PB17) showed the same symptom in an earlier
+	 * run; we re-enable it here regardless because the chip also
+	 * might have been affected by an unrelated setup issue (EEVT
+	 * leakage, wiring) and the protocol needs an 8th slot anyway.
+	 * If on a given board AD10 also reads stuck, the callers see
+	 * a fixed adc[7] value — no worse than the previous revision. */
 
 	ADC->ADC_IDR  = ~(1u << 27);
 	ADC->ADC_IER  = 1u << 27;
@@ -765,12 +781,29 @@ void build_status_frame(uint8_t *tx_buf)
 	stat->digital_in  = get_dig_in_value();
 	stat->digital_out = get_dig_out_echo();
 
-	/* ADC: read the currently-published buffer. Snapshot the
-	 * index first; if the SOF handler swaps it mid-loop, the
-	 * writer goes to the OTHER buffer — our reads stay coherent. */
+	/* ADC: read the currently-published buffer and reorder it so
+	 * that `stat->adc[0]` is the reading on Arduino Due **A1** (the
+	 * first working analog pin, since A0/AD7 is faulted on this
+	 * chip) and `stat->adc[7]` is **A8**. Wire-protocol callers get
+	 * a contiguous "first working → last working" sequence they can
+	 * index from 0 without juggling the SAM3X AD-channel inversion.
+	 *
+	 * The PDC fills g_adc_buf[][k] with SAM3X AD channel k's last
+	 * conversion (k runs 0..6 then 10, filling slots 0..7 in scan
+	 * order). Due silkscreen A<n> corresponds to SAM3X AD(7-n) for
+	 * n=1..7 and AD10 for n=8. So:
+	 *    stat->adc[0] → Due A1 → AD6 → buf slot 6
+	 *    stat->adc[1] → Due A2 → AD5 → buf slot 5
+	 *    stat->adc[2] → Due A3 → AD4 → buf slot 4
+	 *    stat->adc[3] → Due A4 → AD3 → buf slot 3
+	 *    stat->adc[4] → Due A5 → AD2 → buf slot 2
+	 *    stat->adc[5] → Due A6 → AD1 → buf slot 1
+	 *    stat->adc[6] → Due A7 → AD0 → buf slot 0
+	 *    stat->adc[7] → Due A8 → AD10 → buf slot 7 */
 	uint8_t adc_idx = g_adc_publish_idx;
+	static const uint8_t adc_slot_map[8] = { 6, 5, 4, 3, 2, 1, 0, 7 };
 	for (int i = 0; i < ADC_CHANNEL_NUM; i++)
-		stat->adc[i] = g_adc_buf[adc_idx][i];
+		stat->adc[i] = g_adc_buf[adc_idx][adc_slot_map[i]];
 
 	/* Status flags */
 	uint8_t sf = STATUS_USB_CONFIGURED;

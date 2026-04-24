@@ -63,20 +63,33 @@ the SAM3X calls AD5. Keep the three name spaces straight:
   * `adc[i]` in our wire protocol — indexed by SAM3X AD channel, so
     `adc[i]` is the sample from `A(7-i)`.
 
-| Due label | Alias | SAM3X pin | SAM3X AD | `status.adc[]` | Status |
-|---|---|---|---|---|---|
-| `A0` | `D54` / `ADC0` | PA16 | AD7 | `adc[7]` | ✅ Active |
-| `A1` | `D55` / `ADC1` | PA24 | AD6 | `adc[6]` | ✅ Active |
-| `A2` | `D56` / `ADC2` | PA23 | AD5 | `adc[5]` | ✅ Active |
-| `A3` | `D57` / `ADC3` | PA22 | AD4 | `adc[4]` | ✅ Active |
-| `A4` | `D58` / `ADC4` | PA6  | AD3 | `adc[3]` | ✅ Active |
-| `A5` | `D59` / `ADC5` | PA4  | AD2 | `adc[2]` | ✅ Active |
-| `A6` | `D60` / `ADC6` | PA3  | AD1 | `adc[1]` | ✅ Active |
-| `A7` | `D61` / `ADC7` | PA2  | AD0 | `adc[0]` | ✅ Active |
-| `A8` | `D62` / `ADC8` | PB17 | AD10 | — | ⚠️ Reserved (firmware reads 8 channels only) |
-| `A9` | `D63` / `ADC9` | PB18 | AD11 | — | ⚠️ Reserved |
-| `A10` | `D64` / `ADC10` | PB19 | AD12 | — | ⚠️ Reserved |
-| `A11` | `D65` / `ADC11` | PB20 | AD13 | — | ⚠️ Reserved |
+| Due label | SAM3X pin | SAM3X AD | `status.adc[]` | Status |
+|---|---|---|---|---|
+| `A0` | PA16 | AD7 | — | ❌ Excluded — AD7 stuck at 0x800 on bench chip (analog-mux fault). Not surfaced in the status frame |
+| `A1` | PA24 | AD6 | `adc[0]` | ✅ Active |
+| `A2` | PA23 | AD5 | `adc[1]` | ✅ Active |
+| `A3` | PA22 | AD4 | `adc[2]` | ✅ Active |
+| `A4` | PA6  | AD3 | `adc[3]` | ✅ Active |
+| `A5` | PA4  | AD2 | `adc[4]` | ✅ Active |
+| `A6` | PA3  | AD1 | `adc[5]` | ✅ Active |
+| `A7` | PA2  | AD0 | `adc[6]` | ✅ Active |
+| `A8` | PB17 | AD10 | `adc[7]` | ✅ Active — fills the slot AD7 would have occupied; see `adc_setup` in main.c |
+| `A9` | PB18 | AD11 | — | ⚠️ Reserved |
+| `A10` | PB19 | AD12 | — | ⚠️ Reserved |
+| `A11` | PB20 | AD13 | — | ⚠️ Reserved |
+
+> **API numbering is intuitive**: `status.adc[0]` is the first
+> working analog pin (Due `A1`); `status.adc[i]` is Due `A(i+1)`
+> for i=0..7. The firmware reorders the raw PDC buffer (which is
+> still indexed by SAM3X AD channel, AD0..AD6 + AD10) into this
+> user-facing layout in `build_status_frame` — see the
+> `adc_slot_map[]` there. The dashboard's ADC panel labels the 8
+> cells `A1..A8` and reads them directly by `adc[i]` index.
+>
+> To revert on a fresh chip where AD7 works: in `adc_setup` drop
+> the `adc_enable_channel(10)` call and put the for-loop back to
+> `ch = 0..7`; in `build_status_frame` delete the `adc_slot_map`
+> reorder and go back to `stat->adc[i] = g_adc_buf[adc_idx][i]`.
 
 Sampling is **SOF-synchronous** (125 µs per cycle at HS, one conversion
 cycle per USB microframe). See `main.c::user_callback_sof_action`.

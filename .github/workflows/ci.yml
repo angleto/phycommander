@@ -29,10 +29,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # rustfmt.toml uses nightly-only options (imports_granularity,
+      # group_imports, wrap_comments, normalize_comments, …). Install a
+      # nightly toolchain with rustfmt only, so the Format-check step
+      # below can invoke `cargo +nightly fmt -- --check` and honour
+      # those options. The second install (stable) below is what the
+      # build/clippy/test steps use — installing stable last makes
+      # stable the default toolchain.
+      - name: Install nightly rustfmt
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: clippy
 
       - name: Install system dependencies
         run: |
@@ -51,7 +63,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Format check
-        run: cargo fmt --all -- --check
+        run: cargo +nightly fmt --all -- --check
 
       - name: Clippy (advisory)
         # Clippy remains advisory: pedantic lints are still noisy on

@@ -388,6 +388,24 @@ static volatile uint8_t g_adc_publish_idx = 0;
 static void adc_setup(void)
 {
 	pmc_enable_periph_clk(ID_ADC);
+
+	/* Defensive: force PA16 (Due A0 / SAM3X AD7) to clean PIO input
+	 * with no peripheral multiplexing and no pull-up. The Due
+	 * bootloader may leave PA16 routed to a peripheral (it shares
+	 * pads with USART1_SCK and PWML2) — if that peripheral is
+	 * actively driving or pulling the line, the ADC reads a fixed
+	 * non-analog level instead of the actual voltage. Known symptom
+	 * on our bench: adc[7] locked at exactly 0x800 with zero
+	 * variance regardless of input. The chip on `physical` still
+	 * shows this after the reset (likely a real analog-mux fault
+	 * on that specific part) but this init step is still correct
+	 * and costs nothing. */
+	pmc_enable_periph_clk(ID_PIOA);
+	const uint32_t pa16_mask = 1u << 16;
+	PIOA->PIO_PER  = pa16_mask;   /* PIO mode (take pad back from any peripheral) */
+	PIOA->PIO_ODR  = pa16_mask;   /* input (not driving) */
+	PIOA->PIO_PUDR = pa16_mask;   /* no pull-up — ADC needs the raw pin voltage */
+
 	/* ADC_STARTUP_SLOW gives the per-conversion startup machine
 	 * ample time after wake-from-idle; at 8 kHz SOF-triggered
 	 * single-shot we are effectively starting the ADC from idle
@@ -396,6 +414,7 @@ static void adc_setup(void)
 	adc_init(ADC, sysclk_get_main_hz(), ADC_FREQ_MAX, ADC_STARTUP_NORM);
 	adc_set_resolution(ADC, ADC_MR_LOWRES_BITS_12);
 
+	/* Enable AD0..AD7. */
 	for (int ch = 0; ch < ADC_CHANNEL_NUM; ch++)
 		adc_enable_channel(ADC, (enum adc_channel_num_t)ch);
 
@@ -433,27 +452,20 @@ static void adc_setup(void)
 	 * symptom. */
 	ADC->ADC_EMR  = 0;
 
-	/* Explicitly disable channels 8-15. SWRST in adc_init zeroes
-	 * CHSR on cold boot, but this write makes the intent "only
-	 * AD0-AD7 convert per START, so PDC.RCR=8 always matches the
-	 * actual conversion count" self-documenting — and keeps a warm
-	 * start from inheriting a stuck extra-channel enable. */
+	/* Explicitly disable channels 8-15 (SWRST already leaves them
+	 * disabled; the write documents the intent and survives warm
+	 * restarts). */
 	ADC->ADC_CHDR = 0xFFFFFF00u;
 
-	/* Previously this block also wrote ADC_CHER = 0x80, which was
-	 * a no-op (the for-loop above already enabled channels 0-7
-	 * individually; CHER is write-1-to-set). Removed — the name
-	 * was misleading and it did nothing observable.
-	 *
-	 * Known limitation: on the current test host we see adc[7]
-	 * (= AD7 = Due "A0") locked at exactly 2048 with zero variance
-	 * regardless of wiring. A sentinel-overwrite diagnostic confirms
-	 * the PDC does write slot 7 and AD7 converts — the SAM3X is
-	 * simply returning 0x800 every time. Needs bench-level probing
-	 * (is PA16 floating? is there external biasing? is the input
-	 * mux physically broken on this chip?) to root-cause. The other
-	 * seven channels work as expected; callers that need A0 loopback
-	 * should route to a different Due analog pin for now. */
+	/* Known chip-level limitation on the bench unit: AD7 (= Due A0 /
+	 * PA16) and AD10 (= Due A8 / PB17) read exactly 0x800 with zero
+	 * variance regardless of input. Verified both through the PDC
+	 * and by reading ADC_CDR[ch] directly; ADC_COR confirmed clear
+	 * of any DIFF/OFF bit. Assumed to be a partial analog-mux fault
+	 * on this specific SAM3X. The seven other channels (AD0..AD6)
+	 * work correctly; host-side code that needs 8 channels should
+	 * tolerate the fixed-2048 reading on adc[7]. */
+
 	ADC->ADC_IDR  = ~(1u << 27);
 	ADC->ADC_IER  = 1u << 27;
 

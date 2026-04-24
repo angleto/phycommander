@@ -340,13 +340,22 @@
         <!-- Digital Inputs -->
         <div class="panel" id="panelDigitalIn" data-title="Digital Inputs"><h2>Digital Inputs</h2><div class="gpio-grid" id="gpioInputs"></div></div>
 
-        <!-- DAC + PWM -->
-        <div class="panel" id="panelDacPwm" data-title="DAC / PWM Outputs">
-            <h2>DAC / PWM Outputs</h2>
-            <div class="control-group"><label>DAC 0 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
-            <div class="control-group"><label>DAC 1 (12-bit)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
-            <div class="control-group"><label>PWM 0 (16-bit)</label><div class="slider-container"><input type="range" min="0" max="65535" value="0" id="pwm0S"><span class="value-display" id="pwm0V">0</span></div></div>
-            <div class="control-group"><label>PWM 1 (16-bit)</label><div class="slider-container"><input type="range" min="0" max="65535" value="0" id="pwm1S"><span class="value-display" id="pwm1V">0</span></div></div>
+        <!-- DAC -->
+        <div class="panel" id="panelDac" data-title="DAC Outputs">
+            <h2>DAC Outputs</h2>
+            <div class="control-group"><label>DAC 0 (12-bit, Due DAC0)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
+            <div class="control-group"><label>DAC 1 (12-bit, Due DAC1)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
+        </div>
+
+        <!-- PWM (duty sliders via fngen, 1 kHz carrier) -->
+        <div class="panel" id="panelPwm" data-title="PWM Outputs">
+            <h2>PWM Outputs <small style="font-weight:normal;color:#999;font-size:10px;">(1 kHz carrier, duty 0–100 %)</small></h2>
+            <div class="control-group"><label>PWM9 (Due D9)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_0" data-fngen="pwm0"><span class="value-display" id="pwmDutyV_0">0</span>‰</div></div>
+            <div class="control-group"><label>PWM8 (Due D8)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_1" data-fngen="pwm1"><span class="value-display" id="pwmDutyV_1">0</span>‰</div></div>
+            <div class="control-group"><label>PWM7 (Due D7)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_2" data-fngen="pwm2"><span class="value-display" id="pwmDutyV_2">0</span>‰</div></div>
+            <div class="control-group"><label>PWM6 (Due D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
+            <div class="control-group"><label>PWM10 (Due D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
+            <div class="control-group"><label>PWM11 (Due D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
         </div>
 
         <!-- ADC -->
@@ -811,9 +820,42 @@ for (let i = 0; i < 8; i++) {
     adcDisp.appendChild(c);
 }
 
-// DAC/PWM sliders
+// DAC sliders — streaming via Command frame (REST /api/dac/set auto-
+// sets dac_enable; the oninput below mirrors into `cmd` + sendCmd()
+// so the local view stays consistent).
 function wireSlider(id,arr,idx,max){const s=document.getElementById(id+'S'),v=document.getElementById(id+'V');s.oninput=()=>{v.textContent=s.value;arr[idx]=+s.value;sendCmd()};}
-wireSlider('dac0',cmd.dac,0,4095);wireSlider('dac1',cmd.dac,1,4095);wireSlider('pwm0',cmd.pwm,0,65535);wireSlider('pwm1',cmd.pwm,1,65535);
+wireSlider('dac0',cmd.dac,0,4095);
+wireSlider('dac1',cmd.dac,1,4095);
+
+// PWM sliders — all 6 firmware channels (pwm0..pwm5) driven via
+// /api/fngen/play_builtin with a 1 kHz square carrier and the duty
+// from the slider (0..1000 permille). The streaming Command frame
+// only carries 2 PWM slots (pwm0/pwm1) and would fight the fngen
+// state, so using fngen uniformly keeps the path consistent across
+// all channels. Slider events are rate-limited to ~30 Hz to avoid
+// hammering the REST API while the user drags.
+let pwmSendTimers = {};
+function setPwmDuty(ch, dutyPermille) {
+    if (pwmSendTimers[ch]) clearTimeout(pwmSendTimers[ch]);
+    pwmSendTimers[ch] = setTimeout(() => {
+        pwmSendTimers[ch] = null;
+        const body = JSON.stringify({
+            shape: 'square', freq_hz: 1000.0,
+            amplitude: 4095, offset: 2048,
+            duty: Math.max(0, Math.min(1, dutyPermille / 1000))
+        });
+        fetch('/api/fngen/play_builtin/' + ch, {method: 'POST', headers: {'Content-Type':'application/json'}, body})
+            .catch(() => {});
+    }, 30);
+}
+document.querySelectorAll('input[id^="pwmDutyS_"]').forEach(s => {
+    const ch = s.dataset.fngen;
+    const vId = s.id.replace('S_','V_');
+    s.oninput = () => {
+        document.getElementById(vId).textContent = s.value;
+        setPwmDuty(ch, +s.value);
+    };
+});
 
 // Flags: ADC+DAC always enabled in the command frame; PWM/watchdog/
 // reset_seq are non-functional in the current firmware and hidden
@@ -935,13 +977,12 @@ async function pullCommand(){
         // we don't want a stale server value to silently disable
         // them on reload.
         if(Array.isArray(srv.dac) && srv.dac.length>=2){ cmd.dac[0]=srv.dac[0]|0; cmd.dac[1]=srv.dac[1]|0; }
-        if(Array.isArray(srv.pwm) && srv.pwm.length>=2){ cmd.pwm[0]=srv.pwm[0]|0; cmd.pwm[1]=srv.pwm[1]|0; }
         if(typeof srv.digital_out === 'number') cmd.digital_out = srv.digital_out & 0xFFFF;
         const syncSlider=(id,val)=>{const s=document.getElementById(id+'S'),v=document.getElementById(id+'V');if(s){s.value=String(val);} if(v){v.textContent=String(val);} };
         syncSlider('dac0', cmd.dac[0]);
         syncSlider('dac1', cmd.dac[1]);
-        syncSlider('pwm0', cmd.pwm[0]);
-        syncSlider('pwm1', cmd.pwm[1]);
+        // PWM sliders run through fngen independently of cmd.pwm; no
+        // slider sync for them on page reload.
         updateGpioOut();
     }catch(e){ /* server down or wrong shape: leave defaults */ }
 }
@@ -2039,11 +2080,9 @@ async function fngenPollState() {
     // dropped otherwise, which was confusing.
     const channelsToLock = [
         { prefix: 'dac', n: 2, label: 'DAC' },
-        // NB: the wire protocol (CommandMessage.pwm0/pwm1) only
-        // carries two manual PWM channels. pwm2 and pwm3 exist in
-        // the firmware but are generator-only for now — their
-        // fngen rows handle start/stop independently.
-        { prefix: 'pwm', n: 2, label: 'PWM' },
+        // PWM sliders in the new panel are driven via fngen themselves,
+        // so there is no separate manual path to lock — removing the
+        // previous {pwm, 2} entry is deliberate.
     ];
     for (const { prefix, n, label } of channelsToLock) {
         for (let i = 0; i < n; i++) {

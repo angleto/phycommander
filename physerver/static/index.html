@@ -1220,7 +1220,7 @@ async function pollAdcCapture() {
                     const t0 = nowMs - (n - 1) * dtMs;
                     for (let i = 0; i < n; i++) {
                         scopeAdc.ts.push(t0 + i * dtMs);
-                        for (let c = 0; c < 8; c++) {
+                        for (let c = 0; c < N_ADC; c++) {
                             scopeAdc.ch[c].push(d.adc[c][i]);
                         }
                     }
@@ -1229,7 +1229,7 @@ async function pollAdcCapture() {
                     if (scopeAdc.ts.length > SCOPE_ADC_MAX) {
                         const skip = scopeAdc.ts.length - SCOPE_ADC_MAX;
                         scopeAdc.ts = scopeAdc.ts.slice(skip);
-                        for (let c = 0; c < 8; c++) {
+                        for (let c = 0; c < N_ADC; c++) {
                             scopeAdc.ch[c] = scopeAdc.ch[c].slice(skip);
                         }
                     }

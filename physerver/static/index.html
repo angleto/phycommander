@@ -800,6 +800,18 @@ let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enab
 // Scope data ring buffer
 const SCOPE_MAX = 10000;
 let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], pwm:[[],[],[],[]], din:[], dout:[], ts:[] };
+// Separate full-rate ADC buffer fed by polling /api/adc/capture at ~10 Hz
+// (each response carries ~800 new samples @ 8 kHz). The WS broadcast is
+// throttled to 250 Hz upstream so feeding the scope off the WS stream
+// destroys any waveform above ~50 Hz; this parallel buffer fixes that.
+// Timestamps are reconstructed client-side from the server-provided
+// sample rate — see pollAdcCapture() below.
+const SCOPE_ADC_MAX = 16384;  // 2 s @ 8 kHz
+let scopeAdc = {
+    ts: [],
+    ch: Array.from({ length: 8 }, () => []),
+    lastSeq: 0,  // next seq to request, so 0 == "from the start"
+};
 let scopeAnalogCh = [0,1]; // enabled scope analog channels. adc[i] = Due A(i+1), so [0,1] = A1 and A2.
 let scopeDigitalCh = []; // enabled digital bits (0-15 = din, 16-31 = dout)
 const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#7bc67e','#e74c3c','#3498db'];
@@ -1087,7 +1099,11 @@ function pushScope(s){
     if(scopePaused)return;
     const now=performance.now();
     scopeBuf.ts.push(now);
-    for(let i=0;i<8;i++)scopeBuf.adc[i].push(s.adc[i]);
+    // ADC no longer flows through here: pollAdcCapture() fills scopeAdc
+    // at the full 8 kHz rate so waveforms don't alias. We still keep a
+    // zero-filled scopeBuf.adc[] slot to avoid breaking any code path
+    // that might look it up by legacy index.
+    for(let i=0;i<8;i++)scopeBuf.adc[i].push(0);
     scopeBuf.dac[0].push(fngenSynthDac(0, now));
     scopeBuf.dac[1].push(fngenSynthDac(1, now));
     // PWM stream buffer: for pwm0/pwm1 we fall back to the manual
@@ -1109,12 +1125,62 @@ function pushScope(s){
     }
 }
 
+// Poll the server's full-rate ADC ring at ~10 Hz. Each response carries
+// every sample since the last cursor, so the client sees the waveform
+// at the true iso-IN cadence regardless of the WS broadcast throttle.
+// The first response with since=0 loads the whole 2 s ring in one go;
+// subsequent responses only carry the delta.
+async function pollAdcCapture() {
+    if (!scopePaused) {
+        try {
+            const r = await fetch('/api/adc/capture?since=' + scopeAdc.lastSeq);
+            if (r.ok) {
+                const d = await r.json();
+                const n = (d.adc && d.adc[0]) ? d.adc[0].length : 0;
+                if (n > 0) {
+                    const nowMs = performance.now();
+                    const dtMs = 1000 / (d.sample_rate_hz || 8000);
+                    // Anchor the last sample in the response to "now";
+                    // earlier samples are spaced dtMs apart working
+                    // backward. Good enough for waveform reconstruction
+                    // at tens-of-ms precision.
+                    const t0 = nowMs - (n - 1) * dtMs;
+                    for (let i = 0; i < n; i++) {
+                        scopeAdc.ts.push(t0 + i * dtMs);
+                        for (let c = 0; c < 8; c++) {
+                            scopeAdc.ch[c].push(d.adc[c][i]);
+                        }
+                    }
+                    // Trim with slice() so we stay O(N_remaining) rather
+                    // than Array.shift()-in-a-loop's O(N * M).
+                    if (scopeAdc.ts.length > SCOPE_ADC_MAX) {
+                        const skip = scopeAdc.ts.length - SCOPE_ADC_MAX;
+                        scopeAdc.ts = scopeAdc.ts.slice(skip);
+                        for (let c = 0; c < 8; c++) {
+                            scopeAdc.ch[c] = scopeAdc.ch[c].slice(skip);
+                        }
+                    }
+                    scopeAdc.lastSeq = d.last_seq + 1;
+                }
+            }
+        } catch (e) {
+            // Best-effort: just try again on the next tick.
+        }
+    }
+    setTimeout(pollAdcCapture, 100);
+}
+pollAdcCapture();
+
 // ========== Scope rendering ==========
 const cvA=document.getElementById('scopeAnalog'), cvP=document.getElementById('scopePwm'), cvD=document.getElementById('scopeDigital');
 const frameA=document.getElementById('scopeAnalogFrame'), frameP=document.getElementById('scopePwmFrame'), frameD=document.getElementById('scopeDigitalFrame');
 
 // Helpers: split scopeAnalogCh into ADC+DAC (0-9) vs PWM (10-11).
-function chArr(ch){return ch<8?scopeBuf.adc[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10]||[];}
+// ADC channels (0..7) live on scopeAdc (8 kHz), everything else on
+// scopeBuf (~250 Hz). chData returns both the ts and the value array
+// so consumers know which timebase to walk.
+function chArr(ch){return ch<8?scopeAdc.ch[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10]||[];}
+function chTs(ch){return ch<8?scopeAdc.ts:scopeBuf.ts;}
 function chLabel(ch){return ch<8?ADC_LABELS[ch]:ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
 function chMax(ch){return ch<10?4095:65535;}
 
@@ -1178,11 +1244,16 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
                 if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             }
         } else {
-            // Default: walk the captured stream buffer.
+            // Default: walk the captured stream buffer. ADC channels
+            // ride on scopeAdc (8 kHz), others on scopeBuf (~250 Hz),
+            // so we rebind to the correct timebase per channel.
             const arr = chArr(ch);
+            const ts = chTs(ch);
+            let j = ts.length - 1;
+            while (j > 0 && ts[j] > tMin) j--;
             let first = true;
-            for (let i = start; i < scopeBuf.ts.length; i++) {
-                const x = (scopeBuf.ts[i] - tMin) / windowMs * W;
+            for (let i = j; i < ts.length; i++) {
+                const x = (ts[i] - tMin) / windowMs * W;
                 const y = H - (arr[i] / max) * H;
                 if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
             }
@@ -1201,7 +1272,7 @@ function computeMeas(arr,start,end){
     return {cur:arr[end-1],min:mn,max:mx,mean:sum/n,pkpk:mx-mn};
 }
 
-function renderMeasTable(container, channels, start){
+function renderMeasTable(container, channels, start, tMin){
     if(!measOn||!channels.length){container.innerHTML='';return;}
     // Fixed column widths (colgroup + table-layout:fixed in CSS) + tabular-nums
     // so the values don't shift horizontally as digits grow/shrink.
@@ -1209,7 +1280,15 @@ function renderMeasTable(container, channels, start){
         + '<thead><tr><th>Ch</th><th>Cur</th><th>Min</th><th>Max</th><th>Mean</th><th>Pk-Pk</th></tr></thead><tbody>';
     channels.forEach(ch=>{
         const arr=chArr(ch);
-        const m=computeMeas(arr,start,arr.length);
+        // Each channel rides its own timebase (ADC = scopeAdc, others
+        // = scopeBuf) so recompute start against the matching ts array
+        // — passing a shared `start` computed on scopeBuf.ts to an ADC
+        // channel meant ADC measurements drifted out of the visible
+        // window as their buffer sits at 8 kHz.
+        const ts=chTs(ch);
+        let chStart=ts.length-1;
+        while(chStart>0 && ts[chStart]>tMin) chStart--;
+        const m=computeMeas(arr,chStart,arr.length);
         if(!m) return;
         const col=COLORS[ch%COLORS.length];
         h+=`<tr><td style="color:${col}">${chLabel(ch)}</td><td>${m.cur.toFixed(0)}</td><td>${m.min.toFixed(0)}</td><td>${m.max.toFixed(0)}</td><td>${m.mean.toFixed(1)}</td><td>${m.pkpk.toFixed(0)}</td></tr>`;
@@ -1278,8 +1357,8 @@ function drawScope(){
     // Measurements (throttled to ~10 Hz)
     if(measOn && now-lastMeasUpdate>100){
         lastMeasUpdate=now;
-        renderMeasTable(document.getElementById('scopeAnalogMeas'), analogCh, start);
-        renderMeasTable(document.getElementById('scopePwmMeas'), pwmCh, start);
+        renderMeasTable(document.getElementById('scopeAnalogMeas'), analogCh, start, tMin);
+        renderMeasTable(document.getElementById('scopePwmMeas'), pwmCh, start, tMin);
     }
 }
 

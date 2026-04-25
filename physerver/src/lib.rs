@@ -16,6 +16,7 @@ pub use phycmd_core::rt_setup as rt;
 pub use phycmd_core::transport;
 
 // Service-only modules (HTTP, IPC, system telemetry, config, ...)
+pub mod adc_capture;
 pub mod config;
 pub mod ipc;
 pub mod sysinfo;

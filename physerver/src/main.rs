@@ -285,6 +285,16 @@ async fn main() -> Result<()> {
                             let mut s = web_state_c.current_status.write().await;
                             *s = status.clone();
                         }
+                        // Full-rate ADC capture for /api/adc/capture. Push
+                        // every frame (no WS-style throttle) so a client
+                        // that polls sees the waveform at the true 8 kHz
+                        // rate. Mutex contention is a non-event: push takes
+                        // <100 ns and the handler only runs at ~10 Hz.
+                        web_state_c.adc_ring.lock().push(
+                            status.adc,
+                            status.digital_in,
+                            status.digital_out,
+                        );
                         if let Some(ipc) = ipc_c.as_ref() {
                             ipc.write_status(&status);
                         }

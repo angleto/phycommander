@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
 
+use crate::adc_capture::{self, SharedAdcRing};
 use crate::protocol::{Command, Status};
 use anyhow::Context as _;
 use axum::{
@@ -52,6 +53,9 @@ pub struct AppState {
     /// Handle to the iso transport itself. Used by the telemetry-detail
     /// toggle endpoint; absent in bulk mode.
     pub iso_transport: std::sync::OnceLock<Arc<phycmd_core::transport::IsoTransport>>,
+    /// Full-rate ADC sample ring. Fed by the bus-drain task in
+    /// `main.rs`, read by the `/api/adc/capture` handler.
+    pub adc_ring: SharedAdcRing,
 }
 
 impl AppState {
@@ -69,6 +73,7 @@ impl AppState {
             waveforms: std::sync::OnceLock::new(),
             waveform_dev: std::sync::OnceLock::new(),
             iso_transport: std::sync::OnceLock::new(),
+            adc_ring: adc_capture::new_shared(),
         }
     }
 
@@ -137,6 +142,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/gpio/set", post(set_gpio))
         .route("/api/dac/set", post(set_dac))
         .route("/api/adc/read", get(read_adc))
+        .route("/api/adc/capture", get(adc_capture_handler))
         .route("/api/sysinfo", get(get_sysinfo))
         .route("/api/version", get(get_version))
         .route("/api/health", get(get_health))
@@ -826,6 +832,75 @@ struct AdcResponse {
 async fn read_adc(State(state): State<Arc<AppState>>) -> Json<AdcResponse> {
     let status = state.current_status.read().await;
     Json(AdcResponse { channels: status.adc })
+}
+
+#[derive(Deserialize)]
+struct AdcCaptureQuery {
+    /// Return only samples with seq >= this cursor. Omit (or 0) on first call.
+    #[serde(default)]
+    since: u64,
+    /// Cap on how many samples to return; defaults to the ring capacity.
+    #[serde(default)]
+    max: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct AdcCaptureResponse {
+    /// Nominal sampling rate (Hz). Matches the iso IN microframe cadence.
+    sample_rate_hz: u32,
+    /// Oldest + newest seq currently held by the ring (for client
+    /// liveness diagnostics).
+    ring_first_seq: u64,
+    ring_last_seq: u64,
+    /// Seq of the first sample in the returned payload (or 0 if empty).
+    first_seq: u64,
+    /// Seq of the last sample in the returned payload (or 0 if empty).
+    last_seq: u64,
+    /// Samples in chronological order, each a 10-field record. Kept
+    /// as parallel arrays of u16 so JSON overhead stays minimal.
+    adc: [Vec<u16>; 8],
+    din: Vec<u16>,
+    dout: Vec<u16>,
+}
+
+async fn adc_capture_handler(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<AdcCaptureQuery>,
+) -> Json<AdcCaptureResponse> {
+    let max = q.max.unwrap_or(adc_capture::CAPACITY);
+    let (samples, first, last) = {
+        let ring = state.adc_ring.lock();
+        let (rf, rl) = ring.span();
+        (ring.snapshot_since(q.since, max), rf, rl)
+    };
+
+    let mut adc_cols: [Vec<u16>; 8] = Default::default();
+    let mut din = Vec::with_capacity(samples.len());
+    let mut dout = Vec::with_capacity(samples.len());
+    for s in &samples {
+        for (i, v) in s.adc.iter().enumerate() {
+            adc_cols[i].push(*v);
+        }
+        din.push(s.din);
+        dout.push(s.dout);
+    }
+
+    let (first_seq, last_seq) = if samples.is_empty() {
+        (0, 0)
+    } else {
+        (samples.first().unwrap().seq, samples.last().unwrap().seq)
+    };
+
+    Json(AdcCaptureResponse {
+        sample_rate_hz: 8000,
+        ring_first_seq: first,
+        ring_last_seq: last,
+        first_seq,
+        last_seq,
+        adc: adc_cols,
+        din,
+        dout,
+    })
 }
 
 /// Read a fresh system telemetry snapshot (hwmon sensors, CPU freq, load,

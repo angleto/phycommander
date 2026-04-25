@@ -35,7 +35,7 @@ pub struct AdcSample {
     /// Monotonic sample index. Starts at 0, incremented per push.
     pub seq: u64,
     /// 8 raw ADC channel values (12-bit, 0..4095).
-    pub adc: [u16; 8],
+    pub adc: [u16; 12],
     /// GPIO digital input mirror so the scope can render DIN traces
     /// at full rate too.
     pub din: u16,
@@ -53,7 +53,7 @@ impl AdcRing {
         Self { next_seq: 0, buf: VecDeque::with_capacity(CAPACITY) }
     }
 
-    pub fn push(&mut self, adc: [u16; 8], din: u16, dout: u16) {
+    pub fn push(&mut self, adc: [u16; 12], din: u16, dout: u16) {
         let sample = AdcSample { seq: self.next_seq, adc, din, dout };
         self.next_seq = self.next_seq.wrapping_add(1);
         if self.buf.len() == CAPACITY {
@@ -111,7 +111,7 @@ mod tests {
         let mut r = AdcRing::new();
         // Fill past capacity.
         for i in 0..(CAPACITY + 100) {
-            r.push([i as u16; 8], 0, 0);
+            r.push([i as u16; 12], 0, 0);
         }
         assert_eq!(r.len(), CAPACITY);
         let (first, last) = r.span();
@@ -129,7 +129,7 @@ mod tests {
     fn snapshot_since_respects_max() {
         let mut r = AdcRing::new();
         for i in 0..100 {
-            r.push([i; 8], 0, 0);
+            r.push([i; 12], 0, 0);
         }
         let snap = r.snapshot_since(0, 10);
         assert_eq!(snap.len(), 10);

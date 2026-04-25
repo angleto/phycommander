@@ -93,7 +93,7 @@ fn io_helper(
             Ok(Status {
                 digital_in: req.cmd.digital_out,
                 digital_out: req.cmd.digital_out,
-                adc: [req.cmd.dac[0], req.cmd.dac[1], 0, 0, 0, 0, 0, 0],
+                adc: [req.cmd.dac[0], req.cmd.dac[1], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
                 flags: StatusFlags { usb_configured: true, ..Default::default() },
                 seq_num: req.cmd.seq_num,
                 loop_time_us: 0,

@@ -37,6 +37,10 @@ pub struct SharedState {
     pub status_adc5: AtomicU16,
     pub status_adc6: AtomicU16,
     pub status_adc7: AtomicU16,
+    pub status_adc8: AtomicU16,
+    pub status_adc9: AtomicU16,
+    pub status_adc10: AtomicU16,
+    pub status_adc11: AtomicU16,
     pub status_flags: AtomicU8,
     pub status_seq_num: AtomicU8,
     pub status_loop_time_us: AtomicU16,
@@ -158,6 +162,10 @@ impl IpcServer {
                 5 => state.status_adc5.store(adc_val, Ordering::Release),
                 6 => state.status_adc6.store(adc_val, Ordering::Release),
                 7 => state.status_adc7.store(adc_val, Ordering::Release),
+                8 => state.status_adc8.store(adc_val, Ordering::Release),
+                9 => state.status_adc9.store(adc_val, Ordering::Release),
+                10 => state.status_adc10.store(adc_val, Ordering::Release),
+                11 => state.status_adc11.store(adc_val, Ordering::Release),
                 _ => {}
             }
         }
@@ -250,6 +258,10 @@ impl IpcClient {
                 state.status_adc5.load(Ordering::Acquire),
                 state.status_adc6.load(Ordering::Acquire),
                 state.status_adc7.load(Ordering::Acquire),
+                state.status_adc8.load(Ordering::Acquire),
+                state.status_adc9.load(Ordering::Acquire),
+                state.status_adc10.load(Ordering::Acquire),
+                state.status_adc11.load(Ordering::Acquire),
             ],
             flags: crate::protocol::StatusFlags::from_byte(
                 state.status_flags.load(Ordering::Acquire),

@@ -103,7 +103,7 @@ mod web_api_tests {
         let status = Status {
             digital_in: 0xFFFF,
             digital_out: 0x00FF,
-            adc: [100, 200, 300, 400, 500, 600, 700, 800],
+            adc: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200],
             flags: physerver::StatusFlags {
                 adc_active: true,
                 dac_active: true,

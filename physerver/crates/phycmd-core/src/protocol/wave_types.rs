@@ -243,10 +243,10 @@ const _: () = assert!(std::mem::size_of::<ChannelState>() == 32);
 // ---- Channel ID flat encoding (matches firmware's channel_decode) -------
 
 pub const CH_NUM_DAC: u16 = 2;
-pub const CH_NUM_PWM: u16 = 8;
+pub const CH_NUM_PWM: u16 = 10;
 pub const CH_NUM_DOUT: u16 = 16;
 pub const CH_NUM_DIN: u16 = 16;
-pub const CH_NUM_ADC: u16 = 8;
+pub const CH_NUM_ADC: u16 = 12;
 
 pub fn channel_id(kind: ChannelKind, index: u8) -> u16 {
     let base = match kind {
@@ -285,13 +285,16 @@ mod tests {
     use super::*;
     #[test]
     fn id_round_trip() {
+        // Layout: dac (0..1) | pwm (2..11) | dout (12..27) | din (28..43) | adc (44..55)
         assert_eq!(channel_id_from_name("dac0"), Some(0));
         assert_eq!(channel_id_from_name("dac1"), Some(1));
         assert_eq!(channel_id_from_name("pwm0"), Some(2));
-        assert_eq!(channel_id_from_name("dout0"), Some(10));
-        assert_eq!(channel_id_from_name("dout15"), Some(25));
-        assert_eq!(channel_id_from_name("din0"), Some(26));
-        assert_eq!(channel_id_from_name("adc7"), Some(49));
+        assert_eq!(channel_id_from_name("pwm9"), Some(11));
+        assert_eq!(channel_id_from_name("dout0"), Some(12));
+        assert_eq!(channel_id_from_name("dout15"), Some(27));
+        assert_eq!(channel_id_from_name("din0"), Some(28));
+        assert_eq!(channel_id_from_name("adc0"), Some(44));
+        assert_eq!(channel_id_from_name("adc11"), Some(55));
         assert_eq!(channel_id_from_name("dac9"), None); // out of range
         assert_eq!(channel_id_from_name("xyz"), None);
     }

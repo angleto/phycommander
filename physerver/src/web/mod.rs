@@ -828,7 +828,7 @@ async fn set_dac(State(state): State<Arc<AppState>>, Json(req): Json<DacRequest>
 
 #[derive(Serialize)]
 struct AdcResponse {
-    channels: [u16; 8],
+    channels: [u16; 12],
 }
 
 /// Read ADC values
@@ -861,7 +861,7 @@ struct AdcCaptureResponse {
     last_seq: u64,
     /// Samples in chronological order, each a 10-field record. Kept
     /// as parallel arrays of u16 so JSON overhead stays minimal.
-    adc: [Vec<u16>; 8],
+    adc: [Vec<u16>; 12],
     din: Vec<u16>,
     dout: Vec<u16>,
 }
@@ -877,7 +877,7 @@ async fn adc_capture_handler(
         (ring.snapshot_since(q.since, max), rf, rl)
     };
 
-    let mut adc_cols: [Vec<u16>; 8] = Default::default();
+    let mut adc_cols: [Vec<u16>; 12] = Default::default();
     let mut din = Vec::with_capacity(samples.len());
     let mut dout = Vec::with_capacity(samples.len());
     for s in &samples {

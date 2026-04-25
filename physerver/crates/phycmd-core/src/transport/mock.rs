@@ -152,7 +152,7 @@ impl Transport for MockTransport {
         let status = Status {
             digital_in: cmd.digital_out, // loopback
             digital_out: cmd.digital_out,
-            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0],
+            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             flags: StatusFlags { usb_configured: true, ..Default::default() },
             seq_num: cmd.seq_num,
             loop_time_us: 10, // pretend the device loop is fast
@@ -287,7 +287,7 @@ impl super::traits::PipelinedTransport for MockPipelinedTransport {
         let status = Status {
             digital_in: cmd.digital_out,
             digital_out: cmd.digital_out,
-            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0],
+            adc: [cmd.dac[0], cmd.dac[1], 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             flags: StatusFlags { usb_configured: true, ..Default::default() },
             seq_num: cmd.seq_num,
             loop_time_us: 10,

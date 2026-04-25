@@ -17,21 +17,26 @@
 //!       --ignored --test-threads=1 --nocapture
 //!
 //! Default wiring (override via env vars, all take a decimal ADC-slot index
-//! 0..7 matching the firmware adc[] array, i.e. Due silkscreen A1..A6,A10,A11):
+//! 0..11 matching the firmware adc[] array, i.e. Due silkscreen A0..A11):
 //!
-//!   Signal   Due pin   ADC slot   Env var override
-//!   DAC0     A1        0          PHYCMD_DAC0_ADC  (silicon fault: expect low swing)
-//!   DAC1     A2        1          PHYCMD_DAC1_ADC
-//!   pwm0     A4 (D9)   3          PHYCMD_PWM0_ADC
-//!   pwm1     A3 (D8)   2          PHYCMD_PWM1_ADC
-//!   pwm2     A10 (D7)  6          PHYCMD_PWM2_ADC
-//!   pwm3     A11 (D6)  7          PHYCMD_PWM3_ADC
-//!   pwm4     A5 (D10)  4          PHYCMD_PWM4_ADC
-//!   pwm5     A6 (D11)  5          PHYCMD_PWM5_ADC
+//!   Signal   Due pin       ADC slot   Env var override
+//!   DAC0     A0            0          PHYCMD_DAC0_ADC
+//!   DAC1     A1            1          PHYCMD_DAC1_ADC
+//!   pwm0     A2 (D9)       2          PHYCMD_PWM0_ADC
+//!   pwm1     A3 (D8)       3          PHYCMD_PWM1_ADC
+//!   pwm2     A4 (D7)       4          PHYCMD_PWM2_ADC
+//!   pwm3     A5 (D6)       5          PHYCMD_PWM3_ADC
+//!   pwm4     A6 (D10)      6          PHYCMD_PWM4_ADC
+//!   pwm5     A7 (D11)      7          PHYCMD_PWM5_ADC
+//!   pwm6     A8 (D5)       8          PHYCMD_PWM6_ADC
+//!   pwm7     A9 (D4)       9          PHYCMD_PWM7_ADC
+//!   pwm8     A10 (D3)      10         PHYCMD_PWM8_ADC
+//!   pwm9     A11 (D2)      11         PHYCMD_PWM9_ADC
 //!
 //! Other env vars:
 //!   PHYCMD_URL       base URL, default http://127.0.0.1:8080
-//!   PHYCMD_SKIP_DAC0 set to 1 to skip the "DAC0 silicon fault" check
+//!   PHYCMD_SKIP_DAC0 set to 1 to skip the dac0_silicon_fault assertion
+//!                    (kept around in case a chip ever does come up faulted)
 //!   PHYCMD_SKIP_PWM  comma-list of pwm indices to skip (e.g. "2,3")
 
 use std::time::Duration;
@@ -118,7 +123,7 @@ impl BenchHttpClient {
         let _ = self.agent.post(&url).send_string("");
     }
 
-    fn read_adc(&self) -> [u16; 8] {
+    fn read_adc(&self) -> [u16; 12] {
         let url = self.url("/api/adc/read");
         let resp: AdcResponse = self
             .agent
@@ -140,17 +145,17 @@ impl BenchHttpClient {
         resp.digital_in
     }
 
-    fn read_adc_avg(&self, samples: usize) -> [f64; 8] {
-        let mut sums = [0.0f64; 8];
+    fn read_adc_avg(&self, samples: usize) -> [f64; 12] {
+        let mut sums = [0.0f64; 12];
         for _ in 0..samples {
             let ch = self.read_adc();
-            for i in 0..8 {
+            for i in 0..12 {
                 sums[i] += ch[i] as f64;
             }
             std::thread::sleep(Duration::from_millis(5));
         }
-        let mut out = [0.0f64; 8];
-        for i in 0..8 {
+        let mut out = [0.0f64; 12];
+        for i in 0..12 {
             out[i] = sums[i] / samples as f64;
         }
         out
@@ -171,7 +176,7 @@ impl BenchHttpClient {
 
 #[derive(Deserialize)]
 struct AdcResponse {
-    channels: [u16; 8],
+    channels: [u16; 12],
 }
 
 #[derive(Deserialize)]
@@ -286,23 +291,25 @@ fn bench_dac1_linearity() {
 }
 
 // ===========================================================================
-//  Test 2: DAC0 silicon-fault regression check
+//  Test 2: DAC0 linearity
 //
-//  DAC0 on this particular chip has a damaged output stage: ~40 mV swing out
-//  of a 2200 mV nominal (see memory/bench_chip_silicon_faults.md). We flag
-//  the fault by asserting the swing stays LOW. If someone swaps in a fresh
-//  SAM3X, this test will fail with a diagnostic asking to re-enable DAC0 in
-//  the dashboard and flip this assertion.
+//  Same shape as bench_dac1_linearity. Until 2026-04-25 this test asserted
+//  that DAC0 was *broken* (swing < 400 LSB) — the bench's first SAM3X chip
+//  appeared to have a damaged CH0 output stage. JTAG probing of the second
+//  chip (DAC0/DAC1 wires moved to A0/A1) showed CH0 healthy with full
+//  ~2750 LSB swing, identical to CH1. The "silicon fault" was a wiring
+//  artefact on the first board; the chip and firmware are fine. Now both
+//  DACs get a positive linearity assertion.
 // ===========================================================================
 
 #[test]
 #[ignore]
-fn bench_dac0_silicon_fault_present() {
+fn bench_dac0_linearity() {
     if std::env::var("PHYCMD_SKIP_DAC0").ok().as_deref() == Some("1") {
         eprintln!("[dac0] PHYCMD_SKIP_DAC0=1 — skipping");
         return;
     }
-    let Some(client) = connect_or_skip("bench_dac0_silicon_fault_present") else {
+    let Some(client) = connect_or_skip("bench_dac0_linearity") else {
         return;
     };
     let adc_slot = env_adc_slot("PHYCMD_DAC0_ADC", 0);
@@ -310,26 +317,40 @@ fn bench_dac0_silicon_fault_present() {
     client.set_dac(0, 0);
     client.set_dac(1, 0);
     std::thread::sleep(Duration::from_millis(30));
-    let avg_lo = client.read_adc_avg(10)[adc_slot];
 
-    client.set_dac(0, DAC_MAX);
-    std::thread::sleep(Duration::from_millis(30));
-    let avg_hi = client.read_adc_avg(10)[adc_slot];
+    let steps = 16;
+    let step_size = DAC_MAX / steps;
+    let mut samples: Vec<(u16, f64)> = Vec::new();
 
+    eprintln!("[dac0] linearity sweep -> ADC slot {}:", adc_slot);
+    for i in 0..=steps {
+        let v = (i * step_size).min(DAC_MAX);
+        client.set_dac(0, v);
+        std::thread::sleep(Duration::from_millis(25));
+        let avg = client.read_adc_avg(5);
+        eprintln!("  DAC0={:4}  ADC[{}]={:7.1}", v, adc_slot, avg[adc_slot]);
+        samples.push((v, avg[adc_slot]));
+    }
     client.set_dac(0, 0);
 
-    let swing = avg_hi - avg_lo;
-    eprintln!(
-        "[dac0] lo={:.0}, hi={:.0}, swing={:.0} LSB (expected << 2000 due to silicon fault)",
-        avg_lo, avg_hi, swing
-    );
+    let (slope, r2) = linear_regression(&samples);
+    let (first, last) = (samples.first().unwrap().1, samples.last().unwrap().1);
+    let swing = last - first;
+    eprintln!("[dac0] swing={:.0} LSB, slope={:.3}, R²={:.4}", swing, slope, r2);
 
     assert!(
-        swing < 400.0,
-        "DAC0 swing={:.0} LSB — the silicon fault seems to be gone! Chip replaced? Re-enable DAC0 \
-         in the dashboard and update this test.",
-        swing
+        swing > 2000.0,
+        "DAC0 swing only {:.0} LSB — expected >2000 (is DAC0 wired to ADC[{}]?)",
+        swing,
+        adc_slot
     );
+    assert!(
+        (0.55..=0.85).contains(&slope),
+        "DAC0 slope {:.3} out of [0.55, 0.85] — DAC=3.3V ref vs ADC=3.3V ref but output stage \
+         caps at ~2.7V on SAM3X, so ~0.7 is expected",
+        slope
+    );
+    assert!(r2 > 0.98, "DAC0 linearity R² too low: {:.4}", r2);
 }
 
 // ===========================================================================
@@ -351,13 +372,17 @@ fn bench_pwm_duty_endpoints() {
 
     // Defaults from current bench wiring. Overridable via env. Slot 99 is a
     // sentinel meaning "not wired — skip".
-    let wiring: [(u8, usize); 6] = [
-        (0, env_adc_slot("PHYCMD_PWM0_ADC", 3)),
-        (1, env_adc_slot("PHYCMD_PWM1_ADC", 2)),
-        (2, env_adc_slot("PHYCMD_PWM2_ADC", 6)),
-        (3, env_adc_slot("PHYCMD_PWM3_ADC", 7)),
-        (4, env_adc_slot("PHYCMD_PWM4_ADC", 4)),
-        (5, env_adc_slot("PHYCMD_PWM5_ADC", 5)),
+    let wiring: [(u8, usize); 10] = [
+        (0, env_adc_slot("PHYCMD_PWM0_ADC", 2)),
+        (1, env_adc_slot("PHYCMD_PWM1_ADC", 3)),
+        (2, env_adc_slot("PHYCMD_PWM2_ADC", 4)),
+        (3, env_adc_slot("PHYCMD_PWM3_ADC", 5)),
+        (4, env_adc_slot("PHYCMD_PWM4_ADC", 6)),
+        (5, env_adc_slot("PHYCMD_PWM5_ADC", 7)),
+        (6, env_adc_slot("PHYCMD_PWM6_ADC", 8)),
+        (7, env_adc_slot("PHYCMD_PWM7_ADC", 9)),
+        (8, env_adc_slot("PHYCMD_PWM8_ADC", 10)),
+        (9, env_adc_slot("PHYCMD_PWM9_ADC", 11)),
     ];
 
     client.reset_all_outputs();
@@ -429,12 +454,16 @@ fn bench_pwm_duty_monotonic() {
     let slot = env_adc_slot(
         &format!("PHYCMD_PWM{}_ADC", pwm),
         match pwm {
-            0 => 3,
-            1 => 2,
-            2 => 6,
-            3 => 7,
-            4 => 4,
-            5 => 5,
+            0 => 2,
+            1 => 3,
+            2 => 4,
+            3 => 5,
+            4 => 6,
+            5 => 7,
+            6 => 8,
+            7 => 9,
+            8 => 10,
+            9 => 11,
             _ => 99,
         },
     );
@@ -564,14 +593,14 @@ fn bench_adc_idle_stability() {
     std::thread::sleep(Duration::from_millis(100));
 
     let n = 100;
-    let mut samples: Vec<[u16; 8]> = Vec::with_capacity(n);
+    let mut samples: Vec<[u16; 12]> = Vec::with_capacity(n);
     for _ in 0..n {
         samples.push(client.read_adc());
         std::thread::sleep(Duration::from_millis(4));
     }
 
     let mut failures: Vec<String> = Vec::new();
-    for ch in 0..8 {
+    for ch in 0..12 {
         let vals: Vec<f64> = samples.iter().map(|s| s[ch] as f64).collect();
         let mean = vals.iter().sum::<f64>() / vals.len() as f64;
         let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / vals.len() as f64;

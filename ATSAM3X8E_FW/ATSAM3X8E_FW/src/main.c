@@ -76,14 +76,14 @@ typedef struct __attribute__((packed)) {
 	uint16_t header;        /* 0x55AA */
 	uint16_t digital_in;
 	uint16_t digital_out;
-	uint16_t adc[8];
+	uint16_t adc[12];       /* Due A0..A11 (bumped from 8 on 2026-04-25) */
 	uint8_t  status_flags;
 	uint8_t  seq_num;
 	uint16_t crc;
 	uint16_t loop_time_us;
 	uint32_t uptime_ms;
 	uint16_t error_count;
-	uint8_t  reserved[30];
+	uint8_t  reserved[22];
 } status_msg_t;
 
 _Static_assert(sizeof(command_msg_t) == MSG_SIZE, "command_msg_t != 64");
@@ -371,7 +371,7 @@ static inline uint16_t get_dig_out_echo(void)
  *  rather than leftover zeros from power-on.
  * ============================================================ */
 
-#define ADC_CHANNEL_NUM 8
+#define ADC_CHANNEL_NUM 12
 uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
 /* Index into g_adc_buf that the READER (build_status_frame) should
  * sample from. Incremented by the SOF handler after it swaps the PDC
@@ -385,10 +385,21 @@ uint16_t g_adc_buf[16][ADC_CHANNEL_NUM];
  * resized. */
 static volatile uint8_t g_adc_publish_idx = 0;
 
-/* Channels published in the 8-slot wire frame, indexed by SAM3X AD
- * channel number (not PDC buffer slot). Covers Due A1, A2, A3, A4,
- * A5, A6, A10, A11 — the block the current bench harness wires up. */
-static const uint8_t g_adc_cdr_map[8] = { 6, 5, 4, 3, 2, 1, 12, 13 };
+/* Channels published in the 12-slot wire frame, indexed by SAM3X AD
+ * channel number. Covers Due A0..A11 — full analog header on the Due,
+ * matching the bench rig that now wires DAC0/DAC1/PWMs to A0..A11.
+ * Mapping: Due Ax silkscreen → SAM3X AD channel:
+ *   A0 -> AD7  (PA16)     A6 -> AD1  (PA3)
+ *   A1 -> AD6  (PA24)     A7 -> AD0  (PA2)
+ *   A2 -> AD5  (PA23)     A8 -> AD10 (PB17)
+ *   A3 -> AD4  (PA22)     A9 -> AD11 (PB18)
+ *   A4 -> AD3  (PA6)      A10 -> AD12 (PB19)
+ *   A5 -> AD2  (PA4)      A11 -> AD13 (PB20)
+ */
+static const uint8_t g_adc_cdr_map[12] = {
+	7, 6, 5, 4, 3, 2, 1, 0,    /* A0..A7 */
+	10, 11, 12, 13,            /* A8..A11 */
+};
 
 static void adc_setup(void)
 {
@@ -475,16 +486,17 @@ static void adc_setup(void)
 	 * races the EOC flags); direct CDR reads bypass it entirely
 	 * and every channel converges on its real analog input within
 	 * one free-run cycle (~20 µs for 16 channels). */
-	/* Enable ONLY the channels g_adc_cdr_map[] actually reads: AD1..AD6
-	 * (Due A1..A6) plus AD12/AD13 (Due A10/A11). Turning on channels we
-	 * don't use is not free — the AD<n> analog input pins are peripheral-
-	 * muxed with PIO pins, and enabling the channel pulls the pad into
-	 * the ADC sample-and-hold, disabling its PIO behaviour. Most visibly,
-	 * AD14 lives on PB21, which is our DIGITAL_INPUT_15 pin — setting
-	 * bit 14 in CHER here silently kills DIN[15]. Mask below is:
-	 *   bits: 1 2 3 4 5 6 12 13  =>  0x307E */
-	ADC->ADC_CHER = (1u << 1) | (1u << 2) | (1u << 3) | (1u << 4)
-	              | (1u << 5) | (1u << 6) | (1u << 12) | (1u << 13);
+	/* Enable the channels g_adc_cdr_map[] reads: AD0..AD7 (Due A0..A7
+	 * on Port A) plus AD10..AD13 (Due A8..A11 on Port B). 12 channels
+	 * total. Mask = 0x3CFF.
+	 *
+	 * Skipped on purpose:
+	 *   - AD8 (PB12) and AD9 (PB13): Due silkscreen labels A8/A9 are
+	 *     wired to AD10/AD11, NOT AD8/AD9 — those AD inputs are not
+	 *     exposed on the analog header.
+	 *   - AD14 (PB21): clobbers DIN[15], see commit ba5fe1c.
+	 *   - AD15 (PB15): would steal DAC0's pad. */
+	ADC->ADC_CHER = 0x3CFFu;
 	ADC->ADC_MR  |= ADC_MR_FREERUN;
 	ADC->ADC_PTCR = ADC_PTCR_RXTDIS | ADC_PTCR_TXTDIS;
 	ADC->ADC_IDR  = ~0u;
@@ -748,25 +760,14 @@ void build_status_frame(uint8_t *tx_buf)
 	stat->digital_in  = get_dig_in_value();
 	stat->digital_out = get_dig_out_echo();
 
-	/* ADC: read the currently-published buffer and reorder it so
-	 * that `stat->adc[0]` is the reading on Arduino Due **A1** (the
-	 * first working analog pin, since A0/AD7 is faulted on this
-	 * chip) and `stat->adc[7]` is **A8**. Wire-protocol callers get
-	 * a contiguous "first working → last working" sequence they can
-	 * index from 0 without juggling the SAM3X AD-channel inversion.
-	 *
-	 * The PDC fills g_adc_buf[][k] with SAM3X AD channel k's last
-	 * conversion (k runs 0..6 then 10, filling slots 0..7 in scan
-	 * order). Due silkscreen A<n> corresponds to SAM3X AD(7-n) for
-	 * n=1..7 and AD10 for n=8. So:
-	 *    stat->adc[0] → Due A1 → AD6 → buf slot 6
-	 *    stat->adc[1] → Due A2 → AD5 → buf slot 5
-	 *    stat->adc[2] → Due A3 → AD4 → buf slot 4
-	 *    stat->adc[3] → Due A4 → AD3 → buf slot 3
-	 *    stat->adc[4] → Due A5 → AD2 → buf slot 2
-	 *    stat->adc[5] → Due A6 → AD1 → buf slot 1
-	 *    stat->adc[6] → Due A7 → AD0 → buf slot 0
-	 *    stat->adc[7] → Due A8 → AD10 → buf slot 7 */
+	/* ADC: snapshot the 12 channels listed in g_adc_cdr_map[] directly
+	 * out of ADC_CDR[]. Mapping (stat->adc index → Due silkscreen pin):
+	 *   adc[0]  → Due A0 (AD7)     adc[6]  → Due A6 (AD1)
+	 *   adc[1]  → Due A1 (AD6)     adc[7]  → Due A7 (AD0)
+	 *   adc[2]  → Due A2 (AD5)     adc[8]  → Due A8 (AD10)
+	 *   adc[3]  → Due A3 (AD4)     adc[9]  → Due A9 (AD11)
+	 *   adc[4]  → Due A4 (AD3)     adc[10] → Due A10 (AD12)
+	 *   adc[5]  → Due A5 (AD2)     adc[11] → Due A11 (AD13) */
 	/* ADC: snapshot ADC_CDR[] directly (FREE-RUN mode, see adc_setup).
 	 * g_adc_cdr_map[] picks which AD channel lands in each wire slot. */
 	for (int i = 0; i < ADC_CHANNEL_NUM; i++)

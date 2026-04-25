@@ -23,14 +23,14 @@ pub struct StatusMessage {
     pub header: u16,        // 0x55AA
     pub digital_in: u16,    // GPIO inputs (16 bits)
     pub digital_out: u16,   // GPIO outputs echo
-    pub adc: [u16; 8],      // ADC channels 0-7
+    pub adc: [u16; 12],     // ADC channels 0-11 (Due A0..A11)
     pub status_flags: u8,   // Status flags
     pub seq_num: u8,        // Sequence number echo
     pub crc: u16,           // CRC-16-CCITT
     pub loop_time_us: u16,  // Main loop time (µs)
     pub uptime_ms: u32,     // System uptime (ms)
     pub error_count: u16,   // Total error count
-    pub reserved: [u8; 30], // Reserved
+    pub reserved: [u8; 22], // Reserved (shrunk from 30 to keep total at 64)
 }
 
 /// High-level command structure (safe, validated)
@@ -48,7 +48,7 @@ pub struct Command {
 pub struct Status {
     pub digital_in: u16,
     pub digital_out: u16,
-    pub adc: [u16; 8],
+    pub adc: [u16; 12],
     pub flags: StatusFlags,
     pub seq_num: u8,
     pub loop_time_us: u16,
@@ -95,7 +95,7 @@ impl Default for Status {
         Self {
             digital_in: 0,
             digital_out: 0,
-            adc: [0; 8],
+            adc: [0; 12],
             flags: StatusFlags::default(),
             seq_num: 0,
             loop_time_us: 0,
@@ -203,16 +203,19 @@ const _: () = {
     assert!(offset_of!(CommandMessage, crc) == 14);
     assert!(offset_of!(CommandMessage, reserved) == 16);
 
-    // Status (device → host)
+    // Status (device → host) — bumped to adc[12] on 2026-04-25 to expose
+    // Due A0..A11 simultaneously. Everything past the ADC array shifted
+    // forward by 8 bytes; reserved shrank from 30 → 22 to keep the
+    // frame at exactly 64 bytes.
     assert!(offset_of!(StatusMessage, header) == 0);
     assert!(offset_of!(StatusMessage, digital_in) == 2);
     assert!(offset_of!(StatusMessage, digital_out) == 4);
     assert!(offset_of!(StatusMessage, adc) == 6);
-    assert!(offset_of!(StatusMessage, status_flags) == 22);
-    assert!(offset_of!(StatusMessage, seq_num) == 23);
-    assert!(offset_of!(StatusMessage, crc) == 24);
-    assert!(offset_of!(StatusMessage, loop_time_us) == 26);
-    assert!(offset_of!(StatusMessage, uptime_ms) == 28);
-    assert!(offset_of!(StatusMessage, error_count) == 32);
-    assert!(offset_of!(StatusMessage, reserved) == 34);
+    assert!(offset_of!(StatusMessage, status_flags) == 30);
+    assert!(offset_of!(StatusMessage, seq_num) == 31);
+    assert!(offset_of!(StatusMessage, crc) == 32);
+    assert!(offset_of!(StatusMessage, loop_time_us) == 34);
+    assert!(offset_of!(StatusMessage, uptime_ms) == 36);
+    assert!(offset_of!(StatusMessage, error_count) == 40);
+    assert!(offset_of!(StatusMessage, reserved) == 42);
 };

@@ -363,12 +363,16 @@
         <!-- PWM (duty sliders via fngen, 1 kHz carrier) -->
         <div class="panel" id="panelPwm" data-title="PWM Outputs">
             <h2>PWM Outputs <small style="font-weight:normal;color:#999;font-size:10px;">(1 kHz carrier, duty 0–100 %)</small></h2>
-            <div class="control-group"><label>PWM9 (Due D9)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_0" data-fngen="pwm0"><span class="value-display" id="pwmDutyV_0">0</span>‰</div></div>
-            <div class="control-group"><label>PWM8 (Due D8)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_1" data-fngen="pwm1"><span class="value-display" id="pwmDutyV_1">0</span>‰</div></div>
-            <div class="control-group"><label>PWM7 (Due D7)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_2" data-fngen="pwm2"><span class="value-display" id="pwmDutyV_2">0</span>‰</div></div>
-            <div class="control-group"><label>PWM6 (Due D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
-            <div class="control-group"><label>PWM10 (Due D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
-            <div class="control-group"><label>PWM11 (Due D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D9)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_0" data-fngen="pwm0"><span class="value-display" id="pwmDutyV_0">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D8)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_1" data-fngen="pwm1"><span class="value-display" id="pwmDutyV_1">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D7)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_2" data-fngen="pwm2"><span class="value-display" id="pwmDutyV_2">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D5) <small style="color:#888">period shared with D4</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_6" data-fngen="pwm6"><span class="value-display" id="pwmDutyV_6">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D4) <small style="color:#888">period shared with D5</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_7" data-fngen="pwm7"><span class="value-display" id="pwmDutyV_7">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D3) <small style="color:#888">period shared with D10</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_8" data-fngen="pwm8"><span class="value-display" id="pwmDutyV_8">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D2)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_9" data-fngen="pwm9"><span class="value-display" id="pwmDutyV_9">0</span>‰</div></div>
         </div>
 
         <!-- ADC -->
@@ -812,7 +816,14 @@ let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enab
 
 // Scope data ring buffer
 const SCOPE_MAX = 10000;
-let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], pwm:[[],[],[],[]], din:[], dout:[], ts:[] };
+const N_ADC = 12;   // wire-protocol ADC slots, mirrors phycmd-core CH_NUM_ADC
+const N_PWM_UI = 10; // dashboard slider count, mirrors firmware WAVE_NUM_PWM_ACTIVE
+let scopeBuf = {
+    adc: Array.from({length:N_ADC},()=>[]),
+    dac: [[],[]],
+    pwm: [[],[],[],[]],
+    din: [], dout: [], ts: []
+};
 // Separate full-rate ADC buffer fed by polling /api/adc/capture at ~10 Hz
 // (each response carries ~800 new samples @ 8 kHz). The WS broadcast is
 // throttled to 250 Hz upstream so feeding the scope off the WS stream
@@ -822,7 +833,7 @@ let scopeBuf = { adc:Array.from({length:8},()=>[]), dac:[[],[]], pwm:[[],[],[],[
 const SCOPE_ADC_MAX = 16384;  // 2 s @ 8 kHz
 let scopeAdc = {
     ts: [],
-    ch: Array.from({ length: 8 }, () => []),
+    ch: Array.from({ length: N_ADC }, () => []),
     lastSeq: 0,  // next seq to request, so 0 == "from the start"
 };
 let scopeAnalogCh = [0,1]; // enabled scope analog channels. adc[i] = Due A(i+1), so [0,1] = A1 and A2.
@@ -833,14 +844,11 @@ const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9
 const gpioOut=document.getElementById('gpioOutputs'), gpioIn=document.getElementById('gpioInputs'), adcDisp=document.getElementById('adcDisplay');
 for(let i=0;i<16;i++){const b=document.createElement('button');b.className='gpio-button';b.textContent=i;b.onclick=()=>{cmd.digital_out^=(1<<i);updateGpioOut();sendCmd()};gpioOut.appendChild(b);}
 for(let i=0;i<16;i++){const d=document.createElement('div');d.className='gpio-button input';d.textContent=i;gpioIn.appendChild(d);}
-// ADC cells cover 8 Due pins: A1..A6 + A10 + A11. A0 (AD7),
-// A7 (AD0, unused by current harness), A8 (AD10) and A9 (AD11)
-// are skipped — AD7/AD10/AD11 are stuck silicon on the bench
-// chip; A7 is simply free for other purposes in the current
-// wiring. The firmware enables AD1..AD6 + AD12 + AD13 and the
-// adc_slot_map[] inside build_status_frame reorders them into
-// the user-intuitive order below.
-const ADC_LABELS = ['A1','A2','A3','A4','A5','A6','A10','A11'];
+// ADC cells cover the full Due analog header A0..A11 (12 channels).
+// The wire protocol was bumped from 8 to 12 ADC slots on 2026-04-25
+// to expose the entire bank: rig wires DAC0/DAC1 to A0/A1 and
+// pwm0..pwm9 to A2..A11.
+const ADC_LABELS = ['A0','A1','A2','A3','A4','A5','A6','A7','A8','A9','A10','A11'];
 ADC_LABELS.forEach((ai, i) => {
     const c=document.createElement('div');c.className='adc-ch';
     c.innerHTML=`<div class="lbl">${ai}</div><div class="val" id="a${ai}">0</div><div class="bar" id="ab${ai}"></div>`;
@@ -891,32 +899,37 @@ document.querySelectorAll('input[id^="pwmDutyS_"]').forEach(s => {
 // Scope channel selectors
 const scopeAdcEl=document.getElementById('scopeAdcCh'), scopeDacEl=document.getElementById('scopeDacCh'), scopePwmEl=document.getElementById('scopePwmCh');
 const scopeDInEl=document.getElementById('scopeDigitalInCh'), scopeDOutEl=document.getElementById('scopeDigitalOutCh');
-// Analog channels: 0-7=ADC, 8-9=DAC, 10-11=PWM
-// ADC (In) — checkbox labels are the Due silkscreen pins A1..A8.
-// Firmware already reorders adc[i] = Due A(i+1), so the internal
-// scope channel index i matches the i-th A-pin naturally.
-for(let i=0;i<8;i++){
+// Channel index space (used by the analog scope toolbar):
+//   0..N_ADC-1     = ADC slots (Due A0..A<N_ADC-1>)
+//   N_ADC..N_ADC+1 = DAC0, DAC1
+//   >= N_ADC+2     = PWM (one per slider)
+// ADC (In) — checkbox labels are the Due silkscreen pins from ADC_LABELS.
+for(let i=0;i<N_ADC;i++){
     const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';cb.checked=i<2;
     cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
     l.appendChild(cb);l.appendChild(document.createTextNode(ADC_LABELS[i]));scopeAdcEl.appendChild(l);
 }
-// DAC (Out) — indices 8-9
-for(let i=8;i<10;i++){
+// DAC (Out) — indices N_ADC..N_ADC+1
+const SCOPE_DAC_BASE = N_ADC;
+const SCOPE_PWM_BASE = N_ADC + 2;
+for(let d=0;d<2;d++){
+    const i = SCOPE_DAC_BASE + d;
     const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';
     cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
-    l.appendChild(cb);l.appendChild(document.createTextNode(String(i-8)));scopeDacEl.appendChild(l);
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(d)));scopeDacEl.appendChild(l);
 }
-// PWM — indices 10-13 (on-chip PWM0..PWM3 routed to Due pins 9/8/7/6)
-for(let i=10;i<14;i++){
+// PWM — one slot per dashboard slider (firmware pwm0..pwm<N_PWM_UI-1>)
+for(let p=0;p<N_PWM_UI;p++){
+    const i = SCOPE_PWM_BASE + p;
     const l=document.createElement('label');
     const cb=document.createElement('input');cb.type='checkbox';
     cb.style.accentColor=COLORS[i%COLORS.length];
     cb.onchange=()=>{if(cb.checked&&!scopeAnalogCh.includes(i))scopeAnalogCh.push(i);else scopeAnalogCh=scopeAnalogCh.filter(x=>x!==i)};
-    l.appendChild(cb);l.appendChild(document.createTextNode(String(i-10)));scopePwmEl.appendChild(l);
+    l.appendChild(cb);l.appendChild(document.createTextNode(String(p)));scopePwmEl.appendChild(l);
 }
 for(let i=0;i<16;i++){
     const idx=i; const l=document.createElement('label');
@@ -1113,27 +1126,26 @@ function pushScope(s){
     const now=performance.now();
     scopeBuf.ts.push(now);
     // ADC no longer flows through here: pollAdcCapture() fills scopeAdc
-    // at the full 8 kHz rate so waveforms don't alias. We still keep a
-    // zero-filled scopeBuf.adc[] slot to avoid breaking any code path
-    // that might look it up by legacy index.
-    for(let i=0;i<8;i++)scopeBuf.adc[i].push(0);
+    // at the full 8 kHz rate so waveforms don't alias. We still keep
+    // zero-filled scopeBuf.adc[] slots to avoid breaking any legacy
+    // by-index lookup.
+    for(let i=0;i<N_ADC;i++)scopeBuf.adc[i].push(0);
     scopeBuf.dac[0].push(fngenSynthDac(0, now));
     scopeBuf.dac[1].push(fngenSynthDac(1, now));
-    // PWM stream buffer: for pwm0/pwm1 we fall back to the manual
-    // cmd.pwm level so the old analog-duty style traces still work;
-    // pwm2/pwm3 have no manual stream, buffer stays 0 when idle and
-    // is only meaningful via the analytic synth path in renderAnalogPlot.
-    scopeBuf.pwm[0].push(fngenSynthPwm(0, now));
-    scopeBuf.pwm[1].push(fngenSynthPwm(1, now));
-    scopeBuf.pwm[2].push(fngenSynthPwm(2, now));
-    scopeBuf.pwm[3].push(fngenSynthPwm(3, now));
+    // PWM synthesis: every firmware pwm0..pwm<N_PWM_UI-1>. The synth
+    // mirrors the on-chip generator's last-known shape so traces look
+    // right regardless of the (slow) WS broadcast rate.
+    for(let p=0;p<N_PWM_UI;p++){
+        if(!scopeBuf.pwm[p]) scopeBuf.pwm[p]=[];
+        scopeBuf.pwm[p].push(fngenSynthPwm(p, now));
+    }
     scopeBuf.din.push(s.digital_in); scopeBuf.dout.push(s.digital_out);
     // Trim
     while(scopeBuf.ts.length>SCOPE_MAX){
         scopeBuf.ts.shift();
-        for(let i=0;i<8;i++)scopeBuf.adc[i].shift();
+        for(let i=0;i<N_ADC;i++)scopeBuf.adc[i].shift();
         scopeBuf.dac[0].shift();scopeBuf.dac[1].shift();
-        for(let i=0;i<4;i++)scopeBuf.pwm[i].shift();
+        for(let p=0;p<N_PWM_UI;p++) if(scopeBuf.pwm[p]) scopeBuf.pwm[p].shift();
         scopeBuf.din.shift();scopeBuf.dout.shift();
     }
 }
@@ -1195,10 +1207,18 @@ const frameA=document.getElementById('scopeAnalogFrame'), frameP=document.getEle
 // ADC channels (0..7) live on scopeAdc (8 kHz), everything else on
 // scopeBuf (~250 Hz). chData returns both the ts and the value array
 // so consumers know which timebase to walk.
-function chArr(ch){return ch<8?scopeAdc.ch[ch]:ch<10?scopeBuf.dac[ch-8]:scopeBuf.pwm[ch-10]||[];}
-function chTs(ch){return ch<8?scopeAdc.ts:scopeBuf.ts;}
-function chLabel(ch){return ch<8?ADC_LABELS[ch]:ch<10?'DAC'+(ch-8):'PWM'+(ch-10);}
-function chMax(ch){return ch<10?4095:65535;}
+function chArr(ch){
+    if (ch < N_ADC) return scopeAdc.ch[ch];
+    if (ch < SCOPE_PWM_BASE) return scopeBuf.dac[ch - SCOPE_DAC_BASE];
+    return scopeBuf.pwm[ch - SCOPE_PWM_BASE] || [];
+}
+function chTs(ch){return ch < N_ADC ? scopeAdc.ts : scopeBuf.ts;}
+function chLabel(ch){
+    if (ch < N_ADC) return ADC_LABELS[ch];
+    if (ch < SCOPE_PWM_BASE) return 'DAC' + (ch - SCOPE_DAC_BASE);
+    return 'PWM' + (ch - SCOPE_PWM_BASE);
+}
+function chMax(ch){return ch < SCOPE_PWM_BASE ? 4095 : 65535;}
 
 // Render one analog-style trace plot. Returns true if anything was drawn.
 // Returns true iff DAC channel ch (0 or 1) is driven by a built-in
@@ -1235,10 +1255,10 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
         // path evaluates fngenSynthDac at N equally-spaced time points
         // across the window, giving a smooth deterministic trace
         // regardless of the underlying stream rate.
-        const isDac = ch === 8 || ch === 9;
-        const isPwm = ch >= 10;
-        if (isDac && fngenCanSynthTrace(ch - 8)) {
-            const dacIdx = ch - 8;
+        const isDac = ch === SCOPE_DAC_BASE || ch === SCOPE_DAC_BASE + 1;
+        const isPwm = ch >= SCOPE_PWM_BASE;
+        if (isDac && fngenCanSynthTrace(ch - SCOPE_DAC_BASE)) {
+            const dacIdx = ch - SCOPE_DAC_BASE;
             const nSamples = Math.max(2, Math.min(W | 0, 4096));
             for (let px = 0; px < nSamples; px++) {
                 const t = tMin + (px / (nSamples - 1)) * windowMs;
@@ -1247,10 +1267,10 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
                 const y = H - (v / max) * H;
                 if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             }
-        } else if (isPwm && fngenCanSynthPwm(ch - 10)) {
+        } else if (isPwm && fngenCanSynthPwm(ch - SCOPE_PWM_BASE)) {
             // On-chip PWM square wave — evaluate analytically, same
             // reasoning as the DAC synth path above.
-            const pwmIdx = ch - 10;
+            const pwmIdx = ch - SCOPE_PWM_BASE;
             const nSamples = Math.max(2, Math.min(W * 2 | 0, 8192));
             for (let px = 0; px < nSamples; px++) {
                 const t = tMin + (px / (nSamples - 1)) * windowMs;
@@ -1341,8 +1361,8 @@ function drawScope(){
     while(start>0&&scopeBuf.ts[start]>tMin)start--;
 
     // Split analog channels: ADC+DAC (0-9) on Analog frame, PWM (10-11) on PWM frame
-    const analogCh=scopeAnalogCh.filter(c=>c<10);
-    const pwmCh=scopeAnalogCh.filter(c=>c>=10);
+    const analogCh=scopeAnalogCh.filter(c=>c<SCOPE_PWM_BASE);
+    const pwmCh=scopeAnalogCh.filter(c=>c>=SCOPE_PWM_BASE);
 
     // Auto-shrink empty frames
     frameA.classList.toggle('scope-empty', analogCh.length===0);

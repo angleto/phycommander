@@ -18,7 +18,7 @@ mod protocol_tests {
         let status = Status::default();
         assert_eq!(status.digital_in, 0);
         assert_eq!(status.digital_out, 0);
-        assert_eq!(status.adc, [0; 8]);
+        assert_eq!(status.adc, [0; 12]);
         assert_eq!(status.seq_num, 0);
         assert_eq!(status.loop_time_us, 0);
         assert_eq!(status.uptime_ms, 0);
@@ -152,7 +152,7 @@ mod protocol_tests {
         let status1 = Status {
             digital_in: 0xFF,
             digital_out: 0xAA,
-            adc: [100, 200, 300, 400, 500, 600, 700, 800],
+            adc: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200],
             flags: StatusFlags::default(),
             seq_num: 10,
             loop_time_us: 150,
@@ -219,7 +219,7 @@ mod protocol_tests {
         let status = Status {
             digital_in: 0xFFFF,
             digital_out: 0xFFFF,
-            adc: [4095, 4095, 4095, 4095, 4095, 4095, 4095, 4095],
+            adc: [4095; 12],
             flags: StatusFlags {
                 adc_active: true,
                 dac_active: true,

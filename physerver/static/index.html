@@ -1750,7 +1750,7 @@ const FNGEN_DAC_MODES = ['off','dc','sine','square','triangle','sawtooth','arbit
 const FNGEN_DOUT_MODES = ['off','lut','threshold','pulse_trig'];
 const FNGEN_PWM_MODES = ['off','square'];
 const FNGEN_DAC_CHANNELS  = ['dac0','dac1'];
-const FNGEN_PWM_CHANNELS  = ['pwm0','pwm1','pwm2','pwm3'];   /* firmware pins PWM4..7 not routed on Due */
+const FNGEN_PWM_CHANNELS  = ['pwm0','pwm1','pwm2','pwm3','pwm4','pwm5','pwm6','pwm7'];   /* All 8 firmware PWMs (D9, D8, D7, D6, D10, D11, D5, D2). */
 const FNGEN_DOUT_CHANNELS = Array.from({length:16}, (_, i) => 'dout'+i);
 let fngenAvailable = false;
 // Per-channel last-known state from the device (populated by

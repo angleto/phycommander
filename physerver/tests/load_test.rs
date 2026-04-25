@@ -40,15 +40,18 @@ mod load_tests {
 
     #[test]
     fn test_status_decoding_performance() {
+        use physerver::protocol::types::StatusMessage;
+        let off_crc = std::mem::offset_of!(StatusMessage, crc);
+
         // Create a valid status message
         let mut data = [0u8; 64];
         data[0] = 0xAA; // STATUS_HEADER low
         data[1] = 0x55; // STATUS_HEADER high
 
         // Calculate CRC
-        let crc = physerver::protocol::crc::crc16_ccitt_table(&data[0..24]);
-        data[24] = (crc & 0xFF) as u8;
-        data[25] = (crc >> 8) as u8;
+        let crc = physerver::protocol::crc::crc16_ccitt_table(&data[..off_crc]);
+        data[off_crc] = (crc & 0xFF) as u8;
+        data[off_crc + 1] = (crc >> 8) as u8;
 
         let iterations = 100000;
         let start = Instant::now();
@@ -149,9 +152,10 @@ mod load_tests {
             let mut status_data = [0u8; 64];
             status_data[0] = 0xAA;
             status_data[1] = 0x55;
-            let crc = physerver::protocol::crc::crc16_ccitt_table(&status_data[0..24]);
-            status_data[24] = (crc & 0xFF) as u8;
-            status_data[25] = (crc >> 8) as u8;
+            let off_crc = std::mem::offset_of!(physerver::protocol::types::StatusMessage, crc);
+            let crc = physerver::protocol::crc::crc16_ccitt_table(&status_data[..off_crc]);
+            status_data[off_crc] = (crc & 0xFF) as u8;
+            status_data[off_crc + 1] = (crc >> 8) as u8;
 
             let _ = physerver::protocol::decode_status(&status_data);
         }

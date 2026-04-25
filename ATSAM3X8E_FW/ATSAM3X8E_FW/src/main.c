@@ -36,7 +36,9 @@
 #define COMMAND_HEADER       0xAA55u
 #define STATUS_HEADER        0x55AAu
 #define CRC_OVER_CMD_BYTES   14u
-#define CRC_OVER_STAT_BYTES  24u
+/* CRC range for the status frame = header(2) + digital_in(2) +
+ * digital_out(2) + adc[12]*2 + status_flags(1) + seq_num(1) = 32. */
+#define CRC_OVER_STAT_BYTES  32u
 #define DAC_MAX              4095u
 
 /* Command flags */

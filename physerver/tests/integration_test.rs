@@ -32,7 +32,16 @@ fn test_protocol_integration() {
 
 #[test]
 fn test_status_decode_integration() {
-    // Create a mock status message
+    // Build a mock status frame using offset_of! so the test follows
+    // the wire layout instead of hand-counted offsets — adc[] grew
+    // from 8 to 12 in v2.0 and earlier hard-coded offsets are stale.
+    use physerver::protocol::types::StatusMessage;
+    let off_status_flags = std::mem::offset_of!(StatusMessage, status_flags);
+    let off_seq_num = std::mem::offset_of!(StatusMessage, seq_num);
+    let off_crc = std::mem::offset_of!(StatusMessage, crc);
+    let off_loop_time = std::mem::offset_of!(StatusMessage, loop_time_us);
+    let off_uptime = std::mem::offset_of!(StatusMessage, uptime_ms);
+
     let mut data = [0u8; 64];
 
     // Header
@@ -45,33 +54,33 @@ fn test_status_decode_integration() {
     data[4] = 0x00;
     data[5] = 0xF0;
 
-    // ADC values
-    for i in 0..8 {
+    // ADC values (12 channels). adc[] starts at offset 6.
+    for i in 0..12u16 {
         let val = (i + 1) * 500;
-        data[6 + i * 2] = (val & 0xFF) as u8;
-        data[7 + i * 2] = (val >> 8) as u8;
+        data[6 + (i as usize) * 2] = (val & 0xFF) as u8;
+        data[6 + (i as usize) * 2 + 1] = (val >> 8) as u8;
     }
 
     // Flags
-    data[22] = 0x07; // ADC, DAC, PWM active
+    data[off_status_flags] = 0x07; // ADC, DAC, PWM active
 
     // Seq num
-    data[23] = 42;
+    data[off_seq_num] = 42;
 
-    // Calculate CRC
-    let crc = crc16_ccitt_table(&data[0..24]);
-    data[24] = (crc & 0xFF) as u8;
-    data[25] = (crc >> 8) as u8;
+    // Calculate CRC over [0, off_crc)
+    let crc = crc16_ccitt_table(&data[..off_crc]);
+    data[off_crc] = (crc & 0xFF) as u8;
+    data[off_crc + 1] = (crc >> 8) as u8;
 
     // Loop time
-    data[26] = 150;
-    data[27] = 0;
+    data[off_loop_time] = 150;
+    data[off_loop_time + 1] = 0;
 
-    // Uptime
-    data[28] = 0x00;
-    data[29] = 0xE1;
-    data[30] = 0xF5;
-    data[31] = 0x05; // 100000000 ms
+    // Uptime: 100000000 ms (= 0x05F5E100)
+    data[off_uptime] = 0x00;
+    data[off_uptime + 1] = 0xE1;
+    data[off_uptime + 2] = 0xF5;
+    data[off_uptime + 3] = 0x05;
 
     // Decode
     let status = decode_status(&data).expect("Failed to decode status");
@@ -80,6 +89,7 @@ fn test_status_decode_integration() {
     assert_eq!(status.digital_out, 0xF000);
     assert_eq!(status.adc[0], 500);
     assert_eq!(status.adc[7], 4000);
+    assert_eq!(status.adc[11], 6000);
     assert_eq!(status.seq_num, 42);
     assert_eq!(status.loop_time_us, 150);
 }
@@ -148,14 +158,17 @@ fn test_multiple_command_encode() {
 
 #[test]
 fn test_error_detection() {
+    use physerver::protocol::types::StatusMessage;
+    let off_crc = std::mem::offset_of!(StatusMessage, crc);
+
     // Create valid status
     let mut data = [0u8; 64];
     data[0] = 0xAA;
     data[1] = 0x55;
 
-    let crc = crc16_ccitt_table(&data[0..24]);
-    data[24] = (crc & 0xFF) as u8;
-    data[25] = (crc >> 8) as u8;
+    let crc = crc16_ccitt_table(&data[..off_crc]);
+    data[off_crc] = (crc & 0xFF) as u8;
+    data[off_crc + 1] = (crc >> 8) as u8;
 
     // Valid decode
     assert!(decode_status(&data).is_ok());

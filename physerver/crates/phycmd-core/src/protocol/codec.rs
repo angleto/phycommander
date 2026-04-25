@@ -39,8 +39,13 @@ pub fn decode_status(data: &[u8]) -> Result<Status> {
         return Err(ProtocolError::InvalidHeader { expected: STATUS_HEADER, got: msg.header });
     }
 
-    // Verify CRC (over bytes 0-23)
-    let calculated_crc = crc::crc16_ccitt_table(&data[0..24]);
+    // Verify CRC. The CRC field sits right after status_flags + seq_num,
+    // so its offset in the wire frame is exactly the start of the
+    // serialised header through seq_num. With the v2.0 status frame
+    // (header 2 + digital_in 2 + digital_out 2 + adc[12] = 24 + flags 1
+    // + seq 1 = 32) that's bytes 0..32.
+    let crc_offset = std::mem::offset_of!(StatusMessage, crc);
+    let calculated_crc = crc::crc16_ccitt_table(&data[..crc_offset]);
     if msg.crc != calculated_crc {
         return Err(ProtocolError::CrcMismatch { expected: calculated_crc, got: msg.crc });
     }
@@ -89,17 +94,20 @@ mod tests {
 
     #[test]
     fn test_decode_status() {
-        // Create a valid status message
+        // Create a valid status message. The Status frame layout in
+        // v2.0 is { header, digital_in, digital_out, adc[12],
+        // status_flags, seq_num, crc, ... }, so CRC sits at offset 32
+        // and is computed over bytes 0..32.
+        let crc_off = std::mem::offset_of!(StatusMessage, crc);
         let mut data = [0u8; 64];
         data[0] = 0xAA; // STATUS_HEADER low
         data[1] = 0x55; // STATUS_HEADER high
         data[2] = 0xFF; // digital_in low
         data[3] = 0x00; // digital_in high
 
-        // Calculate CRC for bytes 0-23
-        let crc = crc::crc16_ccitt_table(&data[0..24]);
-        data[24] = (crc & 0xFF) as u8;
-        data[25] = (crc >> 8) as u8;
+        let crc = crc::crc16_ccitt_table(&data[..crc_off]);
+        data[crc_off] = (crc & 0xFF) as u8;
+        data[crc_off + 1] = (crc >> 8) as u8;
 
         let status = decode_status(&data).unwrap();
         assert_eq!(status.digital_in, 0x00FF);
@@ -117,11 +125,12 @@ mod tests {
 
     #[test]
     fn test_crc_mismatch() {
+        let crc_off = std::mem::offset_of!(StatusMessage, crc);
         let mut data = [0u8; 64];
         data[0] = 0xAA; // STATUS_HEADER
         data[1] = 0x55;
-        data[24] = 0xFF; // Wrong CRC
-        data[25] = 0xFF;
+        data[crc_off] = 0xFF; // Wrong CRC
+        data[crc_off + 1] = 0xFF;
 
         let result = decode_status(&data);
         assert!(result.is_err());
@@ -158,6 +167,16 @@ mod tests {
 
     #[test]
     fn test_decode_full_status() {
+        // Use offset_of! so the test follows the wire layout, not a
+        // hand-counted set of magic numbers — when adc[] grows again
+        // the test keeps working.
+        let off_status_flags = std::mem::offset_of!(StatusMessage, status_flags);
+        let off_seq_num = std::mem::offset_of!(StatusMessage, seq_num);
+        let off_crc = std::mem::offset_of!(StatusMessage, crc);
+        let off_loop_time = std::mem::offset_of!(StatusMessage, loop_time_us);
+        let off_uptime = std::mem::offset_of!(StatusMessage, uptime_ms);
+        let off_err = std::mem::offset_of!(StatusMessage, error_count);
+
         let mut data = [0u8; 64];
 
         // Header
@@ -170,38 +189,35 @@ mod tests {
         data[4] = 0x56;
         data[5] = 0x78;
 
-        // ADC values (8 channels)
-        for i in 0..8 {
-            let val = 100 + i * 100;
+        // ADC values (12 channels). adc[] starts at offset 6.
+        for i in 0..12 {
+            let val: u16 = 100 + (i as u16) * 100;
             data[6 + i * 2] = (val & 0xFF) as u8;
-            data[7 + i * 2] = (val >> 8) as u8;
+            data[6 + i * 2 + 1] = (val >> 8) as u8;
         }
 
-        // Status flags
-        data[22] = 0b00111111;
+        data[off_status_flags] = 0b00111111;
+        data[off_seq_num] = 99;
 
-        // Sequence number
-        data[23] = 99;
-
-        // Calculate and set CRC
-        let crc = crc::crc16_ccitt_table(&data[0..24]);
-        data[24] = (crc & 0xFF) as u8;
-        data[25] = (crc >> 8) as u8;
+        // Calculate and set CRC over bytes [0, off_crc).
+        let crc = crc::crc16_ccitt_table(&data[..off_crc]);
+        data[off_crc] = (crc & 0xFF) as u8;
+        data[off_crc + 1] = (crc >> 8) as u8;
 
         // Loop time
-        data[26] = 200 & 0xFF;
-        data[27] = (200 >> 8) as u8;
+        data[off_loop_time] = 200u8;
+        data[off_loop_time + 1] = 0u8;
 
         // Uptime
-        let uptime = 123456u32;
-        data[28] = (uptime & 0xFF) as u8;
-        data[29] = ((uptime >> 8) & 0xFF) as u8;
-        data[30] = ((uptime >> 16) & 0xFF) as u8;
-        data[31] = ((uptime >> 24) & 0xFF) as u8;
+        let uptime: u32 = 123456;
+        data[off_uptime] = (uptime & 0xFF) as u8;
+        data[off_uptime + 1] = ((uptime >> 8) & 0xFF) as u8;
+        data[off_uptime + 2] = ((uptime >> 16) & 0xFF) as u8;
+        data[off_uptime + 3] = ((uptime >> 24) & 0xFF) as u8;
 
         // Error count
-        data[32] = 5;
-        data[33] = 0;
+        data[off_err] = 5;
+        data[off_err + 1] = 0;
 
         let status = decode_status(&data).unwrap();
 
@@ -209,6 +225,7 @@ mod tests {
         assert_eq!(status.digital_out, 0x7856);
         assert_eq!(status.adc[0], 100);
         assert_eq!(status.adc[1], 200);
+        assert_eq!(status.adc[11], 1200);
         assert_eq!(status.seq_num, 99);
         assert_eq!(status.loop_time_us, 200);
         assert_eq!(status.uptime_ms, 123456);

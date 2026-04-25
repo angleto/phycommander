@@ -382,6 +382,28 @@ async fn main() -> Result<()> {
         web_state.set_waveform_dev(iso.waveform_dev());
         web_state.set_iso_transport(Arc::clone(&iso));
 
+        // Default-off at startup: stop every on-chip generator and
+        // zero the streaming command. Without this, a physerver
+        // restart that doesn't go through a firmware flash would
+        // leave whatever waveform was running before still going,
+        // and the streaming Command frame's last-known DAC/DOUT
+        // values would persist on the pads. Errors here are logged
+        // but non-fatal — at worst the user sees stale outputs and
+        // can hit Stop on the dashboard.
+        {
+            let dev = iso.waveform_dev();
+            for ch in
+                ["dac0", "dac1", "pwm0", "pwm1", "pwm2", "pwm3", "pwm4", "pwm5", "pwm6", "pwm7"]
+            {
+                if let Err(e) = dev.stop(ch) {
+                    warn!("startup-off: fngen stop {ch} failed: {e}");
+                }
+            }
+            let mut cmd = web_state.current_command.write().await;
+            *cmd = phycmd_core::Command::default();
+            info!("startup: all DAC/PWM/DOUT outputs forced OFF");
+        }
+
         // Block until shutdown. IsoTransport's Drop signals stop +
         // joins its I/O thread cleanly.
         let _ = tokio::signal::ctrl_c().await;

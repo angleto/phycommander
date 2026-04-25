@@ -860,13 +860,58 @@ function wireSlider(id,arr,idx,max){const s=document.getElementById(id+'S'),v=do
 wireSlider('dac0',cmd.dac,0,4095);
 wireSlider('dac1',cmd.dac,1,4095);
 
-// PWM sliders — all 6 firmware channels (pwm0..pwm5) driven via
+// PWM sliders — all 8 firmware channels driven via
 // /api/fngen/play_builtin with a 1 kHz square carrier and the duty
 // from the slider (0..1000 permille). The streaming Command frame
 // only carries 2 PWM slots (pwm0/pwm1) and would fight the fngen
 // state, so using fngen uniformly keeps the path consistent across
 // all channels. Slider events are rate-limited to ~30 Hz to avoid
 // hammering the REST API while the user drags.
+//
+// Mutual exclusion with the on-chip Function Generator panel: each
+// PWM channel is in one of two driver modes:
+//   'slider' — slider is authoritative, fngen row for that channel
+//              is greyed out.
+//   'fngen'  — fngen row is authoritative (any non-default mode/
+//              freq the user picked there), slider is locked.
+// The driver flips when the user actively touches one side. Stopping
+// the channel from either side (slider → 0 + Stop, fngen Stop) clears
+// the driver back to 'slider' (default), which is also what `fngen`
+// sees after a fresh startup.
+const pwmDriver = {};   // 'slider' | 'fngen' per channel name
+function setPwmDriver(ch, mode) {
+    pwmDriver[ch] = mode;
+    applyPwmDriverLock(ch);
+}
+function applyPwmDriverLock(ch) {
+    const driver = pwmDriver[ch] || 'slider';
+    // Slider element (pwmDutyS_<n>): lock when fngen-driven.
+    document.querySelectorAll('input[id^="pwmDutyS_"]').forEach(s => {
+        if (s.dataset.fngen !== ch) return;
+        const locked = (driver === 'fngen');
+        s.disabled = locked;
+        s.style.opacity = locked ? '0.35' : '';
+        s.title = locked
+            ? `Driven by the on-chip Function Generator. Stop the generator to use this slider.`
+            : '';
+    });
+    // Function-generator row (fngenrow-<ch>): lock when slider-driven.
+    const fngenRow = document.getElementById('fngenrow-' + ch);
+    if (fngenRow) {
+        const locked = (driver === 'slider');
+        fngenRow.querySelectorAll('select, input, button').forEach(el => {
+            // Don't lock the Stop button — the user must always be able
+            // to clear state.
+            if (el.classList.contains('fngen-stop')) return;
+            el.disabled = locked;
+        });
+        fngenRow.style.opacity = locked ? '0.55' : '';
+        const note = fngenRow.querySelector('[data-k="driver-note"]');
+        if (note) note.textContent = locked
+            ? 'Driven by the dashboard slider — move slider to 0 to release.'
+            : '';
+    }
+}
 let pwmSendTimers = {};
 function setPwmDuty(ch, dutyPermille) {
     if (pwmSendTimers[ch]) clearTimeout(pwmSendTimers[ch]);
@@ -887,6 +932,8 @@ document.querySelectorAll('input[id^="pwmDutyS_"]').forEach(s => {
     s.oninput = () => {
         document.getElementById(vId).textContent = s.value;
         setPwmDuty(ch, +s.value);
+        // Touching the slider claims the channel for slider mode.
+        setPwmDriver(ch, 'slider');
     };
 });
 
@@ -2149,6 +2196,9 @@ async function fngenApply(channel, row, modeOverride) {
             return;       // keep row dirty so the user can correct
         }
         delete row.dataset.userDirty;   // commit succeeded → form matches device
+        // Apply on a PWM row claims the channel for fngen mode and
+        // locks out the dashboard slider until Stop is pressed.
+        if (channel.startsWith('pwm')) setPwmDriver(channel, 'fngen');
     } catch (e) { alert('fngen apply error: ' + e.message); }
 }
 
@@ -2162,6 +2212,18 @@ async function fngenStop(channel) {
             delete row.dataset.userDirty;
             const body = row.querySelector('.fngen-dout-body');
             if (body) delete body.dataset.userDirty;
+        }
+        // Stopping a PWM channel releases the fngen-mode lock so the
+        // slider can drive again. Reset its UI value to 0 to match
+        // the now-OFF firmware state.
+        if (channel.startsWith('pwm')) {
+            setPwmDriver(channel, 'slider');
+            const sliderId = 'pwmDutyS_' + channel.slice(3);
+            const valId    = 'pwmDutyV_' + channel.slice(3);
+            const slider = document.getElementById(sliderId);
+            const vLabel = document.getElementById(valId);
+            if (slider) slider.value = '0';
+            if (vLabel) vLabel.textContent = '0';
         }
     } catch (e) { console.error(e); }
 }
@@ -2580,6 +2642,12 @@ connectWs(); updateGpioOut(); pullCommand(); pollSysinfo(); setInterval(pollSysi
 // first second before the WebSocket tick fires.
 pollRtStats();
 fngenBuildPanel(); fngenInitGlobals(); fngenPollAvailability(); setInterval(fngenPollAvailability, 5000);
+// After the function-generator rows exist, default every PWM channel
+// to 'slider' driver and apply the corresponding lock. Without this
+// the fngen rows for pwm0..pwm7 would render in the unlocked state
+// and a user could start a sine + leave the slider also writable,
+// fighting each other.
+FNGEN_PWM_CHANNELS.forEach(ch => setPwmDriver(ch, 'slider'));
 setInterval(fngenPollState, 1000);
 requestAnimationFrame(drawScope);
 initLayout();

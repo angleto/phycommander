@@ -29,7 +29,7 @@ use std::{
 };
 
 use parking_lot::Mutex;
-use phycmd::{MockState, MockTransport, PhyCommander, RtConfig, StatusFrame, Transport, WriteMode};
+use phycmd::{MockState, MockTransport, PhyCommander, RtConfig, Transport, WriteMode};
 use tokio::sync::broadcast::error::TryRecvError;
 
 // -------------------------------------------------------------------------

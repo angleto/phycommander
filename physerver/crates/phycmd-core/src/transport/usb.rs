@@ -286,8 +286,6 @@ impl Drop for UsbTransport {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_usb_device_search() {
         // This test just ensures enumeration doesn't panic

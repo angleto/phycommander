@@ -63,6 +63,9 @@ struct DirState {
     pkts_short: AtomicU64,
     pkts_err: AtomicU64,
     crc_errors: AtomicU64,
+    #[allow(dead_code)] // populated by an iso-IN-only path that the
+    // bulk-out variant of this probe doesn't write through; keeping
+    // the field around so the struct shape doesn't have to fork.
     seq_gaps: AtomicU64,
     last_seq: std::sync::atomic::AtomicU32, // u16 promoted, sentinel 0xFFFFFFFF = uninitialised
     /// Histogram of *inter-packet* arrival intervals on iso IN (us).

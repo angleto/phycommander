@@ -189,6 +189,31 @@ void SysTick_Handler(void)
 		else                          PIOB->PIO_CODR = HEARTBEAT_PIN_MASK;
 	}
 
+	/* Front-panel reset button on D3 (PC28). Active-low (button
+	 * shorts the pin to GND), internal pull-up provides the idle
+	 * HIGH. We require ~50 consecutive LOW samples (= 50 ms with
+	 * the SysTick at 1 kHz) before triggering reset to debounce
+	 * mechanical contact bounce and reject EMI spikes shorter than
+	 * a tens-of-milliseconds press. The reset itself writes
+	 * RSTC_CR = key(0xA5) | PROCRST | PERRST | EXTRST, the same
+	 * full-system reset the flash script issues over SAM-BA. */
+	#define RESET_BTN_PIO         PIOC
+	#define RESET_BTN_MASK        (1u << 28)
+	#define RESET_BTN_DEBOUNCE_MS 50u
+	static uint32_t s_reset_btn_low_ms = 0;
+	if ((RESET_BTN_PIO->PIO_PDSR & RESET_BTN_MASK) == 0) {
+		s_reset_btn_low_ms++;
+		if (s_reset_btn_low_ms >= RESET_BTN_DEBOUNCE_MS) {
+			RSTC->RSTC_CR = RSTC_CR_KEY(0xA5u)
+			              | RSTC_CR_PROCRST
+			              | RSTC_CR_PERRST
+			              | RSTC_CR_EXTRST;
+			while (1) { /* CPU resets here */ }
+		}
+	} else {
+		s_reset_btn_low_ms = 0;
+	}
+
 	/* Kick the watchdog periodically. If the main loop, USB ISR,
 	 * DACC ISR, or SysTick itself wedges for more than ~2 s the
 	 * WDT triggers a hard reset — the host side detects the USB
@@ -837,13 +862,21 @@ int main(void)
 	waveform_init();   /* must come after dac_setup — sets up TC0/PDC for DACC */
 
 	/* Heartbeat LED on PB27 (Arduino Due D13 / on-board "L"). PIO
-	 * output, active-low pull-up disabled, starts LOW. Blink pattern
-	 * is driven from SysTick_Handler. */
+	 * output, pull-up disabled, starts LOW. Blink pattern is driven
+	 * from SysTick_Handler. */
 	pmc_enable_periph_clk(ID_PIOB);
 	PIOB->PIO_PUDR = HEARTBEAT_PIN_MASK;
 	PIOB->PIO_PER  = HEARTBEAT_PIN_MASK;
 	PIOB->PIO_OER  = HEARTBEAT_PIN_MASK;
 	PIOB->PIO_CODR = HEARTBEAT_PIN_MASK;
+
+	/* Front-panel reset button on D3 (PC28). Configure as PIO input
+	 * with internal pull-up so the SysTick poll above sees HIGH at
+	 * idle and LOW only when the button is held down. */
+	pmc_enable_periph_clk(ID_PIOC);
+	PIOC->PIO_PER  = (1u << 28);
+	PIOC->PIO_ODR  = (1u << 28);
+	PIOC->PIO_PUER = (1u << 28);
 
 	/* Start USB device stack */
 	udc_start();

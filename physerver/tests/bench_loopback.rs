@@ -22,16 +22,21 @@
 //!   Signal   Due pin       ADC slot   Env var override
 //!   DAC0     A0            0          PHYCMD_DAC0_ADC
 //!   DAC1     A1            1          PHYCMD_DAC1_ADC
-//!   pwm0     A2 (D9)       2          PHYCMD_PWM0_ADC
-//!   pwm1     A3 (D8)       3          PHYCMD_PWM1_ADC
-//!   pwm2     A4 (D7)       4          PHYCMD_PWM2_ADC
-//!   pwm3     A5 (D6)       5          PHYCMD_PWM3_ADC
-//!   pwm4     A6 (D10)      6          PHYCMD_PWM4_ADC
-//!   pwm5     A7 (D11)      7          PHYCMD_PWM5_ADC
-//!   pwm6     A8 (D5)       8          PHYCMD_PWM6_ADC
-//!   pwm7     A9 (D4)       9          PHYCMD_PWM7_ADC
-//!   pwm8     A10 (D3)      10         PHYCMD_PWM8_ADC
-//!   pwm9     A11 (D2)      11         PHYCMD_PWM9_ADC
+//!   pwm0     A9 (D9)       9          PHYCMD_PWM0_ADC
+//!   pwm1     A8 (D8)       8          PHYCMD_PWM1_ADC
+//!   pwm2     A7 (D7)       7          PHYCMD_PWM2_ADC
+//!   pwm3     A6 (D6)       6          PHYCMD_PWM3_ADC
+//!   pwm4     A10 (D10)     10         PHYCMD_PWM4_ADC
+//!   pwm5     A11 (D11)     11         PHYCMD_PWM5_ADC
+//!   pwm6     A5 (D5)       5          PHYCMD_PWM6_ADC
+//!   pwm7     A2 (D2)       2          PHYCMD_PWM7_ADC
+//!
+//! D3, D4 and D12 are not PWMs:
+//!   D3  → front-panel reset button (held LOW for 50 ms = full chip reset)
+//!   D4  → reserved
+//!   D12 → reserved
+//! ADC slots A3 and A4 (= adc[3] / adc[4]) are unwired in this layout
+//! and will read floating values; the test ignores them.
 //!
 //! Other env vars:
 //!   PHYCMD_URL       base URL, default http://127.0.0.1:8080
@@ -372,17 +377,15 @@ fn bench_pwm_duty_endpoints() {
 
     // Defaults from current bench wiring. Overridable via env. Slot 99 is a
     // sentinel meaning "not wired — skip".
-    let wiring: [(u8, usize); 10] = [
-        (0, env_adc_slot("PHYCMD_PWM0_ADC", 2)),
-        (1, env_adc_slot("PHYCMD_PWM1_ADC", 3)),
-        (2, env_adc_slot("PHYCMD_PWM2_ADC", 4)),
-        (3, env_adc_slot("PHYCMD_PWM3_ADC", 5)),
-        (4, env_adc_slot("PHYCMD_PWM4_ADC", 6)),
-        (5, env_adc_slot("PHYCMD_PWM5_ADC", 7)),
-        (6, env_adc_slot("PHYCMD_PWM6_ADC", 8)),
-        (7, env_adc_slot("PHYCMD_PWM7_ADC", 9)),
-        (8, env_adc_slot("PHYCMD_PWM8_ADC", 10)),
-        (9, env_adc_slot("PHYCMD_PWM9_ADC", 11)),
+    let wiring: [(u8, usize); 8] = [
+        (0, env_adc_slot("PHYCMD_PWM0_ADC", 9)),
+        (1, env_adc_slot("PHYCMD_PWM1_ADC", 8)),
+        (2, env_adc_slot("PHYCMD_PWM2_ADC", 7)),
+        (3, env_adc_slot("PHYCMD_PWM3_ADC", 6)),
+        (4, env_adc_slot("PHYCMD_PWM4_ADC", 10)),
+        (5, env_adc_slot("PHYCMD_PWM5_ADC", 11)),
+        (6, env_adc_slot("PHYCMD_PWM6_ADC", 5)),
+        (7, env_adc_slot("PHYCMD_PWM7_ADC", 2)),
     ];
 
     client.reset_all_outputs();
@@ -390,7 +393,7 @@ fn bench_pwm_duty_endpoints() {
 
     let mut failures: Vec<String> = Vec::new();
     for (pwm, slot) in wiring {
-        if skip.contains(&pwm) || slot >= 8 {
+        if skip.contains(&pwm) || slot >= 12 {
             eprintln!("[pwm{}] -> ADC[{}]: skipped", pwm, slot);
             continue;
         }
@@ -454,20 +457,18 @@ fn bench_pwm_duty_monotonic() {
     let slot = env_adc_slot(
         &format!("PHYCMD_PWM{}_ADC", pwm),
         match pwm {
-            0 => 2,
-            1 => 3,
-            2 => 4,
-            3 => 5,
-            4 => 6,
-            5 => 7,
-            6 => 8,
-            7 => 9,
-            8 => 10,
-            9 => 11,
+            0 => 9,
+            1 => 8,
+            2 => 7,
+            3 => 6,
+            4 => 10,
+            5 => 11,
+            6 => 5,
+            7 => 2,
             _ => 99,
         },
     );
-    if slot >= 8 {
+    if slot >= 12 {
         eprintln!("[pwm{} monotonic] not wired — skip", pwm);
         return;
     }

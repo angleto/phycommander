@@ -369,10 +369,8 @@
             <div class="control-group"><label>PWM (Due D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
             <div class="control-group"><label>PWM (Due D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
             <div class="control-group"><label>PWM (Due D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D5) <small style="color:#888">period shared with D4</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_6" data-fngen="pwm6"><span class="value-display" id="pwmDutyV_6">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D4) <small style="color:#888">period shared with D5</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_7" data-fngen="pwm7"><span class="value-display" id="pwmDutyV_7">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D3) <small style="color:#888">period shared with D10</small></label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_8" data-fngen="pwm8"><span class="value-display" id="pwmDutyV_8">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D2)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_9" data-fngen="pwm9"><span class="value-display" id="pwmDutyV_9">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D5)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_6" data-fngen="pwm6"><span class="value-display" id="pwmDutyV_6">0</span>‰</div></div>
+            <div class="control-group"><label>PWM (Due D2)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_7" data-fngen="pwm7"><span class="value-display" id="pwmDutyV_7">0</span>‰</div></div>
         </div>
 
         <!-- ADC -->
@@ -817,7 +815,7 @@ let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enab
 // Scope data ring buffer
 const SCOPE_MAX = 10000;
 const N_ADC = 12;   // wire-protocol ADC slots, mirrors phycmd-core CH_NUM_ADC
-const N_PWM_UI = 10; // dashboard slider count, mirrors firmware WAVE_NUM_PWM_ACTIVE
+const N_PWM_UI = 8;  // dashboard slider count, mirrors firmware WAVE_NUM_PWM_ACTIVE
 let scopeBuf = {
     adc: Array.from({length:N_ADC},()=>[]),
     dac: [[],[]],

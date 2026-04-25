@@ -204,7 +204,7 @@ typedef struct {
  * can wire Due pins D10/D11 as PWM without a full dispatch refactor.
  * PWM12 (D12) / PWM13 (D13) deliberately NOT added: D13 stays as the
  * heartbeat LED and D12 is unused for now. */
-#define WAVE_NUM_PWM_ACTIVE 10u
+#define WAVE_NUM_PWM_ACTIVE 8u
 static volatile pwm_state_t s_pwm[WAVE_NUM_PWM_ACTIVE];
 /* Tracks whether channel N was started by the MANUAL streaming path
  * (waveform_set_pwm_manual) versus the generator path (play_builtin
@@ -1253,7 +1253,10 @@ static void pwm_hw_init(void)
 	PIOD->PIO_PUDR  = (1u << 7);
 
 	/* PWM6 → Due D5 → PC25 → TIOA6 (TC2.ch0, peripheral B). PMC ID
-	 * = ID_TC6. */
+	 * = ID_TC6. The paired TIOB6 pad (PC26 = D4) is intentionally
+	 * left unclaimed since D4 is reserved for non-PWM use; this
+	 * keeps RA the only compare source on TC2.ch0 and lets PWM6 own
+	 * the period freely. */
 	s_pwm[6].pwm_channel = 0;
 	s_pwm[6].pio         = PIOC;
 	s_pwm[6].pio_pin     = 25;
@@ -1263,46 +1266,28 @@ static void pwm_hw_init(void)
 	s_pwm[6].tc_use_tiob = 0;
 	s_pwm[6].active      = 0;
 
-	/* PWM7 → Due D4 → PC26 → TIOB6 (TC2.ch0, peripheral B). Same TC
-	 * channel as PWM6 — period (RC) is shared, RA/RB independent for
-	 * per-pad duty. PMC ID = ID_TC6 (already enabled if PWM6 plays
-	 * first; pwm_hw_play_tc enables it again, idempotent). */
-	s_pwm[7].pwm_channel = 0;
-	s_pwm[7].pio         = PIOC;
-	s_pwm[7].pio_pin     = 26;
-	s_pwm[7].tc          = TC2;
-	s_pwm[7].tc_local_ch = 0;
-	s_pwm[7].tc_pmc_id   = ID_TC6;
-	s_pwm[7].tc_use_tiob = 1;
-	s_pwm[7].active      = 0;
-
-	/* PWM8 → Due D3 → PC28 → TIOA7 (TC2.ch1, peripheral B). Same TC
-	 * channel as PWM4 (D10 = TIOB7) — shared period. */
-	s_pwm[8].pwm_channel = 0;
-	s_pwm[8].pio         = PIOC;
-	s_pwm[8].pio_pin     = 28;
-	s_pwm[8].tc          = TC2;
-	s_pwm[8].tc_local_ch = 1;
-	s_pwm[8].tc_pmc_id   = ID_TC7;
-	s_pwm[8].tc_use_tiob = 0;
-	s_pwm[8].active      = 0;
-
-	/* PWM9 → Due D2 → PB25 → TIOA0 (TC0.ch0, peripheral B). PMC ID
+	/* PWM7 → Due D2 → PB25 → TIOA0 (TC0.ch0, peripheral B). PMC ID
 	 * = ID_TC0. Different TC block from all the others, so it has
 	 * an independent period. Note PIOB, not PIOC. */
 	pmc_enable_periph_clk(ID_PIOB);
-	s_pwm[9].pwm_channel = 0;
-	s_pwm[9].pio         = PIOB;
-	s_pwm[9].pio_pin     = 25;
-	s_pwm[9].tc          = TC0;
-	s_pwm[9].tc_local_ch = 0;
-	s_pwm[9].tc_pmc_id   = ID_TC0;
-	s_pwm[9].tc_use_tiob = 0;
-	s_pwm[9].active      = 0;
+	s_pwm[7].pwm_channel = 0;
+	s_pwm[7].pio         = PIOB;
+	s_pwm[7].pio_pin     = 25;
+	s_pwm[7].tc          = TC0;
+	s_pwm[7].tc_local_ch = 0;
+	s_pwm[7].tc_pmc_id   = ID_TC0;
+	s_pwm[7].tc_use_tiob = 0;
+	s_pwm[7].active      = 0;
 
-	/* ABSR + PUDR for the four new TC pads. */
-	PIOC->PIO_ABSR |= (1u << 25) | (1u << 26) | (1u << 28);
-	PIOC->PIO_PUDR  = (1u << 25) | (1u << 26) | (1u << 28);
+	/* ABSR + PUDR for the two remaining TC-PWM pads (PC25 + PB25).
+	 * PC26 (D4 / TIOB6), PC28 (D3 / TIOA7), and PD8 (D12 / TIOB8) are
+	 * intentionally not claimed here:
+	 *   D3  → front-panel reset button input (see main.c)
+	 *   D4  → reserved
+	 *   D12 → reserved (would pair with D11 on TC2.ch2 with shared
+	 *         period, low value for the bench rig). */
+	PIOC->PIO_ABSR |= (1u << 25);
+	PIOC->PIO_PUDR  = (1u << 25);
 	PIOB->PIO_ABSR |= (1u << 25);
 	PIOB->PIO_PUDR  = (1u << 25);
 

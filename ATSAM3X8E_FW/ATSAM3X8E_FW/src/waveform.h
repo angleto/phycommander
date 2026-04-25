@@ -128,23 +128,28 @@ typedef enum {
  *
  *   Flat channel ID space (used in wIndex of vendor SETUP requests):
  *     0..1   → DAC0..DAC1   (full waveform generator)
- *     2..11  → PWM0..PWM9   (MANUAL only in v1; six PWM peripheral
- *                            channels + four TC-backed channels)
- *     12..27 → DOUT0..DOUT15 (MANUAL only in v1)
- *     28..43 → DIN0..DIN15  (read-only)
- *     44..55 → ADC0..ADC11  (read-only; Due A0..A11)
+ *     2..9   → PWM0..PWM7   (MANUAL only in v1; four PWM peripheral
+ *                            channels D9/D8/D7/D6 + four TC-backed
+ *                            channels D10/D11/D5/D2)
+ *     10..25 → DOUT0..DOUT15 (MANUAL only in v1)
+ *     26..41 → DIN0..DIN15  (read-only)
+ *     42..53 → ADC0..ADC11  (read-only; Due A0..A11)
  *
  *   The mapping is reported through GEN_GET_CAPS so the host doesn't
  *   need to hard-code it. Mirrors phycmd-core::protocol::wave_types
  *   exactly — bumping one side without the other breaks dispatch.
- * ------------------------------------------------------------------------- */
+ *
+ *   D3, D4 and D12 are NOT exposed as PWMs:
+ *     D3  → front-panel reset button input
+ *     D4  → reserved (would need TC2.ch0 paired with D5)
+ *     D12 → reserved (would need TC2.ch2 paired with D11) */
 #define WAVE_NUM_DAC          2u
-#define WAVE_NUM_PWM         10u
+#define WAVE_NUM_PWM          8u
 #define WAVE_NUM_DOUT        16u
 #define WAVE_NUM_DIN         16u
 #define WAVE_NUM_ADC         12u
 #define WAVE_NUM_CHANNELS    (WAVE_NUM_DAC + WAVE_NUM_PWM + WAVE_NUM_DOUT \
-                              + WAVE_NUM_DIN + WAVE_NUM_ADC)   /* 56 */
+                              + WAVE_NUM_DIN + WAVE_NUM_ADC)   /* 54 */
 
 /* DAC channel IDs (used in wIndex). Other kinds are derived by offset
  * if/when the firmware grows support for them (see PROTOCOL.md §2.4). */

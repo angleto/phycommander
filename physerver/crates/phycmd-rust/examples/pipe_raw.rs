@@ -1,8 +1,9 @@
 //! Minimal raw test of PipelinedUsbLoopbackTransport.
 //! No PhyCommander, no scheduler, no staging — just submit/reap in a loop.
 
-use phycmd::{Command, PipelinedTransport, PipelinedUsbLoopbackTransport};
 use std::time::{Duration, Instant};
+
+use phycmd::{Command, PipelinedTransport, PipelinedUsbLoopbackTransport};
 
 fn main() {
     let mut t = PipelinedUsbLoopbackTransport::new().expect("open transport");

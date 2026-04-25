@@ -4,13 +4,12 @@
 //! EP 0x04 (OUT) of the Arduino Due running the dual-mode firmware
 //! (bulk + iso, see ATSAM3X8E_FW/src/udi_vendor.c). For 60 seconds it:
 //!
-//!   * Receives status frames from the device (one PhyCMD-64 in the
-//!     first 64 B of each 256-B iso packet, every 125 µs)
+//!   * Receives status frames from the device (one PhyCMD-64 in the first 64 B of each 256-B iso
+//!     packet, every 125 µs)
 //!   * Sends idle command frames in the reverse direction
 //!   * Records the wall-clock completion time of every iso packet
-//!   * Detects packet loss as gaps in the firmware's `seq_num` field
-//!     (it increments at most every command apply, so gaps with no
-//!     command activity are expected — instead we count gaps in our
+//!   * Detects packet loss as gaps in the firmware's `seq_num` field (it increments at most every
+//!     command apply, so gaps with no command activity are expected — instead we count gaps in our
 //!     own per-packet TX counter that the firmware echoes back)
 //!
 //! At the end it prints:
@@ -28,14 +27,18 @@
 //! Bulk EPs are not touched here, so the device's bulk path keeps
 //! working — `physerver` can be restarted afterwards without a reflash.
 
+use std::{
+    os::raw::c_void,
+    ptr,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
+    time::{Duration, Instant},
+};
+
 use libusb1_sys as ffi;
 use phycmd_core::protocol::{decode_status, encode_command, Command, Status, MESSAGE_SIZE};
-
-use std::os::raw::c_void;
-use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 // Match the firmware (ATSAM3X8E_FW/src/udi_vendor.h)
 const VID: u16 = 0x2341;
@@ -192,7 +195,8 @@ fn detect_seq_gap(state: &DirState, status: &Status) {
 fn main() -> anyhow::Result<()> {
     println!("iso_probe — Phase 1 validation of the SAM3X iso EPs");
     println!(
-        "  duration       : {:?}\n  per-direction  : {} transfers × {} packets × {} B = {} B in flight",
+        "  duration       : {:?}\n  per-direction  : {} transfers × {} packets × {} B = {} B in \
+         flight",
         PROBE_DURATION,
         NUM_TRANSFERS,
         PKTS_PER_TRANSFER,
@@ -206,7 +210,11 @@ fn main() -> anyhow::Result<()> {
         anyhow::ensure!(r == 0, "libusb_init failed: {r}");
 
         let dev_handle = ffi::libusb_open_device_with_vid_pid(ctx_ptr, VID, PID);
-        anyhow::ensure!(!dev_handle.is_null(), "device not found (VID={VID:04x} PID={PID:04x}). Is physerver running and holding the device?");
+        anyhow::ensure!(
+            !dev_handle.is_null(),
+            "device not found (VID={VID:04x} PID={PID:04x}). Is physerver running and holding the \
+             device?"
+        );
 
         let _ = ffi::libusb_detach_kernel_driver(dev_handle, INTERFACE);
         let r = ffi::libusb_claim_interface(dev_handle, INTERFACE);

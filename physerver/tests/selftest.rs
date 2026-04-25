@@ -20,8 +20,10 @@
 use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
-use physerver::protocol::{decode_status, encode_command};
-use physerver::{Command, CommandFlags, Status};
+use physerver::{
+    protocol::{decode_status, encode_command},
+    Command, CommandFlags, Status,
+};
 
 const MSG_SIZE: usize = 64;
 const DAC_MAX: u16 = 4095;

@@ -1,8 +1,9 @@
 /// Criterion benchmarks for protocol operations
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use physerver::protocol::crc::crc16_ccitt_table;
-use physerver::protocol::{decode_status, encode_command};
-use physerver::{Command, CommandFlags};
+use physerver::{
+    protocol::{crc::crc16_ccitt_table, decode_status, encode_command},
+    Command, CommandFlags,
+};
 
 fn bench_encode_command(c: &mut Criterion) {
     let cmd = Command {

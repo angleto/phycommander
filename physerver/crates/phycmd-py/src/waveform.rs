@@ -17,13 +17,15 @@
 //!     dev.stop("dac0")
 //! ```
 
+use std::{os::raw::c_int, ptr};
+
 use libusb1_sys as ffi;
 use phycmd_core::protocol::wave_types::*;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
-use std::os::raw::c_int;
-use std::ptr;
+use pyo3::{
+    exceptions::{PyRuntimeError, PyValueError},
+    prelude::*,
+    types::PyDict,
+};
 
 const VID: u16 = 0x2341;
 const PID: u16 = 0x003e;
@@ -58,8 +60,8 @@ impl Drop for PyWaveformDev {
 fn libusb_err(rc: i32, hint: &str) -> PyErr {
     if rc == ffi::constants::LIBUSB_ERROR_PIPE {
         PyRuntimeError::new_err(format!(
-            "{hint}: device STALLed the control transfer — \
-            check parameters against PROTOCOL.md §2.5 error validation order"
+            "{hint}: device STALLed the control transfer — check parameters against PROTOCOL.md \
+             §2.5 error validation order"
         ))
     } else {
         PyRuntimeError::new_err(format!("{hint}: libusb error {rc}"))
@@ -151,8 +153,8 @@ impl PyWaveformDev {
             if dh.is_null() {
                 ffi::libusb_exit(ctx);
                 return Err(PyRuntimeError::new_err(
-                    "Arduino Due not found. Is physerver holding the interface? \
-                     Try: sudo systemctl stop physerver",
+                    "Arduino Due not found. Is physerver holding the interface? Try: sudo \
+                     systemctl stop physerver",
                 ));
             }
             let _ = ffi::libusb_detach_kernel_driver(dh, INTERFACE);
@@ -170,6 +172,7 @@ impl PyWaveformDev {
     fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
+
     fn __exit__(&mut self, _t: PyObject, _v: PyObject, _tb: PyObject) -> PyResult<bool> {
         // Drop will run when Python releases the last reference.
         Ok(false)
@@ -253,6 +256,7 @@ impl PyWaveformDev {
         let raw = self.ctrl_in(VREQ_DAC_GET_CLOCK, 0, 4)?;
         Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
     }
+
     fn dac_set_clock(&self, hz: u32) -> PyResult<()> {
         self.ctrl_out(VREQ_DAC_SET_CLOCK, 0, &hz.to_le_bytes())
     }
@@ -262,6 +266,7 @@ impl PyWaveformDev {
         let raw = self.ctrl_in(VREQ_ADC_GET_RATE, 0, 4)?;
         Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
     }
+
     fn adc_set_rate(&self, hz: u32) -> PyResult<()> {
         self.ctrl_out(VREQ_ADC_SET_RATE, 0, &hz.to_le_bytes())
     }
@@ -299,6 +304,7 @@ impl PyWaveformDev {
     fn play_sine(&self, channel: &str, freq_hz: f64, amplitude: u16, offset: u16) -> PyResult<()> {
         self.play_builtin(channel, "sine", freq_hz, amplitude, offset, 0.5)
     }
+
     #[pyo3(signature = (channel, freq_hz=1000.0, amplitude=4000, offset=2048, duty=0.5))]
     fn play_square(
         &self,
@@ -310,6 +316,7 @@ impl PyWaveformDev {
     ) -> PyResult<()> {
         self.play_builtin(channel, "square", freq_hz, amplitude, offset, duty)
     }
+
     #[pyo3(signature = (channel, offset=2048))]
     fn play_dc(&self, channel: &str, offset: u16) -> PyResult<()> {
         self.play_builtin(channel, "dc", 0.0, 0, offset, 0.5)

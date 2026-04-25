@@ -19,8 +19,9 @@
 //! callers do not need an async runtime: blocking consumers can use
 //! [`tokio::sync::broadcast::Receiver::blocking_recv`].
 
-use crate::protocol::Status;
 use tokio::sync::broadcast;
+
+use crate::protocol::Status;
 
 /// A status frame emitted by the RT scheduler after every successful
 /// exchange.
@@ -172,9 +173,10 @@ impl Default for StatusBus {
 
 #[cfg(test)]
 mod tests {
+    use tokio::sync::broadcast::error::TryRecvError;
+
     use super::*;
     use crate::protocol::Status;
-    use tokio::sync::broadcast::error::TryRecvError;
 
     fn make_frame(cmd_seq: u64) -> StatusFrame {
         StatusFrame {

@@ -4,8 +4,9 @@
 
 #[cfg(test)]
 mod load_tests {
-    use physerver::{Command, CommandFlags};
     use std::time::Instant;
+
+    use physerver::{Command, CommandFlags};
 
     #[test]
     fn test_command_encoding_performance() {

@@ -1,5 +1,6 @@
-use super::*;
 use std::mem;
+
+use super::*;
 
 /// Encode a Command into a CommandMessage (raw bytes)
 pub fn encode_command(cmd: &Command) -> [u8; MESSAGE_SIZE] {

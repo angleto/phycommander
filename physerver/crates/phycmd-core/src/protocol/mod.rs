@@ -5,14 +5,13 @@ pub mod wave_types;
 
 pub use codec::{decode_status, encode_command};
 pub use crc::crc16_ccitt;
+use thiserror::Error;
 pub use types::*;
 pub use wave_types::{
     channel_id, channel_id_from_name, Capabilities, ChannelKind, ChannelState, InputSrc, PulseEdge,
     WaveArbHeader, WaveBuiltinSpec, WaveLutSpec, WavePidSpec, WavePulseSpec, WaveShape,
     WaveThresholdSpec,
 };
-
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ProtocolError {

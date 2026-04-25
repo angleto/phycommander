@@ -1,13 +1,14 @@
+#[cfg(target_os = "linux")]
+use std::fs::OpenOptions;
+#[cfg(target_os = "linux")]
+use std::os::unix::io::AsRawFd;
+
 use anyhow::{Context, Result};
 #[cfg(target_os = "linux")]
 use nix::sched::CpuSet;
 use nix::sys::mman::{mlockall, MlockAllFlags};
 #[cfg(target_os = "linux")]
 use nix::unistd::Pid;
-#[cfg(target_os = "linux")]
-use std::fs::OpenOptions;
-#[cfg(target_os = "linux")]
-use std::os::unix::io::AsRawFd;
 use tracing::{info, warn};
 
 /// Real-time configuration and setup

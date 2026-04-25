@@ -1,6 +1,7 @@
+use std::path::Path;
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Physerver configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,9 +230,9 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, io::Write};
+
     use super::*;
-    use std::fs;
-    use std::io::Write;
 
     #[test]
     fn test_default_config() {

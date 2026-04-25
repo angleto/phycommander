@@ -3,8 +3,7 @@
 //! This example runs a full PhyCommander instance against a
 //! `MockTransport` and verifies the contract:
 //!
-//!   * The scheduler produces the expected number of ticks
-//!     (effective rate within ±10% of target)
+//!   * The scheduler produces the expected number of ticks (effective rate within ±10% of target)
 //!   * `missed_ticks` stays below 1% of `tick_count`
 //!   * `transport_errors` is zero
 //!   * The status bus delivers all frames in monotonic order
@@ -21,11 +20,13 @@
 //! Exit code is 0 on pass, 1 on any assertion failure (with a
 //! diagnostic printed on stderr).
 
-use std::env;
-use std::process::ExitCode;
-use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::{
+    env,
+    process::ExitCode,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 use phycmd::{MockState, MockTransport, PhyCommander, RtConfig, StatusFrame, Transport, WriteMode};
@@ -129,9 +130,8 @@ impl Args {
                 }
                 "-h" | "--help" => {
                     eprintln!(
-                        "usage: selftest [--rate HZ] [--duration-ms MS] \
-                         [--writers N] [--mock-latency-us US] \
-                         [--transport mock|usb] [--miss-budget-pct N] [-v]"
+                        "usage: selftest [--rate HZ] [--duration-ms MS] [--writers N] \
+                         [--mock-latency-us US] [--transport mock|usb] [--miss-budget-pct N] [-v]"
                     );
                     std::process::exit(0);
                 }
@@ -157,6 +157,7 @@ impl Failures {
     fn new() -> Self {
         Self { items: Vec::new() }
     }
+
     fn check(&mut self, ok: bool, msg: impl Into<String>) {
         if !ok {
             let m = msg.into();
@@ -164,6 +165,7 @@ impl Failures {
             self.items.push(m);
         }
     }
+
     fn any(&self) -> bool {
         !self.items.is_empty()
     }

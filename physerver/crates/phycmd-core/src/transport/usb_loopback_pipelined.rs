@@ -8,15 +8,19 @@
 //! See the [`super::traits::PipelinedTransport`] trait for the
 //! two-phase submit/reap contract and the architectural rationale.
 
-use super::traits::{PipelinedTransport, TransportStats};
-use crate::protocol::{self, Command, Status, StatusFlags, MESSAGE_SIZE};
+use std::{
+    fmt,
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+
 use anyhow::{Context, Result};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use rusb::{DeviceHandle, GlobalContext};
-use std::fmt;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
 use tracing::{debug, info, trace};
+
+use super::traits::{PipelinedTransport, TransportStats};
+use crate::protocol::{self, Command, Status, StatusFlags, MESSAGE_SIZE};
 
 const VENDOR_ID: u16 = 0x2341;
 const PRODUCT_ID: u16 = 0x003e;
@@ -174,8 +178,8 @@ impl PipelinedTransport for PipelinedUsbLoopbackTransport {
     fn submit(&mut self, cmd: &Command) -> Result<()> {
         if self.in_flight {
             anyhow::bail!(
-                "submit called while a previous transfer is still in flight \
-                 (depth-1 pipeline violation)"
+                "submit called while a previous transfer is still in flight (depth-1 pipeline \
+                 violation)"
             );
         }
         let encoded = protocol::encode_command(cmd);
@@ -234,15 +238,19 @@ impl PipelinedTransport for PipelinedUsbLoopbackTransport {
     fn stats(&self) -> &TransportStats {
         &self.stats
     }
+
     fn reset_stats(&mut self) {
         self.stats = TransportStats::default();
     }
+
     fn name(&self) -> &str {
         "PipelinedUsbLoopback"
     }
+
     fn device_id(&self) -> String {
         self.device_info.clone()
     }
+
     fn is_connected(&self) -> bool {
         self.io_thread.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
     }

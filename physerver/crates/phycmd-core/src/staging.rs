@@ -12,22 +12,19 @@
 //!
 //! ## Three write modes
 //!
-//! * [`WriteMode::Coalesce`] — lock-free-ish overwrite. Multiple writes
-//!   to the same field between ticks all collapse to the latest value.
-//!   Ideal for dashboards, setpoint tracking, telemetry inputs.
+//! * [`WriteMode::Coalesce`] — lock-free-ish overwrite. Multiple writes to the same field between
+//!   ticks all collapse to the latest value. Ideal for dashboards, setpoint tracking, telemetry
+//!   inputs.
 //!
-//! * [`WriteMode::BlockUntilSent`] (default) — if the field you are
-//!   writing is already marked dirty (a previous value is pending
-//!   transmission), the caller blocks on a condition variable until
-//!   the RT scheduler has transmitted that pending value. Each field
-//!   has its own logical wait: two writers setting *different* fields
-//!   never block each other, two writers setting *the same* field
-//!   serialise at the tick rate.
+//! * [`WriteMode::BlockUntilSent`] (default) — if the field you are writing is already marked dirty
+//!   (a previous value is pending transmission), the caller blocks on a condition variable until
+//!   the RT scheduler has transmitted that pending value. Each field has its own logical wait: two
+//!   writers setting *different* fields never block each other, two writers setting *the same*
+//!   field serialise at the tick rate.
 //!
-//! * [`WriteMode::ErrorOnConflict`] — like [`WriteMode::BlockUntilSent`]
-//!   but returns [`StagingError::WouldOverwrite`] instead of blocking.
-//!   Primarily a debug / safety-critical mode that surfaces "writer is
-//!   faster than the tick rate" as an explicit error.
+//! * [`WriteMode::ErrorOnConflict`] — like [`WriteMode::BlockUntilSent`] but returns
+//!   [`StagingError::WouldOverwrite`] instead of blocking. Primarily a debug / safety-critical mode
+//!   that surfaces "writer is faster than the tick rate" as an explicit error.
 //!
 //! ## Per-field granularity
 //!
@@ -43,11 +40,15 @@
 //! "per-field" aspect is expressed through a `wait_while` predicate
 //! that checks only the bitmask bits relevant to the caller.
 
-use crate::protocol::{Command, CommandFlags};
+use std::{
+    sync::atomic::{AtomicU8, Ordering},
+    time::Duration,
+};
+
 use parking_lot::{Condvar, Mutex};
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::Duration;
 use thiserror::Error;
+
+use crate::protocol::{Command, CommandFlags};
 
 // -------------------------------------------------------------------------
 //   Dirty bitmask layout (u32)
@@ -120,7 +121,10 @@ impl WriteMode {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum StagingError {
-    #[error("field is already pending transmission (dirty); use Coalesce or BlockUntilSent to overwrite")]
+    #[error(
+        "field is already pending transmission (dirty); use Coalesce or BlockUntilSent to \
+         overwrite"
+    )]
     WouldOverwrite,
 
     #[error("invalid digital_out bit index: {0} (must be 0..16)")]
@@ -261,11 +265,7 @@ impl CommandStaging {
         // we re-check the predicate under the lock because spurious
         // wake-ups and the thundering-herd pattern can leave the
         // field still dirty even if the Condvar was notified.
-        let result = self.cv.wait_while_for(
-            &mut g,
-            |s| (s.dirty_bits & mask) != 0,
-            timeout,
-        );
+        let result = self.cv.wait_while_for(&mut g, |s| (s.dirty_bits & mask) != 0, timeout);
         if result.timed_out() && (g.dirty_bits & mask) != 0 {
             return Err(StagingError::Timeout(timeout));
         }
@@ -282,9 +282,11 @@ impl CommandStaging {
     pub fn set_dac0(&self, value: u16) -> Result<(), StagingError> {
         self.set_dac0_with(self.default_mode(), value)
     }
+
     pub fn set_dac0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DAC0, |c| c.dac[0] = value)
     }
+
     /// Bounded-wait analogue of [`set_dac0`] with `WriteMode::BlockUntilSent`.
     /// Returns `StagingError::Timeout` if the value doesn't get marked
     /// sent within `timeout`.
@@ -295,9 +297,11 @@ impl CommandStaging {
     pub fn set_dac1(&self, value: u16) -> Result<(), StagingError> {
         self.set_dac1_with(self.default_mode(), value)
     }
+
     pub fn set_dac1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DAC1, |c| c.dac[1] = value)
     }
+
     pub fn set_dac1_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
         self.do_write_timeout(DIRTY_DAC1, timeout, |c| c.dac[1] = value)
     }
@@ -309,9 +313,11 @@ impl CommandStaging {
     pub fn set_pwm0(&self, value: u16) -> Result<(), StagingError> {
         self.set_pwm0_with(self.default_mode(), value)
     }
+
     pub fn set_pwm0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_PWM0, |c| c.pwm[0] = value)
     }
+
     pub fn set_pwm0_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
         self.do_write_timeout(DIRTY_PWM0, timeout, |c| c.pwm[0] = value)
     }
@@ -319,9 +325,11 @@ impl CommandStaging {
     pub fn set_pwm1(&self, value: u16) -> Result<(), StagingError> {
         self.set_pwm1_with(self.default_mode(), value)
     }
+
     pub fn set_pwm1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_PWM1, |c| c.pwm[1] = value)
     }
+
     pub fn set_pwm1_with_timeout(&self, value: u16, timeout: Duration) -> Result<(), StagingError> {
         self.do_write_timeout(DIRTY_PWM1, timeout, |c| c.pwm[1] = value)
     }
@@ -333,9 +341,11 @@ impl CommandStaging {
     pub fn set_flags(&self, flags: CommandFlags) -> Result<(), StagingError> {
         self.set_flags_with(self.default_mode(), flags)
     }
+
     pub fn set_flags_with(&self, mode: WriteMode, flags: CommandFlags) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_FLAGS, |c| c.flags = flags)
     }
+
     pub fn set_flags_with_timeout(
         &self,
         flags: CommandFlags,
@@ -349,25 +359,22 @@ impl CommandStaging {
     //
     //   Two APIs:
     //
-    //     * `set_digital_out`       — overwrite the entire 16-bit
-    //                                 word in one go. Marks *all*
-    //                                 16 dirty bits. In BlockUntilSent
-    //                                 mode blocks until the whole word
-    //                                 is clean (i.e. no other writer
-    //                                 has a pending bit).
+    //     * `set_digital_out`       — overwrite the entire 16-bit word in one go. Marks *all* 16
+    //       dirty bits. In BlockUntilSent mode blocks until the whole word is clean (i.e. no other
+    //       writer has a pending bit).
     //
-    //     * `set_digital_out_bit`   — toggle one specific bit.
-    //                                 Marks only that bit dirty.
-    //                                 Two writers on different bits
-    //                                 never block each other.
+    //     * `set_digital_out_bit`   — toggle one specific bit. Marks only that bit dirty. Two
+    //       writers on different bits never block each other.
     // ---------------------------------------------------------------
 
     pub fn set_digital_out(&self, mask: u16) -> Result<(), StagingError> {
         self.set_digital_out_with(self.default_mode(), mask)
     }
+
     pub fn set_digital_out_with(&self, mode: WriteMode, mask: u16) -> Result<(), StagingError> {
         self.do_write(mode, DIRTY_DIGITAL_OUT_ALL, |c| c.digital_out = mask)
     }
+
     pub fn set_digital_out_with_timeout(
         &self,
         mask: u16,
@@ -379,6 +386,7 @@ impl CommandStaging {
     pub fn set_digital_out_bit(&self, bit: u8, value: bool) -> Result<(), StagingError> {
         self.set_digital_out_bit_with(self.default_mode(), bit, value)
     }
+
     pub fn set_digital_out_bit_with(
         &self,
         mode: WriteMode,
@@ -397,6 +405,7 @@ impl CommandStaging {
             }
         })
     }
+
     pub fn set_digital_out_bit_with_timeout(
         &self,
         bit: u8,
@@ -457,12 +466,15 @@ impl CommandStaging {
     pub fn write_generation(&self) -> u64 {
         self.inner.lock().write_generation
     }
+
     pub fn sent_generation(&self) -> u64 {
         self.inner.lock().sent_generation
     }
+
     pub fn dirty_bits(&self) -> u32 {
         self.inner.lock().dirty_bits
     }
+
     /// Return a clone of the current staged frame without taking a
     /// snapshot. Useful for diagnostics; does not affect dirty state.
     pub fn peek_frame(&self) -> Command {
@@ -476,10 +488,13 @@ impl CommandStaging {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::Arc,
+        thread,
+        time::{Duration, Instant},
+    };
+
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
-    use std::time::{Duration, Instant};
 
     #[test]
     fn new_defaults_to_block_until_sent() {
@@ -798,9 +813,7 @@ mod tests {
         s.set_dac0(100).unwrap();
 
         let s2 = Arc::clone(&s);
-        let writer = thread::spawn(move || {
-            s2.set_dac0_with_timeout(200, Duration::from_secs(1))
-        });
+        let writer = thread::spawn(move || s2.set_dac0_with_timeout(200, Duration::from_secs(1)));
 
         // Clear dirty in well under the 1s timeout.
         thread::sleep(Duration::from_millis(20));

@@ -1,10 +1,11 @@
+use std::path::PathBuf;
+
 /// Configuration validator utility
 ///
 /// Validates physerver configuration files for correctness
 use anyhow::{Context, Result};
 use clap::Parser;
 use physerver::config::Config;
-use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Validate PhyServer configuration files", long_about = None)]
@@ -99,7 +100,9 @@ fn validate_config(config: &Config, result: &mut ValidationResult) {
 
     if config.web.bind_address == "0.0.0.0" {
         result.warning(
-            "Web server binds to all interfaces (0.0.0.0). Consider using 127.0.0.1 for security or setting up firewall".to_string()
+            "Web server binds to all interfaces (0.0.0.0). Consider using 127.0.0.1 for security \
+             or setting up firewall"
+                .to_string(),
         );
     }
 

@@ -11,9 +11,7 @@
 //! working unchanged while the rest of the workspace is refactored.
 
 // Re-exports from the new core crate
-pub use phycmd_core::protocol;
-pub use phycmd_core::rt_setup as rt;
-pub use phycmd_core::transport;
+pub use phycmd_core::{protocol, rt_setup as rt, transport};
 
 // Service-only modules (HTTP, IPC, system telemetry, config, ...)
 pub mod adc_capture;

@@ -36,17 +36,16 @@
 //! callback's hot path beyond a single uncontended `read()`.
 //!
 //! Unit-conversion contract:
-//!   * `amplitude` and `offset` are in raw device units
-//!     (DAC: 0–4095, PWM: 0–65535).
-//!   * The generated waveform is centered on `offset` and swings
-//!     ±`amplitude / 2`, then clamped to the full DAC/PWM range.
-//!     A pure DC level is `{ amplitude: 0, offset: <value> }`.
+//!   * `amplitude` and `offset` are in raw device units (DAC: 0–4095, PWM: 0–65535).
+//!   * The generated waveform is centered on `offset` and swings ±`amplitude / 2`, then clamped to
+//!     the full DAC/PWM range. A pure DC level is `{ amplitude: 0, offset: <value> }`.
 //!   * `freq_hz` is the fundamental in Hz.
 //!   * `duty` is the high-fraction for `Square` (ignored otherwise).
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Waveform shape selector. Serialised as the lowercase variant name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

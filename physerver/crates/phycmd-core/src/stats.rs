@@ -36,8 +36,8 @@ pub const JITTER_BUCKET_BOUNDS_US: &[i32] = &[
     100, // bucket 4: 50..100 μs
     200, // bucket 5: 100..200 μs
     500, // bucket 6: 200..500 μs
-    1000, // bucket 7: 500..1000 μs
-         // overflow at index 8 for anything >= 1000 μs
+    1000, /* bucket 7: 500..1000 μs
+          * overflow at index 8 for anything >= 1000 μs */
 ];
 
 /// Number of histogram buckets (= boundaries + 1 overflow).
@@ -441,8 +441,7 @@ mod tests {
     fn concurrent_record_is_safe() {
         // Smoke test: many threads incrementing at once should not
         // corrupt the counters.
-        use std::sync::Arc;
-        use std::thread;
+        use std::{sync::Arc, thread};
         let s = Arc::new(RtStats::new());
         let mut handles = Vec::new();
         for _ in 0..8 {

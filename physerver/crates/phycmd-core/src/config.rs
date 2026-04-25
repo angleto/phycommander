@@ -6,9 +6,11 @@
 //! lives in the `physervice` crate's own `config.toml` loader and
 //! should not pollute the core library.
 
-use crate::staging::WriteMode;
 use std::time::Duration;
+
 use thiserror::Error;
+
+use crate::staging::WriteMode;
 
 /// Complete RT scheduler configuration.
 #[derive(Debug, Clone)]

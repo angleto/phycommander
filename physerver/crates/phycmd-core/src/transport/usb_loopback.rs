@@ -16,8 +16,8 @@
 //!
 //!   * sends the PhyCMD-64–encoded command bytes as-is
 //!   * reads 64 bytes back
-//!   * fabricates a [`Status`] populated from the *sent* command
-//!     fields (since the chip just echoes them)
+//!   * fabricates a [`Status`] populated from the *sent* command fields (since the chip just echoes
+//!     them)
 //!
 //! When the Step 3 firmware lands (real CRC + real response
 //! construction on the chip), this transport becomes obsolete and
@@ -35,12 +35,14 @@
 //! `0x02 OUT` and `0x82 IN`; hence the firmware uses hw pipe 1
 //! for IN (see `ATSAM3X8E_FW/src/udi_vendor.h`).
 
-use super::traits::{Transport, TransportStats};
-use crate::protocol::{self, Command, Status, StatusFlags, MESSAGE_SIZE};
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use rusb::{DeviceHandle, GlobalContext};
-use std::time::Duration;
 use tracing::{debug, info, warn};
+
+use super::traits::{Transport, TransportStats};
+use crate::protocol::{self, Command, Status, StatusFlags, MESSAGE_SIZE};
 
 // PhyCommander Vendor Class identification
 const VENDOR_ID: u16 = 0x2341;
@@ -188,24 +190,31 @@ impl Transport for UsbLoopbackTransport {
     fn stats(&self) -> &TransportStats {
         &self.stats
     }
+
     fn reset_stats(&mut self) {
         self.stats = TransportStats::default();
     }
+
     fn name(&self) -> &str {
         "UsbLoopback"
     }
+
     fn device_id(&self) -> String {
         self.device_info.clone()
     }
+
     fn is_connected(&self) -> bool {
         self.handle.active_configuration().is_ok()
     }
+
     fn set_timeout(&mut self, _timeout: Duration) -> Result<()> {
         Ok(())
     }
+
     fn max_rate(&self) -> u32 {
         20_000
     }
+
     fn typical_latency_us(&self) -> u32 {
         80
     }

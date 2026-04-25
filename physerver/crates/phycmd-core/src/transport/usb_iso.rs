@@ -42,24 +42,30 @@
 //! The CRC-16-CCITT in the PhyCMD-64 protocol still catches in-flight
 //! bit-errors, exposed as [`IsoStats::iso_in_crc_errors`].
 
-use crate::protocol::wave_types::*;
-use crate::protocol::{decode_status, encode_command, Command, MESSAGE_SIZE};
-use crate::staging::CommandStaging;
-use crate::stats::RtStats;
-use crate::status_bus::{StatusBus, StatusFrame};
-use crate::waveforms::WaveformBank;
+use std::{
+    os::raw::c_void,
+    ptr,
+    sync::{
+        atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering},
+        Arc,
+    },
+    thread::JoinHandle,
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result};
 use libusb1_sys as ffi;
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
-use std::os::raw::c_void;
-use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::Arc;
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
+
+use crate::{
+    protocol::{decode_status, encode_command, wave_types::*, Command, MESSAGE_SIZE},
+    staging::CommandStaging,
+    stats::RtStats,
+    status_bus::{StatusBus, StatusFrame},
+    waveforms::WaveformBank,
+};
 
 // ---------------------------------------------------------------------
 //   Tunables
@@ -134,20 +140,18 @@ impl AlignedBuffer {
         if ptr.is_null() {
             std::alloc::handle_alloc_error(layout);
         }
-        debug_assert_eq!(
-            ptr as usize % DMA_ALIGN,
-            0,
-            "allocator returned misaligned pointer"
-        );
+        debug_assert_eq!(ptr as usize % DMA_ALIGN, 0, "allocator returned misaligned pointer");
         Self { ptr, layout }
     }
 
     fn as_ptr(&self) -> *const u8 {
         self.ptr
     }
+
     fn len(&self) -> usize {
         self.layout.size()
     }
+
     fn as_mut_slice(&mut self) -> &mut [u8] {
         // SAFETY: ptr is non-null and valid for `layout.size()` bytes
         // for the entire lifetime of self (dealloc happens in Drop).
@@ -223,11 +227,7 @@ struct IsoRateState {
 
 impl Default for IsoRateState {
     fn default() -> Self {
-        Self {
-            last_time: None,
-            last_count: 0,
-            ema_hz: 0.0,
-        }
+        Self { last_time: None, last_count: 0, ema_hz: 0.0 }
     }
 }
 
@@ -517,7 +517,11 @@ impl IsoTransport {
                     (*v).minor,
                     (*v).micro,
                     (*v).nano,
-                    if rc.is_empty() { String::new() } else { format!("-{rc}") }
+                    if rc.is_empty() {
+                        String::new()
+                    } else {
+                        format!("-{rc}")
+                    }
                 );
             }
 
@@ -525,8 +529,8 @@ impl IsoTransport {
             if dh.is_null() {
                 ffi::libusb_exit(ctx_ptr);
                 anyhow::bail!(
-                    "Arduino Due not found (VID={VID:04x} PID={PID:04x}). \
-                     Is the dual-mode iso firmware flashed and the device powered?"
+                    "Arduino Due not found (VID={VID:04x} PID={PID:04x}). Is the dual-mode iso \
+                     firmware flashed and the device powered?"
                 );
             }
             let _ = ffi::libusb_detach_kernel_driver(dh, INTERFACE);
@@ -612,6 +616,7 @@ impl IsoTransport {
     pub fn telemetry_detail(&self) -> bool {
         self.inner.telemetry_detail_enabled.load(Ordering::Relaxed)
     }
+
     pub fn set_telemetry_detail(&self, on: bool) {
         self.inner.telemetry_detail_enabled.store(on, Ordering::Relaxed);
         // Clear ring so stale timestamps don't produce bogus latency
@@ -748,8 +753,8 @@ fn io_thread_main(inner: Arc<IsoInner>) -> Result<()> {
                 }
                 SessionExit::Reconnect => {
                     warn!(
-                        "iso: no progress for {}s, firmware may have reset. \
-                         Attempting auto-reconnect.",
+                        "iso: no progress for {}s, firmware may have reset. Attempting \
+                         auto-reconnect.",
                         inner.reconnect_policy.no_progress_threshold_sec
                     );
                     if let Err(e) = try_reconnect(&inner, ctx_ptr) {
@@ -914,10 +919,7 @@ unsafe fn run_iso_session(
 /// this runs, `inner.reconnecting` is set so that WaveformDevice
 /// control transfers return LIBUSB_ERROR_BUSY instead of using a
 /// handle that's in the process of being closed.
-unsafe fn try_reconnect(
-    inner: &Arc<IsoInner>,
-    ctx_ptr: *mut ffi::libusb_context,
-) -> Result<()> {
+unsafe fn try_reconnect(inner: &Arc<IsoInner>, ctx_ptr: *mut ffi::libusb_context) -> Result<()> {
     inner.reconnecting.store(true, Ordering::Release);
     // Release interface + close the old handle.
     {
@@ -1061,13 +1063,11 @@ unsafe fn iso_callback_impl(transfer: *mut ffi::libusb_transfer) {
 
         // Refresh OUT buffer for the next transfer. Two paths:
         //
-        //   * No waveform active → encode the staging snapshot once
-        //     and broadcast it to all 8 packets (cheapest case, what
-        //     the bulk-mode RtScheduler effectively does).
+        //   * No waveform active → encode the staging snapshot once and broadcast it to all 8
+        //     packets (cheapest case, what the bulk-mode RtScheduler effectively does).
         //
-        //   * Any waveform active → take the staging snapshot for the
-        //     non-waveform fields, then re-encode 8 commands with the
-        //     waveform-driven channels overridden per-microframe.
+        //   * Any waveform active → take the staging snapshot for the non-waveform fields, then
+        //     re-encode 8 commands with the waveform-driven channels overridden per-microframe.
         //     This is where 5–8 kHz arbitrary-shape outputs come from.
         let (base_cmd, gen) = inner.staging.take_snapshot();
         let buf_len = (xfer.length as usize).min(PKTS_PER_TRANSFER * ISO_PKT_SIZE);
@@ -1243,7 +1243,10 @@ unsafe fn handle_in_packet(
 /// `ControlTransferStalled`; everything else is wrapped in `Other`.
 #[derive(Debug, thiserror::Error)]
 pub enum WaveformError {
-    #[error("USB control transfer stalled (firmware rejected the request, e.g. validation failed): bRequest=0x{0:02x}")]
+    #[error(
+        "USB control transfer stalled (firmware rejected the request, e.g. validation failed): \
+         bRequest=0x{0:02x}"
+    )]
     ControlTransferStalled(u8),
     #[error("USB control transfer error code {0}")]
     ControlTransferFailed(i32),
@@ -1348,9 +1351,7 @@ impl WaveformDevice {
     /// and typically just retry after a short delay.
     fn dh(&self) -> Result<*mut ffi::libusb_device_handle, WaveformError> {
         if self.inner.reconnecting.load(Ordering::Acquire) {
-            return Err(WaveformError::ControlTransferFailed(
-                ffi::constants::LIBUSB_ERROR_BUSY,
-            ));
+            return Err(WaveformError::ControlTransferFailed(ffi::constants::LIBUSB_ERROR_BUSY));
         }
         let dh = *self.inner.dev_handle.read();
         if dh.is_null() {
@@ -1477,13 +1478,16 @@ impl WaveformDevice {
         let raw = self.ctrl_in(VREQ_DAC_GET_CLOCK, 0, 4)?;
         Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
     }
+
     pub fn dac_set_clock(&self, hz: u32) -> Result<(), WaveformError> {
         self.ctrl_out(VREQ_DAC_SET_CLOCK, 0, &hz.to_le_bytes())
     }
+
     pub fn adc_get_rate(&self) -> Result<u32, WaveformError> {
         let raw = self.ctrl_in(VREQ_ADC_GET_RATE, 0, 4)?;
         Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))
     }
+
     pub fn adc_set_rate(&self, hz: u32) -> Result<(), WaveformError> {
         self.ctrl_out(VREQ_ADC_SET_RATE, 0, &hz.to_le_bytes())
     }

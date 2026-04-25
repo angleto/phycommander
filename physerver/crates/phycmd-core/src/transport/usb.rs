@@ -1,9 +1,11 @@
-use super::traits::{Transport, TransportStats};
-use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use rusb::{Device, DeviceHandle, GlobalContext};
-use std::time::Duration;
 use tracing::{debug, error, info, warn};
+
+use super::traits::{Transport, TransportStats};
+use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
 
 // Arduino Due USB VID/PID
 const VENDOR_ID: u16 = 0x2341; // Arduino
@@ -118,7 +120,6 @@ impl UsbTransport {
 
         Ok(())
     }
-
 }
 
 impl Transport for UsbTransport {

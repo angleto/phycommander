@@ -13,10 +13,13 @@
 //! (e.g. on macOS during local development) the snapshot has `available =
 //! false` and empty vectors, and the HTTP handler returns it as-is.
 
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// A full snapshot of system hardware telemetry at a given instant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -299,8 +302,9 @@ fn read_uptime(path: &Path) -> std::io::Result<f64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::tempdir;
+
+    use super::*;
 
     fn write_file(path: &Path, content: &str) {
         if let Some(parent) = path.parent() {
@@ -405,13 +409,9 @@ mod tests {
         write_file(&root.join("proc/uptime"), "5370.45 21123.89\n");
         write_file(
             &root.join("proc/meminfo"),
-            "MemTotal:        3959480 kB\n\
-             MemFree:         2123456 kB\n\
-             MemAvailable:    3200000 kB\n\
-             Buffers:           50000 kB\n\
-             Cached:           500000 kB\n\
-             SwapTotal:       1000000 kB\n\
-             SwapFree:         900000 kB\n",
+            "MemTotal:        3959480 kB\nMemFree:         2123456 kB\nMemAvailable:    3200000 \
+             kB\nBuffers:           50000 kB\nCached:           500000 kB\nSwapTotal:       \
+             1000000 kB\nSwapFree:         900000 kB\n",
         );
 
         let snap = read_snapshot_from(root);

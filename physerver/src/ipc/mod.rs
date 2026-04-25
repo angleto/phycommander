@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
 
-use crate::protocol::{Command, Status};
+use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
+
 use anyhow::{Context, Result};
 use shared_memory::{Shmem, ShmemConf};
-use std::sync::atomic::{AtomicU16, AtomicU32, AtomicU64, AtomicU8, Ordering};
 use tracing::{info, warn};
+
+use crate::protocol::{Command, Status};
 
 /// Shared memory layout for IPC
 /// This structure is shared between physerver and client applications
@@ -301,19 +303,17 @@ mod tests {
     // system resources (shared memory) that may conflict with running server
     // These should be tested in integration tests instead
 
-    /*
-    #[test]
-    fn test_ipc_server_roundtrip() -> Result<()> {
-        // This test requires shared memory which may conflict with running server
-        // Test manually or use integration tests
-        Ok(())
-    }
-
-    #[test]
-    fn test_ipc_command_roundtrip() -> Result<()> {
-        // This test requires shared memory which may conflict with running server
-        // Test manually or use integration tests
-        Ok(())
-    }
-    */
+    // #[test]
+    // fn test_ipc_server_roundtrip() -> Result<()> {
+    // This test requires shared memory which may conflict with running server
+    // Test manually or use integration tests
+    // Ok(())
+    // }
+    //
+    // #[test]
+    // fn test_ipc_command_roundtrip() -> Result<()> {
+    // This test requires shared memory which may conflict with running server
+    // Test manually or use integration tests
+    // Ok(())
+    // }
 }

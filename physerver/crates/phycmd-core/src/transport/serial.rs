@@ -1,10 +1,14 @@
-use super::traits::{Transport, TransportStats};
-use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
+
 use anyhow::{Context, Result};
 use serialport::SerialPort;
-use std::io::{Read, Write};
-use std::time::Duration;
 use tracing::{debug, error, info, warn};
+
+use super::traits::{Transport, TransportStats};
+use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
 
 /// Serial port (USB CDC) transport
 #[derive(Debug)]

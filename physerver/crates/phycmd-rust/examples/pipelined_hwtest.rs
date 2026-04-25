@@ -9,11 +9,13 @@
 //! sudo ./target/release/examples/pipelined_hwtest --rate 5000 --duration-ms 10000 --enable-rt
 //! ```
 
-use std::env;
-use std::process::ExitCode;
-use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::{
+    env,
+    process::ExitCode,
+    sync::Arc,
+    thread,
+    time::{Duration, Instant},
+};
 
 use phycmd::{PhyCommander, PipelinedUsbLoopbackTransport, RtConfig, WriteMode};
 

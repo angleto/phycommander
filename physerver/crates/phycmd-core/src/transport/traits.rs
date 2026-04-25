@@ -1,7 +1,8 @@
-use crate::protocol::{Command, Status};
+use std::{fmt::Debug, time::Duration};
+
 use anyhow::Result;
-use std::fmt::Debug;
-use std::time::Duration;
+
+use crate::protocol::{Command, Status};
 
 /// Statistics for transport layer
 #[derive(Debug, Clone, Default)]

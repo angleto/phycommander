@@ -20,9 +20,10 @@
 //! and read-shared by the HTTP handler, so a `parking_lot::Mutex` is
 //! adequate — contention is negligible at 8 kHz push vs ~10 Hz poll.
 
+use std::collections::VecDeque;
+
 use parking_lot::Mutex;
 use serde::Serialize;
-use std::collections::VecDeque;
 
 /// Max samples held in the ring. 16384 covers a 2 s window at 8 kHz
 /// which matches the dashboard scope's longest "full fidelity" mode;
@@ -69,11 +70,7 @@ impl AdcRing {
         let start_idx = self.buf.partition_point(|s| s.seq < since);
         let total = self.buf.len() - start_idx;
         let skip = total.saturating_sub(max);
-        self.buf
-            .iter()
-            .skip(start_idx + skip)
-            .copied()
-            .collect()
+        self.buf.iter().skip(start_idx + skip).copied().collect()
     }
 
     /// First/last seq currently held. Returns `(0, 0)` on empty ring.

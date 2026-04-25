@@ -5,17 +5,16 @@
 // re-exports the protocol / transport / rt primitives from phycmd-core.
 // This binary imports them from the lib instead of redeclaring `mod`s,
 // which used to compile duplicated copies of every module into the bin.
-use physerver::{config, ipc, rt, serial, telemetry, transport, web};
+use std::sync::Arc;
 
+use anyhow::{Context, Result};
+use clap::Parser;
 // Hard-RT primitives from phycmd-core (re-exported transparently via
 // physerver::transport because phycmd-core is the actual implementor).
 use phycmd_core::{
     CommandStaging, RtConfig as CoreRtConfig, RtScheduler, RtStats, StatusBus, WriteMode,
 };
-
-use anyhow::{Context, Result};
-use clap::Parser;
-use std::sync::Arc;
+use physerver::{config, ipc, rt, serial, telemetry, transport, web};
 use tracing::{error, info, warn};
 use transport::Transport;
 
@@ -120,7 +119,10 @@ async fn main() -> Result<()> {
     let iso_mode = config.transport.transport_type.eq_ignore_ascii_case("iso");
 
     let transport: Option<Box<dyn Transport>> = if iso_mode {
-        info!("Iso mode selected — skipping bulk Transport creation; IsoTransport will start after web/ipc plumbing is up");
+        info!(
+            "Iso mode selected — skipping bulk Transport creation; IsoTransport will start after \
+             web/ipc plumbing is up"
+        );
         None
     } else {
         Some(create_bulk_transport(&config)?)
@@ -215,11 +217,10 @@ async fn main() -> Result<()> {
     //   and WebSocket — tokio cannot preempt or delay the RT thread.
     //
     //   Communication with the tokio side:
-    //     * CommandStaging  — HTTP/WS handlers push setpoints here.
-    //                          The scheduler takes a snapshot each tick.
-    //     * StatusBus       — scheduler publishes each status frame.
-    //                          A tokio task consumes and forwards to
-    //                          the WebSocket broadcast + IPC + web_state.
+    //     * CommandStaging  — HTTP/WS handlers push setpoints here. The scheduler takes a snapshot
+    //       each tick.
+    //     * StatusBus       — scheduler publishes each status frame. A tokio task consumes and
+    //       forwards to the WebSocket broadcast + IPC + web_state.
     // =================================================================
 
     // RT shared state
@@ -458,10 +459,7 @@ async fn main() -> Result<()> {
                         // state doesn't flood the journal. WatchdogSec
                         // will trip within one systemd-configured
                         // interval if we keep skipping.
-                        tracing::debug!(
-                            "skipping watchdog kick: health degraded ({:?})",
-                            checks
-                        );
+                        tracing::debug!("skipping watchdog kick: health degraded ({:?})", checks);
                     }
                 }
             });

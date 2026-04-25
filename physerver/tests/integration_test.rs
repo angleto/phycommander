@@ -1,5 +1,4 @@
-use physerver::protocol::crc::crc16_ccitt_table;
-use physerver::protocol::{decode_status, encode_command};
+use physerver::protocol::{crc::crc16_ccitt_table, decode_status, encode_command};
 /// Integration tests for physerver
 ///
 /// These tests verify the complete system integration

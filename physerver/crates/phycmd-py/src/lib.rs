@@ -41,10 +41,14 @@
 //! keeps running and the broadcast channel drops the oldest frames
 //! for the lagging subscriber.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
+    time::Duration,
+};
 
 // NB: `phycmd-rust` builds a lib called `phycmd`, so we import from
 // `phycmd::*`. Do NOT write `use phycmd_rust::*`.
@@ -54,9 +58,11 @@ use phycmd::{
     Transport, WriteMode as RustWriteMode,
 };
 use phycmd_core::transport::mock::MockState;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::{
+    exceptions::{PyRuntimeError, PyValueError},
+    prelude::*,
+    types::{PyDict, PyList},
+};
 
 // -------------------------------------------------------------------------
 //   WriteMode enum wrapper
@@ -105,8 +111,8 @@ impl From<RustWriteMode> for PyWriteMode {
 /// Wraps `phycmd_rust::PhyCommander` in an `Arc<Mutex<Option<...>>>`
 /// so that:
 ///   * `Drop` on the pyclass always tears the scheduler down cleanly
-///   * dispatcher threads can keep a reference to it for the
-///     `subscribe()` lifetime without preventing explicit stop
+///   * dispatcher threads can keep a reference to it for the `subscribe()` lifetime without
+///     preventing explicit stop
 #[pyclass(name = "PhyCommander", unsendable)]
 pub struct PyPhyCommander {
     inner: Arc<RustPhyCommander>,

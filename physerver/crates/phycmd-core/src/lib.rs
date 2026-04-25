@@ -7,11 +7,11 @@
 //! the HTTP service, the IPC shared-memory layer, and any tokio runtime:
 //!
 //!   * [`protocol`]  — PhyCMD-64 message types, CRC, encode/decode.
-//!   * [`transport`] — Abstract [`transport::Transport`] trait plus the
-//!     concrete [`transport::SerialTransport`] and (behind the `usb`
-//!     feature) [`transport::UsbTransport`] implementations.
-//!   * [`rt_setup`]  — Linux real-time primitives: `SCHED_FIFO` priority,
-//!     `mlockall`, CPU affinity, `/dev/cpu_dma_latency`.
+//!   * [`transport`] — Abstract [`transport::Transport`] trait plus the concrete
+//!     [`transport::SerialTransport`] and (behind the `usb` feature) [`transport::UsbTransport`]
+//!     implementations.
+//!   * [`rt_setup`]  — Linux real-time primitives: `SCHED_FIFO` priority, `mlockall`, CPU affinity,
+//!     `/dev/cpu_dma_latency`.
 //!
 //! Higher-level pieces that will be added in later phases of the
 //! hard-real-time rework (staging buffer with write-mode semantics,
@@ -32,19 +32,17 @@ pub mod waveforms;
 // Common re-exports to keep downstream users' imports short.
 pub use config::{RtConfig, RtConfigError};
 pub use protocol::{
-    channel_id, channel_id_from_name, Capabilities, ChannelKind, ChannelState, InputSrc, PulseEdge,
-    WaveArbHeader, WaveBuiltinSpec, WaveLutSpec, WavePidSpec, WavePulseSpec, WaveShape,
-    WaveThresholdSpec,
+    channel_id, channel_id_from_name, Capabilities, ChannelKind, ChannelState, Command,
+    CommandFlags, InputSrc, PulseEdge, Status, StatusFlags, WaveArbHeader, WaveBuiltinSpec,
+    WaveLutSpec, WavePidSpec, WavePulseSpec, WaveShape, WaveThresholdSpec, MESSAGE_SIZE,
 };
-pub use protocol::{Command, CommandFlags, Status, StatusFlags, MESSAGE_SIZE};
 pub use scheduler::{RtScheduler, RtSchedulerStopHandle};
 pub use staging::{CommandStaging, StagingError, WriteMode};
 pub use stats::{RtStats, RtStatsSnapshot, JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
 pub use status_bus::{StatusBus, StatusFrame};
+#[cfg(feature = "usb")]
+pub use transport::UsbTransport;
 pub use transport::{
     PipelinedTransport, SerialTransport, Transport, TransportStats, TransportType,
 };
 pub use waveforms::{WaveformBank, WaveformBankSnapshot, WaveformShape, WaveformSpec};
-
-#[cfg(feature = "usb")]
-pub use transport::UsbTransport;

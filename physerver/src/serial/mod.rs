@@ -1,9 +1,13 @@
-use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
+use std::{
+    io::{Read, Write},
+    time::Duration,
+};
+
 use anyhow::{Context, Result};
 use serialport::SerialPort;
-use std::io::{Read, Write};
-use std::time::Duration;
 use tracing::{debug, error, info, warn};
+
+use crate::protocol::{self, Command, Status, MESSAGE_SIZE};
 
 pub struct SerialPortHandler {
     port: Box<dyn SerialPort>,

@@ -1,9 +1,10 @@
+use std::time::Duration;
+
 /// Simple example client that uses IPC to communicate with physerver
 ///
 /// Run this after starting physerver:
 ///   cargo run --example simple_client
 use physerver::{Command, CommandFlags, IpcClient};
-use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
     println!("PhyCMD Simple Client Example");

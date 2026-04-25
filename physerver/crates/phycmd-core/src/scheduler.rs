@@ -32,15 +32,21 @@
 //! original grid — and surfaces slippage as an explicit metric
 //! rather than silently corrupting timing.
 
-use crate::config::RtConfig;
-use crate::staging::CommandStaging;
-use crate::stats::RtStats;
-use crate::status_bus::{StatusBus, StatusFrame};
-use crate::transport::{PipelinedTransport, Transport};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 use anyhow::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use tracing::{error, info, trace, warn};
+
+use crate::{
+    config::RtConfig,
+    staging::CommandStaging,
+    stats::RtStats,
+    status_bus::{StatusBus, StatusFrame},
+    transport::{PipelinedTransport, Transport},
+};
 
 // -------------------------------------------------------------------------
 //   Stop handle
@@ -58,6 +64,7 @@ impl RtSchedulerStopHandle {
     pub fn stop(&self) {
         self.flag.store(true, Ordering::Release);
     }
+
     pub fn is_stopping(&self) -> bool {
         self.flag.load(Ordering::Acquire)
     }
@@ -145,8 +152,8 @@ impl RtScheduler {
 
         if self.config.is_aggressive_rate() {
             warn!(
-                "rate_hz={} is above the measured safe ceiling (~15 kHz) \
-                 on EHCI + SAM3X hardware; missed ticks are likely",
+                "rate_hz={} is above the measured safe ceiling (~15 kHz) on EHCI + SAM3X \
+                 hardware; missed ticks are likely",
                 self.config.rate_hz
             );
         }
@@ -503,16 +510,22 @@ fn clamp_to_i32(v: i64) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::config::RtConfig;
-    use crate::staging::{CommandStaging, WriteMode};
-    use crate::stats::RtStats;
-    use crate::status_bus::StatusBus;
-    use crate::transport::mock::{MockState, MockTransport};
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+
     use parking_lot::Mutex;
-    use std::thread;
-    use std::time::{Duration, Instant};
     use tokio::sync::broadcast::error::TryRecvError;
+
+    use super::*;
+    use crate::{
+        config::RtConfig,
+        staging::{CommandStaging, WriteMode},
+        stats::RtStats,
+        status_bus::StatusBus,
+        transport::mock::{MockState, MockTransport},
+    };
 
     /// Build a scheduler with a MockTransport and the given mock
     /// latency. Returns the scheduler, its staging/stats/bus, and
@@ -761,8 +774,8 @@ mod tests {
         // falls behind instantly. Verify:
         //   - tick_count advances (slots accounted for)
         //   - missed_ticks > 0
-        //   - the scheduler does NOT fire back-to-back to "catch up"
-        //     (which would storm the transport and pile exchanges)
+        //   - the scheduler does NOT fire back-to-back to "catch up" (which would storm the
+        //     transport and pile exchanges)
         let (sched, _staging, _bus, stats, mock_state) = build_sched(1_000, 5_000);
         let stop = sched.stop_handle();
         let h = thread::spawn(move || sched.run());

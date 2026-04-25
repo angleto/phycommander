@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // SPDX-FileCopyrightText: 2014-2026 Angelo Leto <angelo@leto.blue>
 
-use crate::adc_capture::{self, SharedAdcRing};
-use crate::protocol::{Command, Status};
+use std::sync::{
+    atomic::{AtomicU16, Ordering},
+    Arc,
+};
+
 use anyhow::Context as _;
 use axum::{
     extract::{
@@ -15,11 +18,14 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::Arc;
 use tokio::sync::{broadcast, RwLock};
 use tower_http::cors::CorsLayer;
 use tracing::{info, warn};
+
+use crate::{
+    adc_capture::{self, SharedAdcRing},
+    protocol::{Command, Status},
+};
 
 /// Shared application state
 pub struct AppState {
@@ -316,10 +322,7 @@ struct CoexistenceReport {
 }
 async fn waveform_coexistence(State(state): State<Arc<AppState>>) -> Response {
     let (Some(w), Some(d)) = (state.waveforms.get(), state.waveform_dev.get()) else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "coexistence report only available in iso mode",
-        )
+        return (StatusCode::SERVICE_UNAVAILABLE, "coexistence report only available in iso mode")
             .into_response();
     };
 
@@ -975,17 +978,17 @@ impl HealthChecks {
 /// of "healthy" in the binary or systemd and the probe will drift
 /// apart.
 pub async fn compute_health(state: &AppState) -> HealthChecks {
-    let (iso_rate_hz, reconnecting, mode) =
-        match (state.iso_stats.get(), state.iso_transport.get()) {
-            (Some(stats), Some(t)) => {
-                let snap = stats.snapshot();
-                (snap.iso_in_rate_hz, t.is_reconnecting(), "iso")
-            }
-            // Non-iso deployment (bulk or serial): the rate estimate
-            // lives in a different path and we can't use it here. Fall
-            // back to usb_configured only.
-            _ => (f32::NAN, false, "non-iso"),
-        };
+    let (iso_rate_hz, reconnecting, mode) = match (state.iso_stats.get(), state.iso_transport.get())
+    {
+        (Some(stats), Some(t)) => {
+            let snap = stats.snapshot();
+            (snap.iso_in_rate_hz, t.is_reconnecting(), "iso")
+        }
+        // Non-iso deployment (bulk or serial): the rate estimate
+        // lives in a different path and we can't use it here. Fall
+        // back to usb_configured only.
+        _ => (f32::NAN, false, "non-iso"),
+    };
 
     let usb_configured = state.current_status.read().await.flags.usb_configured;
 
@@ -997,7 +1000,11 @@ pub async fn compute_health(state: &AppState) -> HealthChecks {
 
     HealthChecks {
         iso_rate_ok,
-        iso_in_rate_hz: if iso_rate_hz.is_nan() { 0.0 } else { iso_rate_hz },
+        iso_in_rate_hz: if iso_rate_hz.is_nan() {
+            0.0
+        } else {
+            iso_rate_hz
+        },
         usb_configured,
         reconnecting,
         transport_mode: mode,
@@ -1012,12 +1019,13 @@ async fn get_health(
     let checks = compute_health(&state).await;
     let healthy = checks.healthy();
 
-    let body = HealthResponse {
-        status: if healthy { "ok" } else { "degraded" },
-        checks,
-    };
+    let body = HealthResponse { status: if healthy { "ok" } else { "degraded" }, checks };
 
-    let code = if healthy { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    let code = if healthy {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
     (code, Json(body))
 }
 
@@ -1055,7 +1063,8 @@ async fn get_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let _ = writeln!(out, "# TYPE phycmd_jitter_us_max gauge");
     let _ = writeln!(out, "phycmd_jitter_us_max {}", snap.jitter_max_us);
 
-    let _ = writeln!(out, "# HELP phycmd_latency_us_mean Mean scheduler wake-to-done latency (us).");
+    let _ =
+        writeln!(out, "# HELP phycmd_latency_us_mean Mean scheduler wake-to-done latency (us).");
     let _ = writeln!(out, "# TYPE phycmd_latency_us_mean gauge");
     let _ = writeln!(out, "phycmd_latency_us_mean {}", snap.mean_latency_us);
 
@@ -1098,10 +1107,7 @@ async fn get_metrics(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         let _ = writeln!(out, "phycmd_iso_in_rate_hz {}", iso.iso_in_rate_hz);
     }
 
-    (
-        [("content-type", "text/plain; version=0.0.4; charset=utf-8")],
-        out,
-    )
+    ([("content-type", "text/plain; version=0.0.4; charset=utf-8")], out)
 }
 
 /// Return a snapshot of the RT scheduler statistics: tick count,
@@ -1222,14 +1228,12 @@ async fn websocket_handler(
 /// Handle WebSocket connection.
 ///
 /// Message wire formats sent to the client:
-///   - **Status** (pre-existing): raw `Status` JSON, no envelope.
-///     Emitted on every broadcast tick from the device (~250 Hz
-///     typical). Consumers that just need live GPIO/ADC should
-///     look at these.
-///   - **RT stats** (new): `{"type":"rt_stats","data":{...}}`
-///     emitted at 1 Hz. Eliminates the dashboard's HTTP poll on
-///     `/api/rt_stats`; any future consumer needing scheduler or
-///     iso counters can subscribe to this WS stream instead.
+///   - **Status** (pre-existing): raw `Status` JSON, no envelope. Emitted on every broadcast tick
+///     from the device (~250 Hz typical). Consumers that just need live GPIO/ADC should look at
+///     these.
+///   - **RT stats** (new): `{"type":"rt_stats","data":{...}}` emitted at 1 Hz. Eliminates the
+///     dashboard's HTTP poll on `/api/rt_stats`; any future consumer needing scheduler or iso
+///     counters can subscribe to this WS stream instead.
 /// Legacy clients that naively `JSON.parse` and treat everything as
 /// `Status` must guard on the `type` field — see
 /// `physerver/static/index.html` for the reference pattern.
@@ -1337,11 +1341,7 @@ async fn bearer_auth_middleware(
     if authorized {
         next.run(req).await
     } else {
-        (
-            StatusCode::UNAUTHORIZED,
-            [("www-authenticate", "Bearer")],
-            "unauthorized\n",
-        )
+        (StatusCode::UNAUTHORIZED, [("www-authenticate", "Bearer")], "unauthorized\n")
             .into_response()
     }
 }
@@ -1367,8 +1367,8 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// Behaviour:
 ///   - No TLS, no auth: plain HTTP with `axum::serve` (pre-2.x behaviour).
 ///   - Auth only: wrap the router in a bearer-token middleware; still HTTP.
-///   - TLS only: serve HTTPS via `axum_server` + rustls (browser warns on
-///     self-signed cert but WebSocket / fetch work fine on LAN).
+///   - TLS only: serve HTTPS via `axum_server` + rustls (browser warns on self-signed cert but
+///     WebSocket / fetch work fine on LAN).
 ///   - Both: HTTPS + bearer.
 pub async fn start_web_server(
     state: Arc<AppState>,
@@ -1395,9 +1395,7 @@ pub async fn start_web_server(
             let config = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
                 .await
                 .context("Failed to load TLS cert/key")?;
-            axum_server::bind_rustls(addr, config)
-                .serve(app.into_make_service())
-                .await?;
+            axum_server::bind_rustls(addr, config).serve(app.into_make_service()).await?;
         }
         (None, None) => {
             info!("Starting web server on http://{}", addr);

@@ -8,10 +8,9 @@
 //!
 //! Gates:
 //!   - `#[ignore]` on every test: `cargo test` won't touch the hardware.
-//!   - `PHYCMD_BENCH=1` env required; otherwise the test body exits early
-//!     with a visible message. This protects against
-//!     `cargo test -- --ignored` on a dev laptop accidentally talking to
-//!     a hypothetical running physerver.
+//!   - `PHYCMD_BENCH=1` env required; otherwise the test body exits early with a visible message.
+//!     This protects against `cargo test -- --ignored` on a dev laptop accidentally talking to a
+//!     hypothetical running physerver.
 //!
 //! Run on the bench host:
 //!   PHYCMD_BENCH=1 cargo test --test bench_loopback --release -- \
@@ -65,8 +64,8 @@ struct BenchHttpClient {
 
 impl BenchHttpClient {
     fn new() -> Self {
-        let base_url = std::env::var("PHYCMD_URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
+        let base_url =
+            std::env::var("PHYCMD_URL").unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(2))
             .timeout(Duration::from_secs(3))
@@ -227,7 +226,11 @@ fn linear_regression(samples: &[(u16, f64)]) -> (f64, f64) {
             (y - pred).powi(2)
         })
         .sum();
-    let r2 = if ss_tot > 0.0 { 1.0 - ss_res / ss_tot } else { 0.0 };
+    let r2 = if ss_tot > 0.0 {
+        1.0 - ss_res / ss_tot
+    } else {
+        0.0
+    };
     (slope, r2)
 }
 
@@ -265,19 +268,18 @@ fn bench_dac1_linearity() {
     let (slope, r2) = linear_regression(&samples);
     let (first, last) = (samples.first().unwrap().1, samples.last().unwrap().1);
     let swing = last - first;
-    eprintln!(
-        "[dac1] swing={:.0} LSB, slope={:.3}, R²={:.4}",
-        swing, slope, r2
-    );
+    eprintln!("[dac1] swing={:.0} LSB, slope={:.3}, R²={:.4}", swing, slope, r2);
 
     assert!(
         swing > 2000.0,
         "DAC1 swing only {:.0} LSB — expected >2000 (is DAC1 wired to ADC[{}]?)",
-        swing, adc_slot
+        swing,
+        adc_slot
     );
     assert!(
         (0.55..=0.85).contains(&slope),
-        "DAC1 slope {:.3} out of [0.55, 0.85] — DAC=3.3V ref vs ADC=3.3V ref but output stage caps at ~2.7V on SAM3X, so ~0.7 is expected",
+        "DAC1 slope {:.3} out of [0.55, 0.85] — DAC=3.3V ref vs ADC=3.3V ref but output stage \
+         caps at ~2.7V on SAM3X, so ~0.7 is expected",
         slope
     );
     assert!(r2 > 0.98, "DAC1 linearity R² too low: {:.4}", r2);
@@ -324,8 +326,8 @@ fn bench_dac0_silicon_fault_present() {
 
     assert!(
         swing < 400.0,
-        "DAC0 swing={:.0} LSB — the silicon fault seems to be gone! \
-         Chip replaced? Re-enable DAC0 in the dashboard and update this test.",
+        "DAC0 swing={:.0} LSB — the silicon fault seems to be gone! Chip replaced? Re-enable DAC0 \
+         in the dashboard and update this test.",
         swing
     );
 }
@@ -380,7 +382,11 @@ fn bench_pwm_duty_endpoints() {
 
         eprintln!(
             "[pwm{}] -> ADC[{}]: duty=0 -> {:6.0}, duty=1 -> {:6.0}, swing={:6.0}",
-            pwm, slot, low, high, high - low
+            pwm,
+            slot,
+            low,
+            high,
+            high - low
         );
 
         if low >= ADC_LOW_THRESHOLD as f64 {
@@ -457,16 +463,16 @@ fn bench_pwm_duty_monotonic() {
         assert!(
             readings[i] + tol >= readings[i - 1],
             "pwm{} not monotonic at step {}: {:.0} after {:.0} (tol {:.0})",
-            pwm, i, readings[i], readings[i - 1], tol
+            pwm,
+            i,
+            readings[i],
+            readings[i - 1],
+            tol
         );
     }
     // And overall swing should cover most of the range.
     let swing = readings.last().unwrap() - readings.first().unwrap();
-    assert!(
-        swing > 2500.0,
-        "pwm{} monotonic swing only {:.0} — ADC aliasing?",
-        pwm, swing
-    );
+    assert!(swing > 2500.0, "pwm{} monotonic swing only {:.0} — ADC aliasing?", pwm, swing);
 }
 
 // ===========================================================================
@@ -493,10 +499,8 @@ fn bench_gpio_walking_ones() {
         let din = client.read_digital_in();
         let expected = 1u16 << bit;
         if din != expected {
-            failures.push(format!(
-                "walking-1 bit {}: DOUT=0x{:04X}, DIN=0x{:04X}",
-                bit, expected, din
-            ));
+            failures
+                .push(format!("walking-1 bit {}: DOUT=0x{:04X}, DIN=0x{:04X}", bit, expected, din));
         }
         client.set_gpio(bit, false);
     }
@@ -527,10 +531,8 @@ fn bench_gpio_walking_zeros() {
         let din = client.read_digital_in();
         let expected = 0xFFFFu16 & !(1u16 << bit);
         if din != expected {
-            failures.push(format!(
-                "walking-0 bit {}: DOUT=0x{:04X}, DIN=0x{:04X}",
-                bit, expected, din
-            ));
+            failures
+                .push(format!("walking-0 bit {}: DOUT=0x{:04X}, DIN=0x{:04X}", bit, expected, din));
         }
         client.set_gpio(bit, true);
     }
@@ -591,10 +593,7 @@ fn bench_adc_idle_stability() {
         }
         // Generic excess-noise check.
         if std > ADC_IDLE_STDDEV_MAX {
-            failures.push(format!(
-                "ADC[{}] noisy: std={:.1} > {}",
-                ch, std, ADC_IDLE_STDDEV_MAX
-            ));
+            failures.push(format!("ADC[{}] noisy: std={:.1} > {}", ch, std, ADC_IDLE_STDDEV_MAX));
         }
     }
 

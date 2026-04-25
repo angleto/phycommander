@@ -12,30 +12,27 @@
 //!
 //! A few knobs are exposed to make testing of edge cases easier:
 //!
-//!   * `latency` — how long each `exchange` sleeps before returning.
-//!     Lets a test verify tick slippage and missed-tick accounting
-//!     with deterministic timing.
+//!   * `latency` — how long each `exchange` sleeps before returning. Lets a test verify tick
+//!     slippage and missed-tick accounting with deterministic timing.
 //!
-//!   * `fail_every_nth` — if set to `Some(N)`, every Nth exchange
-//!     returns `Err` instead of a valid status. Useful to exercise
-//!     the scheduler's error path.
+//!   * `fail_every_nth` — if set to `Some(N)`, every Nth exchange returns `Err` instead of a valid
+//!     status. Useful to exercise the scheduler's error path.
 //!
-//!   * `observed_commands` / `observed_responses` — recorded history
-//!     for post-hoc assertions in tests.
+//!   * `observed_commands` / `observed_responses` — recorded history for post-hoc assertions in
+//!     tests.
 //!
 //! The mock is only compiled when `cfg(test)` is set for the
 //! `phycmd-core` crate or when the downstream consumer opts in via
 //! `features = ["test-mock"]` (so that integration tests in sibling
 //! crates can reuse it). Both paths are wired up in `Cargo.toml`.
 
-use super::traits::{Transport, TransportStats};
-use crate::protocol::{Command, Status, StatusFlags};
+use std::{fmt, sync::Arc, thread::sleep, time::Duration};
+
 use anyhow::Result;
 use parking_lot::Mutex;
-use std::fmt;
-use std::sync::Arc;
-use std::thread::sleep;
-use std::time::Duration;
+
+use super::traits::{Transport, TransportStats};
+use crate::protocol::{Command, Status, StatusFlags};
 
 /// Shared configuration and recorded state for [`MockTransport`].
 ///
@@ -319,15 +316,19 @@ impl super::traits::PipelinedTransport for MockPipelinedTransport {
     fn stats(&self) -> &TransportStats {
         &self.stats
     }
+
     fn reset_stats(&mut self) {
         self.stats = TransportStats::default();
     }
+
     fn name(&self) -> &str {
         "MockPipelined"
     }
+
     fn device_id(&self) -> String {
         "mock-pipelined".to_string()
     }
+
     fn is_connected(&self) -> bool {
         true
     }

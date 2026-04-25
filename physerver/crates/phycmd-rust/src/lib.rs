@@ -27,7 +27,7 @@
 //!
 //! // Writes use the sticky default mode (BlockUntilSent):
 //! phy.set_dac0(1234)?;
-//! phy.set_dac0(5678)?;             // blocks until the 1234 has gone out
+//! phy.set_dac0(5678)?; // blocks until the 1234 has gone out
 //!
 //! // Or override per call:
 //! phy.set_dac0_with(WriteMode::Coalesce, 9012)?;
@@ -44,34 +44,32 @@
 //! stopped, the staging waiters are unblocked, the scheduler thread
 //! is joined, and the transport is closed.
 
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::{
+    sync::Arc,
+    thread::{self, JoinHandle},
+};
 
-use phycmd_core::{CommandStaging, RtScheduler, RtSchedulerStopHandle, RtStats, StatusBus};
-use thiserror::Error;
-use tracing::{debug, warn};
-
+// Real transports are optional — they need libudev / libusb at
+// build time. Users can still pass any `Box<dyn Transport>` they
+// built themselves.
+pub use phycmd_core::stats::{JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
+#[cfg(feature = "usb")]
+pub use phycmd_core::transport::{
+    PipelinedUsbLoopbackTransport, UsbLoopbackTransport, UsbTransport,
+};
+// Re-export the PipelinedTransport trait for callers that want to
+// open_pipelined().
+pub use phycmd_core::PipelinedTransport;
+pub use phycmd_core::{status_bus::StatusFrame, transport::SerialTransport};
 // Re-export the types the caller needs to pass to / receive from
 // this API so they don't have to also depend on `phycmd-core`.
 pub use phycmd_core::{
     Command, CommandFlags, RtConfig, RtConfigError, RtStatsSnapshot, StagingError, Status,
     StatusFlags, Transport, TransportStats, WriteMode,
 };
-
-// Re-export the PipelinedTransport trait for callers that want to
-// open_pipelined().
-pub use phycmd_core::PipelinedTransport;
-
-// Real transports are optional — they need libudev / libusb at
-// build time. Users can still pass any `Box<dyn Transport>` they
-// built themselves.
-pub use phycmd_core::stats::{JITTER_BUCKET_BOUNDS_US, JITTER_NUM_BUCKETS};
-pub use phycmd_core::status_bus::StatusFrame;
-pub use phycmd_core::transport::SerialTransport;
-#[cfg(feature = "usb")]
-pub use phycmd_core::transport::{
-    PipelinedUsbLoopbackTransport, UsbLoopbackTransport, UsbTransport,
-};
+use phycmd_core::{CommandStaging, RtScheduler, RtSchedulerStopHandle, RtStats, StatusBus};
+use thiserror::Error;
+use tracing::{debug, warn};
 
 // Re-export the broadcast receiver type subscribers interact with.
 pub type StatusReceiver = tokio::sync::broadcast::Receiver<StatusFrame>;
@@ -202,6 +200,7 @@ impl PhyCommander {
     pub fn set_dac0(&self, value: u16) -> Result<(), StagingError> {
         self.staging.set_dac0(value)
     }
+
     pub fn set_dac0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.staging.set_dac0_with(mode, value)
     }
@@ -209,6 +208,7 @@ impl PhyCommander {
     pub fn set_dac1(&self, value: u16) -> Result<(), StagingError> {
         self.staging.set_dac1(value)
     }
+
     pub fn set_dac1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.staging.set_dac1_with(mode, value)
     }
@@ -220,6 +220,7 @@ impl PhyCommander {
     pub fn set_pwm0(&self, value: u16) -> Result<(), StagingError> {
         self.staging.set_pwm0(value)
     }
+
     pub fn set_pwm0_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.staging.set_pwm0_with(mode, value)
     }
@@ -227,6 +228,7 @@ impl PhyCommander {
     pub fn set_pwm1(&self, value: u16) -> Result<(), StagingError> {
         self.staging.set_pwm1(value)
     }
+
     pub fn set_pwm1_with(&self, mode: WriteMode, value: u16) -> Result<(), StagingError> {
         self.staging.set_pwm1_with(mode, value)
     }
@@ -238,6 +240,7 @@ impl PhyCommander {
     pub fn set_flags(&self, flags: CommandFlags) -> Result<(), StagingError> {
         self.staging.set_flags(flags)
     }
+
     pub fn set_flags_with(&self, mode: WriteMode, flags: CommandFlags) -> Result<(), StagingError> {
         self.staging.set_flags_with(mode, flags)
     }
@@ -251,6 +254,7 @@ impl PhyCommander {
     pub fn set_digital_out(&self, mask: u16) -> Result<(), StagingError> {
         self.staging.set_digital_out(mask)
     }
+
     pub fn set_digital_out_with(&self, mode: WriteMode, mask: u16) -> Result<(), StagingError> {
         self.staging.set_digital_out_with(mode, mask)
     }
@@ -261,6 +265,7 @@ impl PhyCommander {
     pub fn set_digital_out_bit(&self, bit: u8, value: bool) -> Result<(), StagingError> {
         self.staging.set_digital_out_bit(bit, value)
     }
+
     pub fn set_digital_out_bit_with(
         &self,
         mode: WriteMode,
@@ -353,11 +358,15 @@ impl Drop for PhyCommander {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
+
     use parking_lot::Mutex;
-    use std::thread;
-    use std::time::{Duration, Instant};
     use tokio::sync::broadcast::error::TryRecvError;
+
+    use super::*;
 
     fn test_config(rate_hz: u32) -> RtConfig {
         RtConfig {

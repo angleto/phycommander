@@ -12,6 +12,7 @@ pub mod usb_loopback_pipelined;
 #[cfg(any(test, feature = "test-mock"))]
 pub mod mock;
 
+use anyhow::Result;
 #[cfg(any(test, feature = "test-mock"))]
 pub use mock::{MockPipelinedTransport, MockState, MockTransport};
 pub use serial::SerialTransport;
@@ -21,15 +22,13 @@ pub use usb::UsbTransport;
 #[cfg(feature = "usb")]
 pub use usb_iso::{
     CapabilitiesView, ChannelStateView, IsoReconnectPolicy, IsoStats, IsoStatsSnapshot,
-    IsoTransport, WaveformDevice, WaveformError,
-    DEFAULT_NO_PROGRESS_THRESHOLD_SEC, DEFAULT_REENUMERATE_TIMEOUT,
+    IsoTransport, WaveformDevice, WaveformError, DEFAULT_NO_PROGRESS_THRESHOLD_SEC,
+    DEFAULT_REENUMERATE_TIMEOUT,
 };
 #[cfg(feature = "usb")]
 pub use usb_loopback::UsbLoopbackTransport;
 #[cfg(feature = "usb")]
 pub use usb_loopback_pipelined::PipelinedUsbLoopbackTransport;
-
-use anyhow::Result;
 
 /// Transport type selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

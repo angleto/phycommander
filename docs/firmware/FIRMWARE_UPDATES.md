@@ -5,12 +5,12 @@
 The existing ATSAM3X8E firmware (`ATSAM3X8E_FW/ATSAM3X8E_FW/src/main.c`) implements a basic 64-byte protocol with:
 
 - ✅ 64-byte fixed message size
-- ✅ 16 digital inputs (bytes 0-1 in output)
-- ✅ 16 digital outputs (bytes 2-3 in input)
-- ✅ 2 DAC outputs (bytes 4-7 in input)
-- ✅ 8 ADC channels (bytes 4-19 in output)
-- ✅ DMA circular buffering for ADC
-- ✅ USB CDC communication
+- ✅ 16 digital inputs / 16 digital outputs
+- ✅ 2 DAC outputs (`dac0`, `dac1`)
+- ✅ 12 ADC channels (Due A0..A11; status frame slots `adc[0..11]`)
+- ✅ 8 PWM channels (`pwm0..pwm7` covering Due D9/D8/D7/D6/D10/D11/D5/D2)
+- ✅ FREE-RUN ADC + direct CDR reads (no PDC-path artefacts)
+- ✅ USB iso (vendor) + EP0 control plane for fngen
 
 ## Required Updates for New Protocol
 
@@ -90,14 +90,14 @@ typedef struct {
     uint16_t header;           // 0x55AA
     uint16_t digital_in;       // GPIO inputs
     uint16_t digital_out;      // GPIO outputs echo
-    uint16_t adc[8];           // ADC channels 0-7
+    uint16_t adc[12];          // ADC channels 0-11 (Due A0..A11)
     uint8_t  status_flags;     // Status bits
     uint8_t  seq_num;          // Sequence echo
     uint16_t crc;              // CRC-16
     uint16_t loop_time_us;     // Loop iteration time
     uint32_t uptime_ms;        // System uptime
     uint16_t error_count;      // Total errors
-    uint8_t  reserved[30];     // Future use
+    uint8_t  reserved[22];     // shrunk from 30 to keep frame at 64 B
 } __attribute__((packed)) status_msg_t;
 ```
 

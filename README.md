@@ -199,7 +199,7 @@ For the full PREEMPT\_RT bring-up, dual-NIC policy routing, and systemd plumbing
 ┌──────────────────────────────┴────────────────────────────────┐
 │              SAM3X8E firmware (ATSAM3X8E_FW/)                 │
 │  • PhyCMD-64 wire protocol (CRC-16-CCITT)                     │
-│  • 2 DAC + 4 PWM + 16 DOUT + 16 DIN + 8 ADC                   │
+│  • 2 DAC + 8 PWM + 16 DOUT + 16 DIN + 12 ADC                  │
 │  • On-chip generator: BUILTIN / ARBITRARY / LUT / THRESHOLD / │
 │    PULSE_TRIG / PID — per-channel, per-microframe             │
 │  • DACC PDC ping-pong, TC-triggered ADC, PWM peripheral B     │

@@ -23,9 +23,11 @@ that image and silkscreened on the top layer of the board.
 > - "Protocol index" = the array slot in the phycmd wire frame
 >   (`adc[3]`, `dout[7]`, …). These are what the REST / WebSocket
 >   clients see.
-> - All 8 ADC channels and both DACs are **live on every release**.
->   PWM, DIN, DOUT, SPI, I2C, CAN availability depends on firmware
->   version — see the "status" column.
+> - All 12 ADC channels (`adc[0..11]`), both DACs, the 8 PWM
+>   channels (`pwm[0..7]`) and the 16 DIN / 16 DOUT slots are
+>   **live on the current release** (v2.0). SPI, I2C, CAN
+>   availability depends on firmware feature flags — see the
+>   "status" column in §6.
 
 ---
 
@@ -45,118 +47,104 @@ that image and silkscreened on the top layer of the board.
 
 ## 2. Analog inputs (ADC)
 
-Arduino Due labels `A0`–`A11` (12 pins) but the firmware wires only 8
-channels. **Important:** Arduino's A-label is *reversed* relative to
-the SAM3X AD channel number — `A0` on the silkscreen is **SAM3X AD7**
-internally, `A7` is **AD0**, etc.
+Arduino Due exposes 12 analog inputs (`A0`–`A11`) and the firmware
+now publishes all 12 in the wire frame. **Important:** the Arduino
+A-label is *reversed* relative to the SAM3X AD channel number on
+Port A — `A0` on the silkscreen is **SAM3X AD7** internally, `A7` is
+**AD0**. Port-B pins (Due `A8`..`A11`) follow a different mapping
+(AD10..AD13). The 12-slot `g_adc_cdr_map[]` in `main.c` reorders
+both ranges so the wire array indexes are linear.
 
-Each analog pin also has a D-number alias (`A0`=`D54`, `A1`=`D55`, …,
-`A11`=`D65`) and most Due pinout reference images tag the same pin
-with a third label `ADC<n>` where `<n>` tracks the A-number, *not* the
-SAM3X AD channel. So the pinout image says `A2 / ADC2 / D56` for a pin
-the SAM3X calls AD5. Keep the three name spaces straight:
+Each analog pin also has a D-number alias (`A0`=`D54`, `A1`=`D55`,
+…, `A11`=`D65`); most Due pinout reference images tag the same pin
+with `ADC<n>` where `<n>` tracks the A-number, NOT the SAM3X AD
+channel. Keep the three name spaces straight:
 
-  * `A<n>` / `D(54+n)` / `ADC<n>` — what the Due PCB and pinout image
-    agree on (n = 0..11).
+  * `A<n>` / `D(54+n)` / `ADC<n>` — what the Due PCB and pinout
+    image agree on (n = 0..11).
   * SAM3X AD channel — what the chip datasheet and register layout
-    use. 7 minus `n` for pins on the main analog header.
-  * `adc[i]` in our wire protocol — indexed by SAM3X AD channel, so
-    `adc[i]` is the sample from `A(7-i)`.
+    use.
+  * `adc[i]` in our wire protocol — `i = n` (linear A0..A11).
 
-| Due label | SAM3X pin | SAM3X AD | `status.adc[]` | Status |
-|---|---|---|---|---|
-| `A0` | PA16 | AD7 | — | ❌ Excluded — AD7 stuck at 0x800 on bench chip |
-| `A1` | PA24 | AD6 | `adc[0]` | ✅ Active |
-| `A2` | PA23 | AD5 | `adc[1]` | ✅ Active |
-| `A3` | PA22 | AD4 | `adc[2]` | ✅ Active |
-| `A4` | PA6  | AD3 | `adc[3]` | ✅ Active |
-| `A5` | PA4  | AD2 | `adc[4]` | ✅ Active |
-| `A6` | PA3  | AD1 | `adc[5]` | ✅ Active |
-| `A7` | PA2  | AD0 | — | ⚠️ Not wired in current harness — excluded from the 8-slot block |
-| `A8` | PB17 | AD10 | — | ❌ Excluded — AD10 stuck at 0x800 on bench chip |
-| `A9` | PB18 | AD11 | — | ❌ Excluded — AD11 stuck at 0x800 on bench chip |
-| `A10` | PB19 | AD12 | `adc[6]` | ✅ Active |
-| `A11` | PB20 | AD13 | `adc[7]` | ✅ Active |
+| Due label | SAM3X pin | SAM3X AD | `status.adc[]` |
+|---|---|---|---|
+| `A0`  | PA16 | AD7  | `adc[0]` |
+| `A1`  | PA24 | AD6  | `adc[1]` |
+| `A2`  | PA23 | AD5  | `adc[2]` |
+| `A3`  | PA22 | AD4  | `adc[3]` |
+| `A4`  | PA6  | AD3  | `adc[4]` |
+| `A5`  | PA4  | AD2  | `adc[5]` |
+| `A6`  | PA3  | AD1  | `adc[6]` |
+| `A7`  | PA2  | AD0  | `adc[7]` |
+| `A8`  | PB17 | AD10 | `adc[8]` |
+| `A9`  | PB18 | AD11 | `adc[9]` |
+| `A10` | PB19 | AD12 | `adc[10]` |
+| `A11` | PB20 | AD13 | `adc[11]` |
 
 > **API numbering is intuitive**: `status.adc[i]` follows the physical
-> wiring block A1, A2, A3, A4, A5, A6, A10, A11 in that order. A0, A7,
-> A8, A9 are skipped — AD7/AD10/AD11 are silicon-faulted on the bench
-> chip (all three read a stuck 0x800), and A7 is simply free in the
-> current harness. The firmware enables AD1..AD6 + AD12 + AD13 and
-> reorders the PDC buffer in `build_status_frame` — see
-> `adc_slot_map[]`. The dashboard's ADC panel labels the 8 cells
-> `A1..A6, A10, A11` to match.
->
-> To revert on a fresh chip where all ADC channels work: in
-> `adc_setup` drop the `adc_enable_channel(12/13)` calls and put the
-> for-loop back to `ch = 0..7`; in `build_status_frame` delete the
-> `adc_slot_map` reorder and go back to
-> `stat->adc[i] = g_adc_buf[adc_idx][i]`.
+> Due silkscreen `A0..A11` in order. `ADC_CHER` is set to `0x3CFF`
+> (AD0..AD7 + AD10..AD13). `AD8` (`PB12`) and `AD9` (`PB13`) are NOT
+> on the analog header on Arduino Due — they're routed to other
+> peripherals. `AD14` (`PB21`) shares its pad with `DIGITAL_INPUT_15`
+> so the firmware deliberately leaves it disabled in `CHER`; enabling
+> it would silently capture the pad and break `DIN[15]` reads. `AD15`
+> (`PB15`) is the `DAC0` pad — same lock-out for the same reason.
 
-Sampling is **SOF-synchronous** (125 µs per cycle at HS, one conversion
-cycle per USB microframe). See `main.c::user_callback_sof_action`.
+Sampling uses the SAM3X ADC's **FREE-RUN mode**: the peripheral
+cycles through all enabled channels continuously and latches each
+result into the per-channel `ADC_CDR[N]` register. `build_status_frame`
+snapshots those registers when the host asks for a status frame; no
+PDC, no SOF trigger, no scan-order dependency. The earlier
+PDC + SOF-triggered path produced reproducible "stuck-at-0x800"
+readings on any channel with index > 6 in a sparse enabled set —
+see commit `ffde516` for the analysis.
 
 ---
 
 ## 3. PWM
 
-### 3.1 Currently active (4 channels)
+The firmware exposes **8 PWMs** (`pwm0`..`pwm7`). Channels 0..3 use
+the SAM3X PWM peripheral (PWMH4..PWMH7) and run on independent
+timers. Channels 4..7 are Timer-Counter backed (TC blocks) — each
+uses one TIOA/TIOB output of a TC channel that no other firmware
+PWM occupies, so periods are independent across all 8 channels.
 
-Hardware: SAM3X PWM peripheral, PWMH4–PWMH7. CPOL=1, carrier 1 kHz
-for manual streaming, user-selectable frequency for `fngen` mode.
-Duty = 0 → pin LOW, duty = max → pin HIGH (standard convention).
+CPOL=1 on PWMH, default carrier 1 kHz for manual streaming via the
+dashboard slider, user-selectable frequency via `POST
+/api/fngen/play_builtin/pwm<n>`. Duty = 0 → pin LOW, duty = max →
+pin HIGH (standard convention).
 
-| Wire field | Due label | Silkscreen label | SAM3X pin | Peripheral | Status |
-|---|---|---|---|---|---|
-| `pwm[0]` (streaming) / fngen `pwm0` | `D9` | `PWM9` | PC21 | PWMH4 | ✅ Active |
-| `pwm[1]` (streaming) / fngen `pwm1` | `D8` | `PWM8` | PC22 | PWMH5 | ✅ Active |
-| fngen `pwm2` | `D7` | `PWM7` | PC23 | PWMH6 | ✅ Active |
-| fngen `pwm3` | `D6` | `PWM6` | PC24 | PWMH7 | ✅ Active |
+| Wire / fngen | Due label | SAM3X pin | Peripheral path |
+|---|---|---|---|
+| `pwm0` | `D9`  | PC21 | PWMH4 |
+| `pwm1` | `D8`  | PC22 | PWMH5 |
+| `pwm2` | `D7`  | PC23 | PWMH6 |
+| `pwm3` | `D6`  | PC24 | PWMH7 |
+| `pwm4` | `D10` | PC29 | TC2.ch1 TIOB (TC7) |
+| `pwm5` | `D11` | PD7  | TC2.ch2 TIOA (TC8) |
+| `pwm6` | `D5`  | PC25 | TC2.ch0 TIOA (TC6) |
+| `pwm7` | `D2`  | PB25 | TC0.ch0 TIOA (TC0) |
 
-> The 64-byte wire frame carries two PWM slots (`pwm0`, `pwm1`) for
-> streaming manual duty. `pwm2` and `pwm3` are generator-only —
-> drive them via `POST /api/fngen/play_builtin/pwm{2,3}`.
+> The 64-byte streaming Command frame carries two PWM slots
+> (`pwm[0]`, `pwm[1]`); the other six are configurable only via
+> `fngen`. The dashboard slider for every channel posts to
+> `/api/fngen/play_builtin/pwm<n>` so behaviour is consistent
+> across slots.
 >
-> ⚠️ **Naming gotcha.** The Arduino Due silkscreens each PWM pin with
-> the D-pin number (`PWM2`..`PWM13` for `D2`..`D13`), NOT with a
-> sequential 0..3 index. Firmware `pwm[0]` therefore lands on the pin
-> the board calls `PWM9`, not `PWM2`. When someone says "PWM0" on
-> hardware they usually mean silkscreen `PWM2` on `D2` — map back to
-> our index space before wiring.
+> ⚠️ **Naming gotcha.** The Arduino Due silkscreens each PWM-capable
+> pin with the D-pin number (`PWM6`..`PWM11` for `D6`..`D11`), NOT
+> with a sequential `pwm0..pwm7` index. Firmware `pwm0` lives on the
+> pin the board labels `PWM9`. When someone references "PWM7" on the
+> hardware they mean Due `D7` — i.e. firmware `pwm2`.
 
-### 3.2 Planned extension to 8 channels (D2–D9)
+### 3.1 Pins reserved for non-PWM use on the bench
 
-Target: **8 PWMs** (`pwm0`..`pwm7`) covering pins `D2`..`D9`. The
-first 4 use the SAM3X PWM peripheral (already active, §3.1); the
-new 4 use the **TC (Timer Counter) peripheral** via peripheral-B
-pin muxing. TC channels need their own clock setup and the
-per-channel duty updates go through `TC_RA`/`TC_RB` rather than
-`PWM_CDTYUPD`, so `waveform.c::pwm_hw_play` will dispatch on the
-channel index.
-
-| Planned index | Due label | SAM3X pin | Peripheral | Status |
-|---|---|---|---|---|
-| `pwm4` | `D5` | PC25 | TC2 ch0 TIOA (TC6) | ⏳ Planned |
-| `pwm5` | `D4` | PC26 | TC2 ch0 TIOB (TC6) | ⏳ Planned |
-| `pwm6` | `D3` | PC28 | TC2 ch1 TIOA (TC7) | ⏳ Planned |
-| `pwm7` | `D2` | PB25 | TC0 ch0 TIOA (TC0) | ⏳ Planned |
-
-`D10`..`D12` are left free for future expansion (additional PWMs or
-alternate uses). `D13` (`PB27`) is reserved as the firmware
-heartbeat LED — see §5.
-
-Implementation outline:
-1. Extend `WAVE_NUM_PWM_ACTIVE` from 4 to 8.
-2. Add a `s_pwm[idx].peripheral_kind` tag (`PWM_HW` or `TC_HW`) and
-   per-kind `_play`/`_stop` helpers. TC setup picks a prescaler to
-   fit the requested frequency, writes `TC_CMR` + `TC_RC` (period)
-   + `TC_RA` (duty), enables the channel via `TC_CCR`.
-3. Mux the pins: PC25/26 release to peripheral B; PC28 and PB25
-   similarly.
-4. Wire the `fngen play_builtin/pwm{4..7}` endpoints — no wire-
-   protocol change needed because the on-chip function generator
-   already reaches all channels by index through the vendor SETUP
-   plane.
+| Due label | SAM3X pin | Use |
+|---|---|---|
+| `D3`  | PC28 | Front-panel reset button input (active-low, 50 ms debounce; pressing triggers `RSTC_CR = 0xA500000D`). |
+| `D4`  | PC26 | Reserved for future use. Has a TIOB6 alternate function but pairing it with `pwm6=D5` (TIOA6 same TC channel) would force a shared period. |
+| `D12` | PD8  | Reserved for future use. Pairs with `pwm5=D11` on TC2.ch2 — exposing as PWM would share that period. |
+| `D13` | PB27 | Heartbeat LED — see §5. |
 
 ---
 
@@ -214,7 +202,8 @@ self-test. All DIN pins have internal pull-ups enabled.
 
 | Due label | SAM3X pin | Role | Notes |
 |---|---|---|---|
-| `D13` | PB27 | **Firmware heartbeat LED** | On-board "L" LED. Firmware blinks 1 Hz when iso transport is healthy, double-blink on auto-reconnect, solid on hang. See `main.c::SysTick_Handler` for the state machine. NOT user-controllable — do not wire anything to it. |
+| `D13` | PB27 | **Firmware heartbeat LED** | On-board "L" LED. Firmware blinks 1 Hz when iso transport is healthy, ~4 Hz before USB enumeration, solid ON on unrecoverable error. See `main.c::SysTick_Handler` for the state machine. NOT user-controllable — do not wire anything to it. |
+| `D3`  | PC28 | **Front-panel reset button** | Active-low input with internal pull-up. Wired between `D3` and `GND`. Held LOW for 50 consecutive ms triggers `RSTC_CR = key(0xA5) \| PROCRST \| PERRST \| EXTRST` — full hardware reset, identical to what `flash_firmware.sh` issues over SAM-BA. See `main.c::SysTick_Handler`. |
 
 ---
 
@@ -245,9 +234,9 @@ self-test. All DIN pins have internal pull-ups enabled.
 | MISO | ICSP header pin 1 (also `D74`) | PA25 | |
 | MOSI | ICSP header pin 4 (also `D75`) | PA26 | |
 | SCK | ICSP header pin 3 (also `D76`) | PA27 | |
-| SS0 (CS canonical) | `D10` | PA28 | conflicts with a potential `pwm8` in future extension |
-| SS1 | `D4` | PC26 | conflicts with a potential `pwm6` |
-| SS2 | `D52` | PB21 | **conflicts with `din[15]`** — if we add SPI slaves, `din[15]` moves |
+| SS0 (CS canonical) | `D10` | PA28 | **conflicts with `pwm4`** — if SPI is enabled, `pwm4` (D10) loses its TC TIOB7 routing |
+| SS1 | `D4` | PC26 | currently reserved (no PWM) — free for SPI use |
+| SS2 | `D52` | PB21 | **conflicts with `din[15]`** — if SPI slaves are added, `din[15]` moves |
 
 The ICSP header MISO/MOSI/SCK lines are shared with the SWD/JTAG
 debug interface. Do not use them as GPIO.
@@ -304,10 +293,17 @@ claimed by any firmware role and are free for future features:
 After any firmware change that touches pin assignments:
 
 1. Flash the new firmware (`./scripts/flash_firmware.sh`).
-2. Run the DOUT/DIN loopback script (`/tmp/_gpio_loopback.py` or
-   the selftest) — all 16/16 pairs must pass.
-3. Run the DAC→ADC loopback: set `dac0=4095`, `dac1=0` via
-   `/api/command` and confirm `adc[7]` ~3400 and `adc[6]` ~680.
-4. Run the PWM→ADC loopback on `pwm0`..`pwm3` via
-   `/api/fngen/play_builtin/pwmN` with `shape=square`.
+2. Run the DOUT/DIN loopback (the `selftest` integration tests, or
+   the bench loopback walking-ones/zeros — they each cover all 16
+   bits and fail with which-bit-broke).
+3. Run the DAC→ADC loopback (assumes the bench wiring `DAC0→A0`
+   and `DAC1→A1`): `bench_dac0_linearity` + `bench_dac1_linearity`
+   in `physerver/tests/bench_loopback.rs`. Slope ~0.674, R² > 0.98.
+4. Run the PWM→ADC loopback on `pwm0..pwm7` via
+   `/api/fngen/play_builtin/pwmN` with `shape=square`. The
+   bench-default wiring is documented in `bench_loopback.rs`
+   (pwm0→A9, pwm1→A8, pwm2→A7, pwm3→A6, pwm4→A10, pwm5→A11,
+   pwm6→A5, pwm7→A2).
 5. `curl /api/health` must return 200 with `iso_in_rate_hz` ≈ 8000.
+6. `curl /api/fngen/caps` must report `num_dac:2 num_pwm:8 num_dout:16
+   num_din:16 num_adc:12`.

@@ -178,12 +178,12 @@ struct __attribute__((packed)) Capabilities {  // 32 bytes
     uint16_t firmware_minor;       //  e.g. semver minor.patch packed
     uint16_t firmware_major;
     uint16_t reserved1;
-    /* offset 8 — channel counts */
+    /* offset 8 — channel counts (current bench: 2 / 8 / 16 / 16 / 12) */
     uint8_t  num_dac;              //  e.g. 2
-    uint8_t  num_pwm;              //  e.g. 8
+    uint8_t  num_pwm;              //  e.g. 8 (D9, D8, D7, D6, D10, D11, D5, D2)
     uint8_t  num_dout;             //  e.g. 16
     uint8_t  num_din;              //  e.g. 16
-    uint8_t  num_adc;              //  e.g. 8
+    uint8_t  num_adc;              //  e.g. 12 (Due A0..A11)
     uint8_t  reserved2[3];
     /* offset 16 — per-kind supported-mode bitmask */
     uint8_t  modes_dac;            //  e.g. 0x07 = MANUAL|BUILTIN|ARBITRARY

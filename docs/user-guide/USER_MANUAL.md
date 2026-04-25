@@ -35,7 +35,7 @@ PhyCMD (Physical Commander) is a real-time hardware control system that provides
 - **Dual Transport Modes**: Choose between USB Bulk (10 kHz) or Serial (1 kHz)
 - **Multiple Interfaces**: Web UI, REST API, WebSocket, Shared Memory IPC
 - **Real-Time Performance**: Hard real-time scheduling with microsecond precision
-- **Flexible I/O**: 16 digital inputs, 16 digital outputs, 8 ADC channels, 2 DAC channels
+- **Flexible I/O**: 16 digital inputs, 16 digital outputs, 12 ADC channels, 2 DAC channels, 8 PWM channels
 - **Easy Configuration**: TOML-based configuration with command-line overrides
 
 ---

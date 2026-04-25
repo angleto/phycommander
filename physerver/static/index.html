@@ -28,15 +28,28 @@
         .stat-mini .v { font-size:14px; font-weight:bold; color:#667eea; font-family:monospace; min-width:5ch; text-align:center; display:inline-block; }
         .stat-mini .l { font-size:9px; color:#999; text-transform:uppercase; }
 
-        /* Grid */
-        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; margin-bottom:14px; align-items:start; }
-        .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; position:relative; }
+        /* Layout
+         *
+         * CSS multi-column instead of grid: in a grid the row height
+         * locks to the tallest panel so a short panel (e.g. ADC INPUTS)
+         * sitting next to a tall one (e.g. PWM OUTPUTS expanded with 6
+         * sliders) was leaving a big empty gap below itself. Multi-
+         * column packs panels top-to-bottom into each column and lets
+         * later panels float up into any space the previous panel
+         * didn't fill — masonry-like, no holes.
+         *
+         * `column-span: all` on .panel.wide keeps the full-width panels
+         * (Oscilloscope, Function Generator, RT Stats, Sysinfo, Pinout)
+         * working: they break the column flow, span the full width, and
+         * subsequent panels start a fresh column-set after them. */
+        .grid { columns: 320px; column-gap: 14px; margin-bottom:14px; }
+        .panel { background:#f9f9f9; border-radius:8px; padding:14px; border:1px solid #e0e0e0; position:relative; break-inside: avoid; margin: 0 0 14px 0; display: block; }
         .panel h2 { font-size:13px; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px; border-bottom:2px solid #667eea; padding-bottom:6px; padding-right:48px; cursor:pointer; user-select:none; }
         .panel h2::before { content:'▾ '; color:#aaa; font-size:11px; display:inline-block; width:14px; }
         .panel.collapsed h2::before { content:'▸ '; }
         .panel.collapsed h2 { margin-bottom:0; border-bottom-color:#e0e0e0; }
         .panel.collapsed > :not(h2):not(.panel-actions):not(summary) { display:none !important; }
-        .panel.wide { grid-column:1/-1; }
+        .panel.wide { column-span: all; }
         .panel.hidden { display:none; }
         .panel.dragging { opacity:.4; }
         .panel.drag-over { outline:2px dashed #667eea; outline-offset:-3px; }
@@ -1125,11 +1138,14 @@ function pushScope(s){
     }
 }
 
-// Poll the server's full-rate ADC ring at ~10 Hz. Each response carries
+// Poll the server's full-rate ADC ring at ~30 Hz. Each response carries
 // every sample since the last cursor, so the client sees the waveform
 // at the true iso-IN cadence regardless of the WS broadcast throttle.
 // The first response with since=0 loads the whole 2 s ring in one go;
-// subsequent responses only carry the delta.
+// subsequent responses only carry the delta. 30 Hz keeps each chunk
+// small (~270 samples = ~5 KB JSON) and shrinks the gap that used to
+// produce visible jerk on the 200 ms scope window — now <34 ms.
+const SCOPE_POLL_INTERVAL_MS = 33;
 async function pollAdcCapture() {
     if (!scopePaused) {
         try {
@@ -1167,7 +1183,7 @@ async function pollAdcCapture() {
             // Best-effort: just try again on the next tick.
         }
     }
-    setTimeout(pollAdcCapture, 100);
+    setTimeout(pollAdcCapture, SCOPE_POLL_INTERVAL_MS);
 }
 pollAdcCapture();
 
@@ -1304,7 +1320,20 @@ function drawScope(){
     // When paused, keep the window anchored at the exact moment the
     // user clicked so the visible trace stays put instead of scrolling
     // off the left edge. Any further samples are discarded by pushScope.
-    const now = scopePaused ? scopePausedAt : performance.now();
+    // When live, anchor to the most recent ADC sample's reconstructed
+    // timestamp (with a tiny lookahead based on poll interval) instead
+    // of performance.now(). Wall-clock time advances continuously
+    // between polls but no new samples arrive, which used to leave a
+    // growing empty band on the right of the trace then snap-fill on
+    // the next poll. Anchoring to the data eliminates the snap.
+    let now;
+    if (scopePaused) {
+        now = scopePausedAt;
+    } else if (scopeAdc.ts.length) {
+        now = scopeAdc.ts[scopeAdc.ts.length - 1] + SCOPE_POLL_INTERVAL_MS;
+    } else {
+        now = performance.now();
+    }
     const tMin=now-windowMs;
 
     // Find start index

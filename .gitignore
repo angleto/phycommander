@@ -77,3 +77,4 @@ physerver/fuzz/corpus/
 physerver/fuzz/artifacts/
 physerver/fuzz/coverage/
 physerver/fuzz/target/
+.claude/

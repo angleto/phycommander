@@ -176,6 +176,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/fngen/play_threshold/:channel", post(fngen_play_threshold))
         .route("/api/fngen/play_pulse_trig/:channel", post(fngen_play_pulse_trig))
         .route("/api/fngen/play_pid/:channel", post(fngen_play_pid))
+        .route("/api/firmware/enter-bootloader", post(firmware_enter_bootloader))
         .route("/ws", get(websocket_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
@@ -750,6 +751,23 @@ async fn fngen_play_pid(
         integral_clamp: req.integral_clamp,
     };
     match d.play_pid(&channel, &spec) {
+        Ok(()) => (StatusCode::OK, "ok").into_response(),
+        Err(e) => fngen_err(e),
+    }
+}
+
+/// Ask the running firmware to clear GPNVM1 and trigger a full
+/// chip reset. After this returns, the SAM3X comes back enumerated
+/// as the on-chip ROM SAM-BA bootloader (03eb:6124) — bossac (or
+/// any SAM-BA tool) can then reflash without the 1200-baud
+/// trick or a J-Link. The firmware resets mid-status-stage of
+/// the vendor SETUP, so libusb sees a timeout that we translate
+/// to OK in `enter_bootloader()`.
+async fn firmware_enter_bootloader(State(state): State<Arc<AppState>>) -> Response {
+    let Some(d) = state.waveform_dev.get() else {
+        return fngen_unavailable_response();
+    };
+    match d.enter_bootloader() {
         Ok(()) => (StatusCode::OK, "ok").into_response(),
         Err(e) => fngen_err(e),
     }

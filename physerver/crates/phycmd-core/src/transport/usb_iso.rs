@@ -1474,6 +1474,30 @@ impl WaveformDevice {
         self.ctrl_out(VREQ_GEN_STOP, id, &[])
     }
 
+    /// Tell the firmware to clear GPNVM1 and hard-reset itself, so
+    /// the next boot lands in the on-chip ROM SAM-BA bootloader. The
+    /// SAM3X then enumerates as `03eb:6124` on the native USB port
+    /// and `bossac -e -w -v -b ...` can write fresh firmware over
+    /// it without going through the 1200-baud / ATmega16U2 ERASE
+    /// dance — useful when the J-Link is unplugged and the
+    /// programming port is unreachable or wedged.
+    ///
+    /// The firmware resets mid-status-stage of the SETUP request, so
+    /// the host's libusb_control_transfer always times out. We
+    /// translate the timeout to `Ok(())` because that *is* success
+    /// from the user's point of view; an actual transport failure
+    /// (no device, kernel error) bubbles up unchanged.
+    pub fn enter_bootloader(&self) -> Result<(), WaveformError> {
+        match self.ctrl_out(VREQ_FW_ENTER_BOOTLOADER, 0, &[]) {
+            Ok(()) => Ok(()),
+            // -7 = LIBUSB_ERROR_TIMEOUT. The firmware reset before
+            // it could ACK the SETUP. That's the only way this
+            // request ever finishes successfully.
+            Err(WaveformError::ControlTransferFailed(n)) if n == ffi::constants::LIBUSB_ERROR_TIMEOUT => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn dac_get_clock(&self) -> Result<u32, WaveformError> {
         let raw = self.ctrl_in(VREQ_DAC_GET_CLOCK, 0, 4)?;
         Ok(u32::from_le_bytes(raw[..4].try_into().unwrap()))

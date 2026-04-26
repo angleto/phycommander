@@ -17,6 +17,12 @@ The script encapsulates four non-obvious quirks that tripped us up
 in the past; if you're writing your own flash flow, read
 [Why the scripted flow exists](#why-the-scripted-flow-exists) first.
 
+If `physerver` is running, the script triggers SAM-BA via the new
+`POST /api/firmware/enter-bootloader` endpoint (no J-Link, no
+1200-baud / DTR-drop dance). It transparently falls back to the
+1200-baud trick on the programming port when physerver isn't
+reachable. See [JTAG-free entry path](#jtag-free-entry-path) below.
+
 ## Overview
 
 The Arduino Due has **two USB ports**:
@@ -86,28 +92,85 @@ sudo ./scripts/flash_firmware.sh --bin path/to/phycmd_fw.bin
 
 # flash a specific port (auto-detection picks ID_MODEL_ID=003d):
 sudo ./scripts/flash_firmware.sh --port /dev/ttyACM0
+
+# force the legacy 1200-baud entry (skip the API call):
+sudo ./scripts/flash_firmware.sh --entry 1200baud
+
+# require the in-firmware HTTP entry (fail if physerver is down):
+sudo ./scripts/flash_firmware.sh --entry fngen
 ```
 
 What it does, in order:
 
 1. `make -C ATSAM3X8E_FW/ATSAM3X8E_FW -j$(nproc)` — produces
    `build/phycmd_fw.bin`.
-2. Stops `physerver.service` if active, so the Due's programming-port
+2. **Trigger SAM-BA mode** (two paths, tried in order):
+   - **(a) JTAG-free / API path.** If physerver answers `GET /api/health`
+     under `$PHYSERVER_URL` (default `http://127.0.0.1:8080`), POST to
+     `/api/firmware/enter-bootloader`. The firmware handler clears
+     `GPNVM1` (EEFC `CGPB`) and writes
+     `RSTC_CR = KEY(0xA5) | PROCRST | PERRST | EXTRST`. The chip resets
+     mid-status-stage; ROM SAM-BA takes over. This is the default
+     once the firmware on the chip carries the
+     `VREQ_FW_ENTER_BOOTLOADER 0x40` handler.
+   - **(b) Legacy 1200-baud fallback.** If physerver isn't reachable
+     (or `--entry 1200baud` is forced), open the programming port at
+     1200 baud and close it. The ATmega16U2 detects the sequence
+     and pulses ERASE+RESET on the SAM3X.
+3. Stops `physerver.service` if active, so the Due's programming-port
    CDC is released to bossac.
-3. Opens the programming port at 1200 baud and closes it. The
-   ATmega16U2 detects that exact sequence and pulses ERASE+RESET
-   on the SAM3X, dropping it into the SAM-BA ROM bootloader.
-4. `bossac -e -w -v -b "$BIN"` — erase + write + verify + set
+4. Waits for the SAM-BA CDC to re-enumerate as `/dev/ttyACM0`.
+5. `bossac -e -w -v -b "$BIN"` — erase + write + verify + set
    GPNVM1 so the SAM3X boots from flash on next reset. **No -R flag**
    (see below).
-5. Opens the port at 115200 raw and writes the SAM-BA text command
+6. Opens the port at 115200 raw and writes the SAM-BA text command
    `W400E1A00,A500000D#` — this pokes the SAM3X's RSTC_CR register
-   with `KEY(0xA5) | PROCRST | PERRST`, issuing a full CPU + peripheral
-   reset. The SAM3X boots out of SAM-BA into the freshly written
-   application.
-6. Waits for the application firmware to re-enumerate, restarts
+   with `KEY(0xA5) | PROCRST | PERRST | EXTRST`, issuing a full CPU +
+   peripheral + USB reset. The SAM3X boots out of SAM-BA into the
+   freshly written application.
+7. Waits for the application firmware to re-enumerate, restarts
    `physerver.service`. The stale `/dev/shm/phycmd_state` segment
    is unlinked automatically by `IpcServer::new()` on startup.
+
+### JTAG-free entry path
+
+The 1200-baud trick relies on the ATmega16U2's CDC stack staying
+healthy: it has to detect the magic baud rate + DTR drop sequence and
+then drive ERASE+RESET on the SAM3X. On long-running benches we have
+seen the ATmega16U2 wedge after a CRC drift / EP0 timeout storm, at
+which point the only recovery was a J-Link SWD flash.
+
+To remove that single point of failure, the firmware exposes a
+vendor SETUP request `VREQ_FW_ENTER_BOOTLOADER (0x40)` on the native
+USB port (`physerver`'s normal control plane). The handler does the
+same thing the 1200-baud trick does, but driven by the SAM3X itself:
+
+1. `EEFC_FCR ← (FKEY=0x5A << 24) | (FARG=GPNVM1=1 << 8) | FCMD=CGPB(0x0C)`,
+   spin on `EEFC_FSR.FRDY` until clear. After this `GPNVM1=0` and the
+   chip will boot ROM SAM-BA on the next reset.
+2. `RSTC->RSTC_CR ← KEY(0xA5) | PROCRST | PERRST | EXTRST` — full
+   chip reset including the USB peripheral.
+
+`physerver` exposes the request as `POST /api/firmware/enter-bootloader`.
+Manually:
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/firmware/enter-bootloader
+# physerver returns 200 OK once the libusb timeout elapses; the
+# Due is now in ROM SAM-BA on the programming port.
+```
+
+The native USB port disappears (the SAM3X reset wiped UDP); the
+ATmega16U2 path stays up because it's a separate chip, and ROM
+SAM-BA's USART handler picks up the same `/dev/ttyACM0` that bossac
+expects. From here the rest of the flash flow (steps 5–7 above) is
+identical to the 1200-baud path.
+
+`EXTRST` matters here: openocd's `reset run` issues only Cortex-M
+`SYSRESETREQ`, which leaves the USB peripheral bound to the host's
+old enumeration. Writing `RSTC_CR` with `PROCRST | PERRST | EXTRST`
+forces the D+ pull-up to release and the host to re-enumerate, the
+same way a real RESET button press does.
 
 ### Why the scripted flow exists
 

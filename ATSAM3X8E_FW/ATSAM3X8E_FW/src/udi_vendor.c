@@ -652,6 +652,27 @@ bool phycmd_vendor_request(void)
 		/* No DATA stage. Apply immediately. */
 		(void)waveform_stop(wIndex);
 		return true;
+	case VREQ_FW_ENTER_BOOTLOADER: {
+		/* Clear GPNVM1 (bit 1) so the next boot lands in the on-chip
+		 * SAM-BA in ROM, then issue a hardware reset. The SAM3X EEFC
+		 * command for "Clear GPNVM Bit" is 0x0C with FARG=bit_index
+		 * and FKEY=0x5A — see SAM3X datasheet §18.2.5. We poll FSR
+		 * for FRDY=1 before issuing the reset; without that the EFC
+		 * write may not have committed by the time the reset hits.
+		 *
+		 * No ACK is possible: we reset before USB has a chance to
+		 * complete the SETUP status stage. The host's outstanding
+		 * libusb_control_transfer just times out, which is exactly
+		 * what the host-side helper expects. */
+		EFC0->EEFC_FCR = (0x5Au << 24) | (1u << 8) | 0x0Cu;
+		while ((EFC0->EEFC_FSR & 0x1u) == 0u) { /* spin until FRDY */ }
+		RSTC->RSTC_CR = RSTC_CR_KEY(0xA5u)
+		              | RSTC_CR_PROCRST
+		              | RSTC_CR_PERRST
+		              | RSTC_CR_EXTRST;
+		while (1) { /* CPU resets here, mid-USB-status-stage */ }
+		return true; /* unreachable */
+	}
 	case VREQ_GEN_PLAY_BUILTIN:
 	case VREQ_GEN_PLAY_ARBITRARY:
 	case VREQ_GEN_PLAY_LUT:

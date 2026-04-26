@@ -24,6 +24,13 @@ pub const VREQ_GEN_PLAY_THRESHOLD: u8 = 0x31;
 pub const VREQ_GEN_PLAY_PULSE_TRIG: u8 = 0x32;
 pub const VREQ_GEN_PLAY_PID: u8 = 0x38;
 
+// Firmware update path: ask the running firmware to clear GPNVM1 and
+// hard-reset itself. ROM SAM-BA then takes over on the native USB
+// port, and bossac (or any other SAM-BA tool) can reflash without
+// the 1200-baud / ATmega16U2 dance — useful when the J-Link is
+// unplugged and the programming port is wedged.
+pub const VREQ_FW_ENTER_BOOTLOADER: u8 = 0x40;
+
 // ---- Wave shape & channel kind enums (single byte each on the wire) -----
 
 #[repr(u8)]

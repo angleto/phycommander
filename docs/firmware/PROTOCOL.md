@@ -143,6 +143,7 @@ STALL as "this firmware revision does not support that request".
 |     `0x31` | OUT | `GEN_PLAY_THRESHOLD`      | channel  | 0      | `WaveThresholdSpec` (16 B) | Reactive comparator with optional hysteresis. Output toggles between `val_high` and `val_low` based on `input` vs `thr_high` / `thr_low`. |
 |     `0x32` | OUT | `GEN_PLAY_PULSE_TRIG`     | channel  | 0      | `WavePulseSpec` (12 B) | Reactive monostable: on edge of `input_din_bit`, drive `output` `active_level` for `duration_us`, then return to idle. |
 |     `0x38` | OUT | `GEN_PLAY_PID` *(v3)*     | channel  | 0      | `WavePidSpec` (32 B)  | Reactive PID closed-loop: `output = clamp(Kp·err + Ki·∫err + Kd·d(err)/dt)` where `err = setpoint − adc[input_ch]`. |
+|     `0x40` | OUT | `FW_ENTER_BOOTLOADER`     | 0        | 0      | none      | Clear `GPNVM1` (boot-from-flash) via EEFC `CGPB` then write `RSTC_CR = KEY \| PROCRST \| PERRST \| EXTRST`. The chip resets mid-status-stage; ROM SAM-BA takes over and the host sees a libusb timeout. Used by `physerver`'s `POST /api/firmware/enter-bootloader` to make `bossac` flashing possible without the 1200-baud / ATmega16U2 dance or a J-Link. See §2.6. |
 
 There is **no** explicit `SET_MANUAL` request: a channel's mode is
 *implicit* in what was last requested for it. After power-on (or after
@@ -155,10 +156,11 @@ currently in `SHAPE_OFF`, otherwise it is silently dropped. This
 means the host is free to keep streaming `cmd.dac[0]` even while
 DAC0 is playing a sine; no coordination is needed.
 
-`bRequest` codes `0x00..0x0F`, `0x16..0x1F`, `0x22..0x7F`, `0x80..0xFF`
-are reserved for future use. Requests in the standard / class ranges
-(`0x00..0x1F` of `bmRequestType`'s class field) are handled by the UDC
-stack and not delivered to the vendor handler.
+`bRequest` codes `0x00..0x0F`, `0x16..0x1F`, `0x22..0x2F`, `0x33..0x37`,
+`0x39..0x3F`, `0x41..0x7F`, `0x80..0xFF` are reserved for future use.
+Requests in the standard / class ranges (`0x00..0x1F` of
+`bmRequestType`'s class field) are handled by the UDC stack and not
+delivered to the vendor handler.
 
 ### 2.2 `GEN_GET_CAPS` payload (32 bytes, all fields little-endian)
 
@@ -422,6 +424,34 @@ atomically: the next ping-pong buffer fill picks up the new spec, so
 parameter sweeps are seamless (no glitch on the analog output).
 `GEN_STOP` takes effect at the next TC trigger (≤ one DAC sample
 period) — typically ≤ 1 µs.
+
+### 2.6 `FW_ENTER_BOOTLOADER` (firmware-update entry)
+
+`bRequest = 0x40`, OUT, `wLength = 0`. The handler:
+
+1. Issues EEFC `CGPB` (`Clear General-Purpose NVM Bit 1`) with
+   `EEFC_FCR = (FKEY=0x5A << 24) | (FARG=GPNVM1=1 << 8) | FCMD=CGPB(0x0C)`,
+   then spins on `EEFC_FSR.FRDY` until the operation completes.
+   With `GPNVM1` cleared the SAM3X boots from ROM (SAM-BA) instead
+   of flash.
+2. Writes `RSTC_CR = RSTC_KEY(0xA5) | PROCRST | PERRST | EXTRST`
+   (= `0x0A50000D`). This is a full chip reset: CPU, peripherals,
+   *and* the external reset line — critically the USB peripheral
+   (UDP) is reset, so the host re-enumerates from scratch instead
+   of holding onto the previous descriptor.
+
+Because the reset fires before the USB status stage completes, the
+host's `libusb_control_transfer` returns `LIBUSB_ERROR_TIMEOUT (-7)`.
+The Rust transport (`WaveformDevice::enter_bootloader`) translates
+the timeout to `Ok(())`; any other error bubbles up unchanged.
+
+After the reset the SAM3X comes up in ROM SAM-BA, with the USART
+SAM-BA path still routed through the Arduino Due's ATmega16U2 (so
+`bossac --port=ttyACMx` works for flashing without a J-Link or the
+1200-baud / DTR-drop trick on the programming port). On the
+`physerver` side the entry path is exposed as `POST
+/api/firmware/enter-bootloader`; the standard flash flow is
+documented in `docs/firmware/FIRMWARE_UPLOAD.md`.
 
 ---
 
@@ -702,6 +732,8 @@ fails immediately.
 #define VREQ_GEN_PLAY_THRESHOLD   0x31
 #define VREQ_GEN_PLAY_PULSE_TRIG  0x32
 #define VREQ_GEN_PLAY_PID         0x38   /* v3 — slot reserved */
+/* Firmware-update entry path (no payload, no ack) */
+#define VREQ_FW_ENTER_BOOTLOADER  0x40
 
 /* Wave shape ---------------------------------------------------- */
 typedef enum : uint8_t {

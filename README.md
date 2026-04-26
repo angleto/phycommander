@@ -157,12 +157,14 @@ The Due's DACs output 0.55–2.75 V and its ADCs expect 0–3.3 V — you usuall
 git clone https://github.com/<you>/phycommander.git
 cd phycommander
 
-# Build + flash firmware (ARM GNU Toolchain required)
-cd ATSAM3X8E_FW/ATSAM3X8E_FW && make
-# With Due in SAM-BA mode (stty -F /dev/arduino_due_prog 1200):
-bossac --port=ttyACM1 -e -w -v -b build/phycmd_fw.bin
-# See docs/firmware/FIRMWARE_UPLOAD.md for the RSTC-reset trick — bossac -R
-# does NOT actually reset the SAM3X core.
+# Build + flash firmware (ARM GNU Toolchain required).
+# scripts/flash_firmware.sh handles the whole flow: it asks the
+# running physerver to drop the SAM3X into SAM-BA via
+# POST /api/firmware/enter-bootloader (JTAG-free, no 1200-baud
+# trick), runs bossac, then issues a clean RSTC_CR soft-reset.
+sudo ./scripts/flash_firmware.sh
+# See docs/firmware/FIRMWARE_UPLOAD.md for the entry-path fallback
+# and why we never use bossac -R.
 
 # Build + install physerver
 cd ../../physerver && cargo build --release

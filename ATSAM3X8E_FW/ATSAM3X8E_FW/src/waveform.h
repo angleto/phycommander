@@ -48,6 +48,15 @@ extern "C" {
 #define VREQ_GEN_PLAY_PULSE_TRIG    0x32  /* OUT ← WavePulseSpec          */
 #define VREQ_GEN_PLAY_PID           0x38  /* OUT ← WavePidSpec  (v3)      */
 
+/* Firmware-update path: clears GPNVM1 (= boot from ROM SAM-BA) and
+ * issues a full hardware reset. After the reset the host sees the
+ * SAM3X enumerate as 03eb:6124 (Atmel SAM-BA bootloader) on the
+ * native USB port, and `bossac -e -w -v -b` can reflash without
+ * relying on the 1200-baud / ATmega16U2 ERASE-pulse path. No DATA
+ * stage; no reply (the chip resets mid-write, the host's outstanding
+ * request is implicitly cancelled). */
+#define VREQ_FW_ENTER_BOOTLOADER    0x40  /* OUT, no payload, no ack    */
+
 /* -------------------------------------------------------------------------
  *   Wave shape selector (1 byte enum, transported as uint8_t)
  *

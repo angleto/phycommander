@@ -8,13 +8,23 @@
 # ## Flow (why it matters)
 #
 #   1. Build `build/phycmd_fw.bin` via the Makefile.
-#   2. Stop `physerver.service` if it's running so it releases the
+#   2. Trigger SAM-BA mode. Two paths, tried in order:
+#        a. POST /api/firmware/enter-bootloader to a running
+#           physerver. The firmware handler clears GPNVM1 and writes
+#           RSTC_CR = PROCRST|PERRST|EXTRST, which jumps to ROM
+#           SAM-BA and re-enumerates the SAM3X UART path under the
+#           ATmega16U2 (still ttyACM0). This is the JTAG-free
+#           default once the firmware shipped with the
+#           VREQ_FW_ENTER_BOOTLOADER 0x40 handler is on the chip.
+#        b. Toggle the programming port at 1200 baud. The
+#           ATmega16U2 on the Due detects a 1200-baud open/close
+#           and pulses ERASE+RESET on the SAM3X. Used as fallback
+#           when physerver isn't running, the API call fails, or
+#           the firmware on the chip predates the new VREQ.
+#   3. Stop `physerver.service` if it's running so it releases the
 #      programming-port CDC exclusively. (The iso transport only
 #      uses the native port, but `physerver` also opens the prog
 #      port for fallback and would fight us for the ttyACM.)
-#   3. Toggle the programming port at 1200 baud. The ATmega16U2
-#      on the Due detects a 1200-baud open/close and pulses ERASE+
-#      RESET on the SAM3X, putting it into SAM-BA bootloader mode.
 #   4. Wait for the re-enumeration: the CDC reappears, still as
 #      /dev/ttyACM0 but now backed by the SAM-BA ROM on the SAM3X
 #      itself (not ASF CDC on application flash).
@@ -34,7 +44,7 @@
 #
 # ## Usage
 #
-#   # build + flash on this host
+#   # build + flash on this host (auto-detects best entry path)
 #   sudo ./scripts/flash_firmware.sh
 #
 #   # build only
@@ -42,6 +52,12 @@
 #
 #   # flash a pre-built binary (skip make)
 #   sudo ./scripts/flash_firmware.sh --bin path/to/phycmd_fw.bin
+#
+#   # force the legacy 1200-baud entry path
+#   sudo ./scripts/flash_firmware.sh --entry 1200baud
+#
+#   # force the in-firmware HTTP entry path (fail if it doesn't work)
+#   sudo ./scripts/flash_firmware.sh --entry fngen
 #
 # ## Recovery
 #
@@ -58,16 +74,25 @@ BIN=""
 PORT=""
 BUILD_ONLY=0
 SKIP_BUILD=0
+ENTRY="auto"   # auto | fngen | 1200baud
+PHYSERVER_URL="${PHYSERVER_URL:-http://127.0.0.1:8080}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --bin) BIN="$2"; SKIP_BUILD=1; shift 2 ;;
         --port) PORT="$2"; shift 2 ;;
         --build-only) BUILD_ONLY=1; shift ;;
-        -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
+        --entry) ENTRY="$2"; shift 2 ;;
+        --url) PHYSERVER_URL="$2"; shift 2 ;;
+        -h|--help) sed -n '2,55p' "$0"; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 1 ;;
     esac
 done
+
+case "$ENTRY" in
+    auto|fngen|1200baud) ;;
+    *) echo "error: --entry must be auto|fngen|1200baud (got: $ENTRY)" >&2; exit 1 ;;
+esac
 
 # --- Locate firmware dir + binary ---
 if [[ -z "$BIN" ]]; then
@@ -126,7 +151,41 @@ fi
 
 echo "=== programming port: $PORT ==="
 
-# --- Step 2: stop physerver ---
+# --- Step 2a: try the in-firmware "enter bootloader" path first ---
+# We must hit the API before stopping physerver — the request goes
+# through physerver to the SAM3X via vendor SETUP. The firmware
+# resets mid-status-stage, so curl will see the connection reset
+# (HTTP 502 from physerver, or a connection-reset libcurl exit
+# code). Either of those means the trigger fired, so we treat
+# any non-network-down outcome as success.
+ENTRY_OK=0
+if [[ "$ENTRY" == "auto" || "$ENTRY" == "fngen" ]]; then
+    if command -v curl >/dev/null 2>&1; then
+        echo "=== entering SAM-BA mode via /api/firmware/enter-bootloader ==="
+        # Reach physerver first; if the host doesn't answer at all
+        # we fall back to 1200-baud rather than hammering it.
+        if curl -fsS --max-time 2 "$PHYSERVER_URL/api/health" >/dev/null 2>&1; then
+            # We don't care about the response body — physerver
+            # may report an upstream error because the device went
+            # away mid-request. -m 5 caps total time; --no-keepalive
+            # so a pending connection doesn't wedge us.
+            curl -sS --max-time 5 --no-keepalive \
+                -X POST "$PHYSERVER_URL/api/firmware/enter-bootloader" \
+                >/dev/null 2>&1 || true
+            ENTRY_OK=1
+        elif [[ "$ENTRY" == "fngen" ]]; then
+            echo "error: physerver not reachable at $PHYSERVER_URL (--entry fngen forced)" >&2
+            exit 7
+        else
+            echo "physerver not reachable; falling back to 1200-baud trick"
+        fi
+    elif [[ "$ENTRY" == "fngen" ]]; then
+        echo "error: curl not installed (--entry fngen forced)" >&2
+        exit 7
+    fi
+fi
+
+# --- Step 3: stop physerver so it releases the device ---
 if systemctl is-active --quiet physerver 2>/dev/null; then
     echo "=== stopping physerver.service ==="
     systemctl stop physerver
@@ -135,23 +194,27 @@ else
     STOPPED_PHYSERVER=0
 fi
 
-# --- Step 3: 1200-baud trick to enter SAM-BA ---
-echo "=== entering SAM-BA mode (1200-baud toggle) ==="
-stty -F "$PORT" 1200 || true
-sleep 1
+# --- Step 2b: legacy 1200-baud trick (fallback or forced) ---
+if [[ $ENTRY_OK -eq 0 ]]; then
+    echo "=== entering SAM-BA mode (1200-baud toggle) ==="
+    stty -F "$PORT" 1200 || true
+    sleep 1
+fi
 
 # --- Step 4: wait for re-enumeration ---
 echo "=== waiting for Due to re-enumerate ==="
-for i in {1..50}; do
+# After the in-firmware reset the SAM3X re-attaches as SAM-BA on
+# the programming port (still ttyACM0 via ATmega16U2 USART). Give
+# it a bit more time than the 1200-baud path because we issue a
+# full RSTC_CR (PROCRST|PERRST|EXTRST), not just a flash erase.
+for i in {1..80}; do
     sleep 0.1
     [[ -e "$PORT" ]] && break
 done
-# SAM-BA mode: the device re-appears. Give udev another moment to
-# settle the permissions.
-sleep 0.5
+sleep 0.8
 
 if [[ ! -e "$PORT" ]]; then
-    echo "error: Due did not re-enumerate within 5 s after 1200-baud trigger" >&2
+    echo "error: Due did not re-enumerate within 8 s after SAM-BA trigger" >&2
     exit 6
 fi
 

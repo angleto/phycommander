@@ -129,27 +129,20 @@ if [[ $EUID -ne 0 ]]; then
     exit 4
 fi
 
-# --- Detect programming port if not explicit ---
-if [[ -z "$PORT" ]]; then
-    # Match any ttyACM device whose udev ID_MODEL_ID is 003d.
+# --- Detect any pre-existing programming port (only used by the
+#     1200-baud fallback below; the API path discovers the SAM-BA
+#     CDC after the trigger fires). ---
+detect_prog_port() {
     for dev in /dev/ttyACM*; do
         [[ -e "$dev" ]] || continue
         if udevadm info -q property "$dev" 2>/dev/null | grep -q 'ID_MODEL_ID=003d'; then
-            PORT="$dev"; break
+            echo "$dev"; return
         fi
     done
-    if [[ -z "$PORT" && -e /dev/ttyACM0 ]]; then
-        PORT=/dev/ttyACM0
-        echo "warning: no 003d match, falling back to $PORT"
-    fi
+}
+if [[ -z "$PORT" ]]; then
+    PROG_PORT_AT_START="$(detect_prog_port)"
 fi
-
-if [[ ! -e "$PORT" ]]; then
-    echo "error: programming port $PORT not found. Is the Due plugged in?" >&2
-    exit 5
-fi
-
-echo "=== programming port: $PORT ==="
 
 # --- Step 2a: try the in-firmware "enter bootloader" path first ---
 # We must hit the API before stopping physerver — the request goes
@@ -196,27 +189,48 @@ fi
 
 # --- Step 2b: legacy 1200-baud trick (fallback or forced) ---
 if [[ $ENTRY_OK -eq 0 ]]; then
-    echo "=== entering SAM-BA mode (1200-baud toggle) ==="
-    stty -F "$PORT" 1200 || true
+    if [[ -z "$PROG_PORT_AT_START" ]]; then
+        echo "error: 1200-baud fallback needs the Due programming port (ID 003d) plugged in" >&2
+        echo "       and exposed as /dev/ttyACM*; none was detected. Plug in the second" >&2
+        echo "       USB cable on the Due (closest to the DC jack), or use --entry fngen." >&2
+        exit 5
+    fi
+    echo "=== entering SAM-BA mode (1200-baud toggle on $PROG_PORT_AT_START) ==="
+    stty -F "$PROG_PORT_AT_START" 1200 || true
     sleep 1
 fi
 
-# --- Step 4: wait for re-enumeration ---
-echo "=== waiting for Due to re-enumerate ==="
-# After the in-firmware reset the SAM3X re-attaches as SAM-BA on
-# the programming port (still ttyACM0 via ATmega16U2 USART). Give
-# it a bit more time than the 1200-baud path because we issue a
-# full RSTC_CR (PROCRST|PERRST|EXTRST), not just a flash erase.
-for i in {1..80}; do
+# --- Step 4: wait for SAM-BA CDC to appear ---
+# Two cases:
+#   (a) API path on the native port: the SAM3X's ROM SAM-BA exposes a
+#       CDC interface via 03eb:6124 on the same physical USB cable
+#       physerver was using. udev assigns a new /dev/ttyACMx.
+#   (b) 1200-baud trick on the programming port: the same /dev/ttyACMx
+#       sticks around (the ATmega16U2 stays as ttyACM*; the SAM3X is
+#       now in SAM-BA over USART through it).
+# Either way: wait for a ttyACM whose udev properties point at SAM-BA
+# (ID_MODEL_ID=6124 for native, ID_MODEL_ID=003d for programming).
+echo "=== waiting for SAM-BA CDC (Due to re-enumerate) ==="
+PORT=""
+for i in {1..120}; do
     sleep 0.1
-    [[ -e "$PORT" ]] && break
+    for dev in /dev/ttyACM*; do
+        [[ -e "$dev" ]] || continue
+        # ID_MODEL_ID=6124  → SAM3X native port in ROM SAM-BA
+        # ID_MODEL_ID=003d  → ATmega16U2 (programming port; carries SAM-BA over UART)
+        if udevadm info -q property "$dev" 2>/dev/null \
+              | grep -qE 'ID_MODEL_ID=(6124|003d)'; then
+            PORT="$dev"; break 2
+        fi
+    done
 done
 sleep 0.8
 
-if [[ ! -e "$PORT" ]]; then
-    echo "error: Due did not re-enumerate within 8 s after SAM-BA trigger" >&2
+if [[ -z "$PORT" || ! -e "$PORT" ]]; then
+    echo "error: no SAM-BA CDC appeared within 12 s after trigger" >&2
     exit 6
 fi
+echo "=== SAM-BA port: $PORT ==="
 
 # --- Step 5: bossac write ---
 echo "=== bossac write ==="
@@ -237,12 +251,16 @@ stty -F "$PORT" 115200 raw -echo -echoe -echok -echoctl -echoke || true
 printf 'W400E1A00,A500000D#' > "$PORT" 2>/dev/null || true
 
 # --- Step 7: wait for re-enumeration into application ---
+# After RSTC_CR the SAM3X reboots into the freshly-written firmware
+# and re-attaches as 2341:003e (vendor class). On systems with both
+# USB cables plugged, the programming port (003d) also re-attaches
+# alongside; we just need *one* of them to show up so physerver can
+# reopen the device.
 echo "=== waiting for application firmware to come back ==="
 sleep 2
-for i in {1..50}; do
+for i in {1..60}; do
     sleep 0.2
-    if [[ -e "$PORT" ]] && \
-       udevadm info -q property "$PORT" 2>/dev/null | grep -q 'ID_MODEL_ID=003d'; then
+    if lsusb 2>/dev/null | grep -qE 'ID 2341:003[de]'; then
         break
     fi
 done

@@ -1493,7 +1493,11 @@ impl WaveformDevice {
             // -7 = LIBUSB_ERROR_TIMEOUT. The firmware reset before
             // it could ACK the SETUP. That's the only way this
             // request ever finishes successfully.
-            Err(WaveformError::ControlTransferFailed(n)) if n == ffi::constants::LIBUSB_ERROR_TIMEOUT => Ok(()),
+            Err(WaveformError::ControlTransferFailed(n))
+                if n == ffi::constants::LIBUSB_ERROR_TIMEOUT =>
+            {
+                Ok(())
+            }
             Err(e) => Err(e),
         }
     }

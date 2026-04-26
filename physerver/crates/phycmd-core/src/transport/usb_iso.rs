@@ -1483,18 +1483,26 @@ impl WaveformDevice {
     /// programming port is unreachable or wedged.
     ///
     /// The firmware resets mid-status-stage of the SETUP request, so
-    /// the host's libusb_control_transfer always times out. We
-    /// translate the timeout to `Ok(())` because that *is* success
-    /// from the user's point of view; an actual transport failure
-    /// (no device, kernel error) bubbles up unchanged.
+    /// the host's libusb_control_transfer never sees a clean ACK. We
+    /// translate "device went away during the transfer" outcomes to
+    /// `Ok(())` because that *is* success from the user's point of
+    /// view; only a real transport error bubbles up. Empirically the
+    /// kernel can return any of:
+    ///   -1  LIBUSB_ERROR_IO        (most common — host saw an EP0
+    ///                                 stall/disconnect mid-write)
+    ///   -4  LIBUSB_ERROR_NO_DEVICE (device gone before the syscall
+    ///                                 returned)
+    ///   -7  LIBUSB_ERROR_TIMEOUT   (we hit the libusb timeout first)
     pub fn enter_bootloader(&self) -> Result<(), WaveformError> {
         match self.ctrl_out(VREQ_FW_ENTER_BOOTLOADER, 0, &[]) {
             Ok(()) => Ok(()),
-            // -7 = LIBUSB_ERROR_TIMEOUT. The firmware reset before
-            // it could ACK the SETUP. That's the only way this
-            // request ever finishes successfully.
             Err(WaveformError::ControlTransferFailed(n))
-                if n == ffi::constants::LIBUSB_ERROR_TIMEOUT =>
+                if matches!(
+                    n,
+                    ffi::constants::LIBUSB_ERROR_IO
+                        | ffi::constants::LIBUSB_ERROR_NO_DEVICE
+                        | ffi::constants::LIBUSB_ERROR_TIMEOUT
+                ) =>
             {
                 Ok(())
             }

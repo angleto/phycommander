@@ -29,7 +29,7 @@
 #define  USB_DEVICE_VENDOR_ID             0x2341  /* Arduino */
 #define  USB_DEVICE_PRODUCT_ID            0x003E  /* PhysicalCommander (vendor bulk) */
 #define  USB_DEVICE_MAJOR_VERSION         2
-#define  USB_DEVICE_MINOR_VERSION         0
+#define  USB_DEVICE_MINOR_VERSION         1
 #define  USB_DEVICE_POWER                 500 /* mA on Vbus */
 #define  USB_DEVICE_ATTR                  (USB_CONFIG_ATTR_SELF_POWERED)
 

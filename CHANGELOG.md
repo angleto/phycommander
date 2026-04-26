@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-04-26
+
+Bench-cycle release: hardware layout aligned with the assembled v2.0
+unit (12 ADC + 8 PWM + 16 DOUT + 16 DIN + 2 DAC), JTAG-free firmware
+update path, and a long list of dashboard / firmware fixes flushed
+out by the new HTTP-driven loopback test suite.
+
+### Added
+
+- **JTAG-free firmware update** (`VREQ_FW_ENTER_BOOTLOADER 0x40`).
+  The running firmware can now drop the SAM3X into ROM SAM-BA on
+  request: clears `GPNVM1` via EEFC `CGPB`, then writes
+  `RSTC_CR = KEY | PROCRST | PERRST | EXTRST` for a full chip reset
+  including the USB peripheral. Exposed as
+  `POST /api/firmware/enter-bootloader` on physerver. The legacy
+  1200-baud / ATmega16U2 trick remains as a fallback in
+  `scripts/flash_firmware.sh` (new `--entry auto|fngen|1200baud`
+  flag). End-to-end verified on the bench: api → SAM-BA → bossac →
+  RSTC_CR → app, no J-Link required. See `docs/firmware/PROTOCOL.md`
+  §2.6 and `docs/firmware/FIRMWARE_UPLOAD.md`.
+- HTTP-driven bench loopback test suite
+  (`physerver/tests/bench_loopback.rs`): DAC linearity, PWM duty
+  endpoints + monotonic sweep, GPIO walking-ones / walking-zeros
+  (auto-skip when no DOUT/DIN loopback wiring is present), ADC
+  idle-stability with stuck-0x800 regression detector. Gated by
+  `PHYCMD_BENCH=1`. 7/7 green on the v2.0 wiring.
+- Full-rate ADC capture endpoint + browser scope feed
+  (`/api/adc/capture` + dashboard scope panel).
+- Reset button on D3 (PC28, 50 ms debounce → `RSTC_CR`).
+
+### Changed
+
+- **Wire protocol layout for v2.0 bench**: `StatusMessage.adc[8]` →
+  `adc[12]`, `reserved[30]` → `reserved[22]`. CRC range bumped from
+  24 to 32 bytes; firmware and host both use `offset_of!` /
+  `CRC_OVER_STAT_BYTES` to track the wire layout. `Capabilities`
+  now reports `num_pwm = 8`, `num_adc = 12`. `protocol_version`
+  stays at 1.
+- 8 PWM channels via mixed PWM peripheral + TC paths
+  (D9/D8/D7/D6/D10/D11/D5/D2). PWM 4..7 use TC modules; D11/D10
+  share TC2 channels by design.
+- Default outputs OFF at boot: physerver stops fngen on every
+  channel and zeros the streaming `Command` at iso transport
+  startup, so the bench never comes up driving anything.
+- Dashboard PWM slider / fngen mutual exclusion removed —
+  last-action-wins now. Sliders no longer disable the function-row
+  Stop button; setting a duty fires `pwmSliderResetTo(ch, 0)` on
+  the corresponding fngen lane.
+- Dashboard ADC scope panel + masonry layout, smoother poll loop
+  covering all 12 ADC channels, sliders sync from `/api/command` at
+  page load.
+- `enter_bootloader()` host helper now treats `LIBUSB_ERROR_IO`,
+  `LIBUSB_ERROR_NO_DEVICE`, and `LIBUSB_ERROR_TIMEOUT` all as
+  success — empirically the kernel returns `IO (-1)` most often
+  when the firmware resets mid-status-stage, not the timeout we
+  initially mapped.
+
+### Fixed
+
+- Firmware ADC: only enable channels we actually sample. The
+  earlier sparse `CHER` + PDC race could leave late slots reading
+  a stale `0x800`, masquerading as silicon faults. Free-running
+  ADC with direct CDR reads now drives the canonical AD0..AD11
+  path.
+- Firmware TC-PWM `match_reg` clamp away from 0 so duty=1.0 stays
+  HIGH instead of glitching one cycle to LOW.
+- Bench-loopback default wiring map for pwm2/pwm3 (was inverted).
+- `bench_adc_idle_stability` no longer false-positives on floating
+  DAC/PWM pins: drives DAC mid-scale and PWM duty=0 before
+  measuring. Stuck-0x800 detection still fires unconditionally.
+- CI rustfmt + `-D warnings` tripwires (unused imports, dead code,
+  long lines).
+
 ## [2.0.0] - 2026-04-22
 
 Clean re-baseline of the project: the previous `v1.x` history was

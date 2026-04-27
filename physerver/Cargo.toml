@@ -98,7 +98,7 @@ default = ["usb"]
 usb = ["rusb"]
 
 [dev-dependencies]
-criterion = "0.5"
+criterion = "0.8"
 tempfile = "3"
 # Enable MockTransport for benchmarks + integration tests without
 # leaking it into the release binary (phycmd-core's regular dep

@@ -106,7 +106,7 @@ tempfile = "3"
 phycmd-core = { path = "crates/phycmd-core", features = ["usb", "test-mock"] }
 # Lightweight sync HTTP client for the bench_loopback test suite.
 # Default TLS features off: the tests talk to a local http:// URL.
-ureq = { version = "2", default-features = false, features = ["json"] }
+ureq = { version = "3", default-features = false, features = ["json"] }
 
 [profile.release]
 opt-level = 3

@@ -12,7 +12,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # Protocol / CRC
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Serde for Command/Status wire types (consumed by IPC / HTTP downstream)
 serde = { version = "1.0", features = ["derive"] }

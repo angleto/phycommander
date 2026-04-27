@@ -48,7 +48,7 @@ parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
 # Real-time primitives (mlockall, sched_setscheduler, sched_setaffinity)
-nix = { version = "0.27", features = ["sched", "signal", "mman"] }
+nix = { version = "0.31", features = ["sched", "signal", "mman"] }
 
 # tokio::sync::broadcast for the StatusBus observer pattern; only the
 # sync primitives are pulled in (no net, no fs). `rt` gives us

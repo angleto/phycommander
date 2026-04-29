@@ -450,5 +450,15 @@ supplies the visual punch for the demo video.
 
 ---
 
+## 13. See also
+
+- [`piezo_bode_harvester/`](piezo_bode_harvester/): the same lock-in
+  technique applied to a mechanical structure (a piezo cantilever with a
+  tip mass), extended with an energy-harvesting power calculation against
+  arbitrary input vibration spectra. Concept-stage, mirrors industrial
+  shock-absorber test rigs.
+
+---
+
 *Document version: draft 1, 2026-04-10. Author: Angelo Leto. Intended
 license: CERN-OHL-S v2 alongside phycommander when ready for publication.*

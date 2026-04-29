@@ -7,9 +7,17 @@ documentation scales cleanly as more instruments are added.
 
 ## Currently documented applications
 
-| Application | Folder | Description |
-|---|---|---|
-| **Multi-function analyzer** | [`analyzer/`](analyzer/) | Modular analytical bench instrument: 16 measurement modes (optical absorbance, nephelometry, fluorescence, Doppler, pH, conductivity, amperometry, temperature control, titration, ...), 11 application domains (beer, water, bioprocess, enzyme kinetics, nanoparticles, ...). €145 – €1080 build cost. |
+| Application | Folder | Status | Description |
+|---|---|---|---|
+| **Multi-function analyzer** | [`analyzer/`](analyzer/) | in build | Modular analytical bench instrument: 16 measurement modes (optical absorbance, nephelometry, fluorescence, Doppler, pH, conductivity, amperometry, temperature control, titration, ...), 11 application domains (beer, water, bioprocess, enzyme kinetics, nanoparticles, ...). €145 – €1080 build cost. |
+| **Piezo Bode + energy harvester** | [`piezo_bode_harvester/`](piezo_bode_harvester/) | concept | Lock-in characterization of a piezo cantilever with a tip mass; injection of recorded vibration spectra to estimate harvested power. Mechanical analogue of the optical lock-in demo. Industrial parallel: shock-absorber test rig. |
+| **Vision sorter (Coral + 2-axis arm)** | [`vision_sorter/`](vision_sorter/) | concept | Real-time waste/object classification on a Google Coral USB Edge TPU, 2-axis encoder arm for pick-and-place. Industrial parallel: vision-based optical sorting lines. |
+| **Laser tracker (vision-driven pan-tilt)** | [`laser_tracker/`](laser_tracker/) | concept | Webcam-driven pan-tilt with host PID and DOUT-gated laser enable. Industrial parallel: laser marking, optical alignment, weld-head positioning. |
+
+The `Status` column distinguishes between concept-stage design documents
+(no code yet, no hardware build), `in build` (host code or hardware exists,
+work in progress), and `validated` (full demo run, video shot, validation
+experiments passed).
 
 ### Top-level design documents
 

@@ -356,21 +356,21 @@
         <!-- DAC -->
         <div class="panel" id="panelDac" data-title="DAC Outputs">
             <h2>DAC Outputs</h2>
-            <div class="control-group"><label>DAC 0 (12-bit, Due DAC0)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
-            <div class="control-group"><label>DAC 1 (12-bit, Due DAC1)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
+            <div class="control-group"><label><strong>DAC0</strong> (PB15)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac0S"><span class="value-display" id="dac0V">0</span></div></div>
+            <div class="control-group"><label><strong>DAC1</strong> (PB16)</label><div class="slider-container"><input type="range" min="0" max="4095" value="0" id="dac1S"><span class="value-display" id="dac1V">0</span></div></div>
         </div>
 
         <!-- PWM (duty sliders via fngen, 1 kHz carrier) -->
         <div class="panel" id="panelPwm" data-title="PWM Outputs">
             <h2>PWM Outputs <small style="font-weight:normal;color:#999;font-size:10px;">(1 kHz carrier, duty 0–100 %)</small></h2>
-            <div class="control-group"><label>PWM (Due D9)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_0" data-fngen="pwm0"><span class="value-display" id="pwmDutyV_0">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D8)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_1" data-fngen="pwm1"><span class="value-display" id="pwmDutyV_1">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D7)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_2" data-fngen="pwm2"><span class="value-display" id="pwmDutyV_2">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D5)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_6" data-fngen="pwm6"><span class="value-display" id="pwmDutyV_6">0</span>‰</div></div>
-            <div class="control-group"><label>PWM (Due D2)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_7" data-fngen="pwm7"><span class="value-display" id="pwmDutyV_7">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM0</strong> (D9)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_0" data-fngen="pwm0"><span class="value-display" id="pwmDutyV_0">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM1</strong> (D8)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_1" data-fngen="pwm1"><span class="value-display" id="pwmDutyV_1">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM2</strong> (D7)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_2" data-fngen="pwm2"><span class="value-display" id="pwmDutyV_2">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM3</strong> (D6)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_3" data-fngen="pwm3"><span class="value-display" id="pwmDutyV_3">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM4</strong> (D10)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_4" data-fngen="pwm4"><span class="value-display" id="pwmDutyV_4">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM5</strong> (D11)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_5" data-fngen="pwm5"><span class="value-display" id="pwmDutyV_5">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM6</strong> (D5)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_6" data-fngen="pwm6"><span class="value-display" id="pwmDutyV_6">0</span>‰</div></div>
+            <div class="control-group"><label><strong>PWM7</strong> (D2)</label><div class="slider-container"><input type="range" min="0" max="1000" value="0" id="pwmDutyS_7" data-fngen="pwm7"><span class="value-display" id="pwmDutyV_7">0</span>‰</div></div>
         </div>
 
         <!-- ADC -->
@@ -1769,6 +1769,21 @@ const FNGEN_PWM_MODES = ['off','square'];
 const FNGEN_DAC_CHANNELS  = ['dac0','dac1'];
 const FNGEN_PWM_CHANNELS  = ['pwm0','pwm1','pwm2','pwm3','pwm4','pwm5','pwm6','pwm7'];   /* All 8 firmware PWMs (D9, D8, D7, D6, D10, D11, D5, D2). */
 const FNGEN_DOUT_CHANNELS = Array.from({length:16}, (_, i) => 'dout'+i);
+
+/* API channel name → Due silkscreen pin label. The firmware's pwm0..pwm7
+ * indices and the Due silkscreen "PWM2 / D2" labels are NOT the same
+ * thing; without this map the user types "pwm2" expecting D2 and finds
+ * no signal there because firmware pwm2 actually drives D7. Kept in
+ * sync with docs/hardware/PIN_MAP.md §3 (PWM) and §2 (DAC). */
+const FNGEN_PIN_LABEL = {
+    'dac0':'PB15', 'dac1':'PB16',
+    'pwm0':'D9',  'pwm1':'D8',  'pwm2':'D7',  'pwm3':'D6',
+    'pwm4':'D10', 'pwm5':'D11', 'pwm6':'D5',  'pwm7':'D2',
+    'dout0':'D23', 'dout1':'D25', 'dout2':'D27', 'dout3':'D29',
+    'dout4':'D31', 'dout5':'D33', 'dout6':'D35', 'dout7':'D37',
+    'dout8':'D39', 'dout9':'D41', 'dout10':'D43','dout11':'D45',
+    'dout12':'D47','dout13':'D49','dout14':'D51','dout15':'D53',
+};
 let fngenAvailable = false;
 // Per-channel last-known state from the device (populated by
 // fngenPollState). Used by the oscilloscope to synthesise the
@@ -1813,10 +1828,11 @@ function fngenBuildDoutList() {
         const row = document.createElement('div');
         row.className = 'fngen-dout-row';
         row.id = 'fngenrow-' + ch;
+        const pinLabel = FNGEN_PIN_LABEL[ch] || '';
         row.innerHTML = `
             <div class="fngen-dout-head">
                 <span class="fngen-dout-indicator"></span>
-                <span class="fngen-dout-name">DOUT${i}</span>
+                <span class="fngen-dout-name">DOUT${i}<small style="font-weight:normal;color:#888;font-size:10px;"> (${pinLabel})</small></span>
                 <span class="fngen-dout-func">manual</span>
                 <button class="fngen-dout-stop" title="Stop function (does not expand)">×</button>
                 <span class="fngen-dout-chevron">▸</span>
@@ -1900,10 +1916,11 @@ function fngenBuildRow(channel, modes, maxVal) {
     row.className = 'fngen-ch';
     row.id = 'fngenrow-' + channel;
     const modeOpts = modes.map(m => `<option value="${m}">${fngenModeLabel(m)}</option>`).join('');
+    const pinHint = FNGEN_PIN_LABEL[channel] ? ` <span style="font-weight:500;color:#666;">(${FNGEN_PIN_LABEL[channel]})</span>` : '';
     row.innerHTML = `
         <div class="fngen-head">
             <div class="fngen-title">
-                <span class="fngen-name">${channel.toUpperCase()}</span>
+                <span class="fngen-name">${channel.toUpperCase()}${pinHint}</span>
                 <select data-k="mode" class="fngen-mode">${modeOpts}</select>
             </div>
             <span class="fngen-state" data-k="state">—</span>

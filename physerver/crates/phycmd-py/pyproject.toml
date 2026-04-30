@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "phycmd"
-version = "2.1.0"
+version = "2.1.1"
 description = "Hard-real-time Python bindings for the PhyCommander control stack"
 authors = [{ name = "Angelo Leto", email = "angelo@leto.blue" }]
 readme = "README.md"

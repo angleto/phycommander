@@ -1,6 +1,6 @@
 [package]
 name = "phycmd-rust"
-version = "2.1.0"
+version = "2.1.1"
 edition = "2021"
 authors = ["Angelo Leto <angelo@leto.blue>"]
 description = "High-level Rust API on top of phycmd-core (RT scheduler + staging buffer + status observer)"

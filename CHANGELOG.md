@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-04-30
+
+Patch release: dashboard scope smoothness, firmware DAC-write fix,
+SAM-BA detection robustness in the flash script, and licensing copy
+clean-up. No protocol or wire-format changes; 2.1.0 clients talk to
+2.1.1 firmware and vice versa.
+
+### Added
+
+- **Dashboard scope: WS adc_chunk stream**. New typed message on `/ws`
+  (`{"type":"adc_chunk","data":{...}}`) ships micro-batches of the
+  full 8 kHz ADC ring (~125 Hz tick, ~64 samples/chunk). The browser
+  scope consumes the stream directly; HTTP polling on
+  `/api/adc/capture` stays as a cold-start / WS-down fallback.
+- **Dashboard scope: 150 ms playback buffer**. The renderer anchors
+  the right edge to `performance.now() - 150 ms` so bursty arrival
+  lands behind the visible window. Decouples 60 Hz canvas refresh
+  from chunk cadence; cost is 150 ms of latency on the trace.
+- **Dashboard scope: unified 8 kHz timeline**. The legacy 250 Hz
+  scope buffer is gone. ADC, DIN, DOUT, and host-side DAC/PWM synth
+  values now ride the same `scopeAdc` buffer, so non-synthesizable
+  DAC shapes (manual / arbitrary / LUT) get 8 kHz time resolution.
+- **Concept docs for follow-on applications** under
+  `docs/applications/`: piezo Bode harvester, vision sorter, laser
+  tracker.
+
+### Changed
+
+- **Dashboard rows labelled by Due silkscreen pin** for DAC, PWM,
+  DOUT, and the on-chip function-generator block.
+- **Firmware: WORD-mode buffer pack + HALF-mode manual DAC write**.
+  Cleans up a pack-mode mismatch in the iso TX path so manual DAC
+  values written via the streaming Command frame land at the pad
+  on the next microframe instead of the one after.
+- **`scripts/flash_firmware.sh`**: detect the SAM-BA CDC after the
+  reset trigger, not before. The pre-trigger probe was racing the
+  device disappearance window and occasionally locking onto the
+  programming-port CDC instead, then failing once SAM-BA enumerated.
+- **README**: clearer commercial-use paragraph, GitHub-only contact
+  (no exposed mailto), explicit note that the AGPL/GPL/CERN-OHL-S
+  copyleft licences already permit commercial distribution under
+  their terms.
+
+### Fixed
+
+- CI: rustfmt nightly reflow on a docstring that the WS adc_chunk
+  patch had wrapped at suboptimal points.
+
 ## [2.1.0] - 2026-04-26
 
 Bench-cycle release: hardware layout aligned with the assembled v2.0

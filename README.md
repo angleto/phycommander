@@ -258,7 +258,7 @@ appropriate tool:
 
 The top-level [`LICENSE`](LICENSE) contains the authoritative boundary definitions and every source file carries an `SPDX-License-Identifier`. [`NOTICE`](NOTICE) carries the project attribution that redistributions must preserve.
 
-**If you want to use PhyCommander in a context the above licences don't accommodate** (proprietary product, closed-source SaaS, redistribution without the reciprocal obligations) contact the author at `angelo@leto.blue` about a commercial licence grant.
+**Commercial use.** The licences above let you ship PhyCommander commercially (sell copies, sell support, run it as a paid service) as long as you respect the copyleft obligations: keep the attribution, and share the source where each licence asks for it. If those terms don't fit your specific case (closed-source product integration, hosted service without source disclosure, binary appliance without a source offer), a separate commercial licence can be arranged. Open an issue or contact [@angleto](https://github.com/angleto) on GitHub.
 
 If you build on PhyCMD — academic paper, product, student project, blog post — credit would be appreciated in whichever form fits (README line, paper citation, slide footer).
 

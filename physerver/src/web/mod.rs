@@ -1249,13 +1249,13 @@ async fn websocket_handler(
 ///   - **Status** (pre-existing): raw `Status` JSON, no envelope. Emitted on every broadcast tick
 ///     from the device (~250 Hz typical). Consumers that just need live GPIO/ADC should look at
 ///     these.
-///   - **RT stats**: `{"type":"rt_stats","data":{...}}` emitted at 1 Hz. Eliminates the
-///     dashboard's HTTP poll on `/api/rt_stats`; any future consumer needing scheduler or iso
-///     counters can subscribe to this WS stream instead.
+///   - **RT stats**: `{"type":"rt_stats","data":{...}}` emitted at 1 Hz. Eliminates the dashboard's
+///     HTTP poll on `/api/rt_stats`; any future consumer needing scheduler or iso counters can
+///     subscribe to this WS stream instead.
 ///   - **ADC chunk** (new): `{"type":"adc_chunk","data":{...}}` emitted at ~125 Hz. Drains the
 ///     full-rate ADC ring (8 kHz) in small batches so the dashboard scope can render waveforms
-///     above the 250 Hz Status throttle without HTTP polling. Replaces `/api/adc/capture` for
-///     live consumers (the HTTP endpoint stays for diagnostics and as a cold-start fallback).
+///     above the 250 Hz Status throttle without HTTP polling. Replaces `/api/adc/capture` for live
+///     consumers (the HTTP endpoint stays for diagnostics and as a cold-start fallback).
 /// Legacy clients that naively `JSON.parse` and treat everything as
 /// `Status` must guard on the `type` field — see
 /// `physerver/static/index.html` for the reference pattern.

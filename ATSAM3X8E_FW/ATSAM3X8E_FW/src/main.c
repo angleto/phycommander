@@ -693,17 +693,30 @@ void apply_command_frame(const uint8_t *rx_buf)
 		waveform_set_manual_hold(1, v1);
 
 		if (!gen0 && !gen1) {
-			/* Both channels MANUAL, PDC idle. Pack v0+v1 into one
-			 * 32-bit CDR write (DACC_MR.WORD=1 + TAG=1 in flexible
-			 * selection mode, see dac_setup):
-			 *   bits [11:0]  = sample1 value   bits [13:12] = CHTAG CH0
-			 *   bits [27:16] = sample2 value   bits [29:28] = CHTAG CH1 */
-			const uint32_t word =
-			      ((uint32_t)(v0 & 0x0FFFu))
-			    | (0u << 12)
-			    | (((uint32_t)(v1 & 0x0FFFu)) << 16)
-			    | (1u << 28);
-			DACC->DACC_CDR = word;
+			/* Both channels MANUAL, PDC idle. Switch the DACC briefly
+			 * into HALF (16-bit) transfer mode so each CDR write moves
+			 * one 12-bit sample into one channel — selected via the
+			 * TAG bits [13:12] in DACC_CDR (flexible selection still
+			 * active). The packed-pair WORD-mode write the previous
+			 * revision used works on paper per ASF docs but in
+			 * practice on this SAM3X (verified across two Arduino Due
+			 * boards via JTAG, SWRST, and full DACC re-init) only the
+			 * tag-routed sample whose tag matches whichever-channel-
+			 * arrives-second actually lands in its DAC; the other half
+			 * was silently dropped, leaving DAC0 stuck at its idle
+			 * level (~0.55 V) regardless of v0 while DAC1 tracked
+			 * correctly. Two HALF writes are guaranteed to land both
+			 * conversions, at the cost of one extra 32-bit MR write
+			 * pair (~50 ns at 84 MHz, negligible against the 125-µs
+			 * iso microframe budget). MR is restored to WORD=1 after
+			 * the writes so the PDC-driven generator path in
+			 * waveform.c (refill_buffer) still gets the packed-pair
+			 * format it relies on. */
+			uint32_t mr = DACC->DACC_MR;
+			DACC->DACC_MR = mr & ~DACC_MR_WORD;
+			DACC->DACC_CDR = ((uint32_t)(v0 & 0x0FFFu)) | (0u << 12);
+			DACC->DACC_CDR = ((uint32_t)(v1 & 0x0FFFu)) | (1u << 12);
+			DACC->DACC_MR = mr;
 		}
 		/* When at least one channel is generator-driven we leave
 		 * the DACC peripheral to the PDC: the refill_buffer loop

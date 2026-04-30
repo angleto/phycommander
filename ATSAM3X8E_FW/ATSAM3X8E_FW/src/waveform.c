@@ -565,12 +565,29 @@ static inline uint32_t channel_sample_word(uint8_t ch_idx, volatile dac_chan_t *
  *   refill_buffer — called from ISR (DACC_Handler) and from
  *   dacc_pdc_start() to pre-fill at boot.
  *
- *   Layout: alternating CH0, CH1, CH0, CH1, ... so that the TC
- *   trigger fires at 2 × per-channel rate and DACC alternates
- *   conversions between the two channels via the tag bit.
+ *   Layout: each uint32_t in the ping-pong buffer carries ONE pair
+ *   (ch0, ch1) packed as required by DACC_MR.WORD = 1 (set in
+ *   dac_setup, main.c), per SAM3X8E datasheet §44.6.7:
  *
- *   For a half-buffer of N samples (N must be even), we emit N/2
- *   samples for each channel.
+ *     bits [11:0]  = sample 1 value     bits [13:12] = sample 1 ch tag
+ *     bits [27:16] = sample 2 value     bits [29:28] = sample 2 ch tag
+ *
+ *   We always put ch0 in the low half-word and ch1 in the high half-word.
+ *   Each PDC transfer (one 32-bit write to DACC_CDR) is consumed by two
+ *   TC triggers (one per half-word), so with TC firing at
+ *   2 × s_dac_clock_hz the per-channel update rate is exactly
+ *   s_dac_clock_hz — which is what `recompute_phase_increments_for`
+ *   assumes when computing phase_inc_q24_8.
+ *
+ *   Pre-fix `refill_buffer` wrote one sample per uint32_t into the low
+ *   half only, leaving the upper half-word zeroed. In WORD mode the
+ *   DACC interpreted that zero high half-word as a second conversion
+ *   of value 0 with tag bits 28-29 = 00 (= ch0), which (a) drove DAC0
+ *   to a low DC stuck level even when only DAC1 was generating and
+ *   (b) halved the per-channel real-sample rate, so output frequency
+ *   came out at 1/2 of the requested value. The matching working
+ *   reference is the "both channels manual" packed write in
+ *   apply_command_frame (main.c).
  * ------------------------------------------------------------------------- */
 
 static void refill_buffer(uint32_t *buf, uint32_t n_samples)
@@ -585,14 +602,15 @@ static void refill_buffer(uint32_t *buf, uint32_t n_samples)
 	uint32_t ph0  = c0.phase_q24_8;
 	uint32_t ph1  = c1.phase_q24_8;
 
-	for (uint32_t i = 0; i < n_samples; i += 2u) {
-		/* Even slots → CH0, odd slots → CH1. */
+	for (uint32_t i = 0; i < n_samples; i++) {
+		uint32_t s0, s1;
+
 		if (c0.shape != SHAPE_OFF) {
 			/* Update the working channel's phase in our local snapshot
 			 * so SHAPE_ARBITRARY's auto-stop side-effects are visible
 			 * to subsequent iterations. */
 			c0.phase_q24_8 = ph0;
-			buf[i] = channel_sample_word(0, &c0);
+			s0 = channel_sample_word(0, &c0);
 			ph0 += inc0;
 		} else {
 			/* Channel is in MANUAL. Emit the last value actually applied
@@ -602,16 +620,22 @@ static void refill_buffer(uint32_t *buf, uint32_t n_samples)
 			 * `offset` and a transition GENERATOR → MANUAL silently
 			 * snapped the DAC to mid-rail instead of holding the last
 			 * manual value. */
-			buf[i] = ((uint32_t)c0.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH0;
+			s0 = ((uint32_t)c0.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH0;
 		}
 
 		if (c1.shape != SHAPE_OFF) {
 			c1.phase_q24_8 = ph1;
-			buf[i + 1] = channel_sample_word(1, &c1);
+			s1 = channel_sample_word(1, &c1);
 			ph1 += inc1;
 		} else {
-			buf[i + 1] = ((uint32_t)c1.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH1;
+			s1 = ((uint32_t)c1.reactive_value & DACC_VAL_MASK) | DACC_TAG_CH1;
 		}
+
+		/* Pack ch0 in the low half-word and ch1 in the high half-word.
+		 * Both halves carry their channel tag (bit 12 for the first
+		 * conversion, bit 28 for the second) so the DACC routes each
+		 * value to the intended channel in flexible-selection mode. */
+		buf[i] = (s0 & 0xFFFFu) | (s1 << 16);
 	}
 
 	/* Persist updated phase + arbitrary bookkeeping back to the
@@ -711,10 +735,12 @@ extern uint8_t s_dig_out_pin_idx[]; /* main.c: per-DOUT-bit PIO pin index */
  * (`channel_sample_word` for SHAPE_LUT/THRESHOLD/PID) will pick it up
  * on the next buffer half and the DAC will hold it stable until the
  * next reactive update. Worst-case visibility latency is
- * PINGPONG_SAMPLES / (2 × dac_clock_per_channel) ≈ 640 µs at the
- * default 200 kSPS. We deliberately do NOT write DACC_CDR directly
- * here: the PDC is actively pumping and any CPU write to CDR would be
- * overwritten by the next PDC sample within ~2.5 µs. */
+ * PINGPONG_SAMPLES / dac_clock_per_channel ≈ 1.28 ms at the default
+ * 200 kSPS (each ping-pong word now carries one ch0 + one ch1 pair,
+ * so per-channel rate equals s_dac_clock_hz). We deliberately do NOT
+ * write DACC_CDR directly here: the PDC is actively pumping and any
+ * CPU write to CDR would be overwritten by the next PDC sample within
+ * ~2.5 µs. */
 static inline void reactive_dac_write(uint8_t dac_idx, uint16_t v12)
 {
 	if (dac_idx >= WAVE_NUM_DAC) return;

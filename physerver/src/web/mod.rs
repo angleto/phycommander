@@ -1249,9 +1249,13 @@ async fn websocket_handler(
 ///   - **Status** (pre-existing): raw `Status` JSON, no envelope. Emitted on every broadcast tick
 ///     from the device (~250 Hz typical). Consumers that just need live GPIO/ADC should look at
 ///     these.
-///   - **RT stats** (new): `{"type":"rt_stats","data":{...}}` emitted at 1 Hz. Eliminates the
+///   - **RT stats**: `{"type":"rt_stats","data":{...}}` emitted at 1 Hz. Eliminates the
 ///     dashboard's HTTP poll on `/api/rt_stats`; any future consumer needing scheduler or iso
 ///     counters can subscribe to this WS stream instead.
+///   - **ADC chunk** (new): `{"type":"adc_chunk","data":{...}}` emitted at ~125 Hz. Drains the
+///     full-rate ADC ring (8 kHz) in small batches so the dashboard scope can render waveforms
+///     above the 250 Hz Status throttle without HTTP polling. Replaces `/api/adc/capture` for
+///     live consumers (the HTTP endpoint stays for diagnostics and as a cold-start fallback).
 /// Legacy clients that naively `JSON.parse` and treat everything as
 /// `Status` must guard on the `type` field — see
 /// `physerver/static/index.html` for the reference pattern.
@@ -1264,6 +1268,16 @@ async fn websocket_connection(mut socket: WebSocket, state: Arc<AppState>) {
     // client is back-pressuring) we don't want to fire a flood of
     // stats updates to catch up — skip stale ticks.
     stats_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    // ADC chunk push: drain the full-rate ring every 8 ms (~125 Hz)
+    // and ship the new samples since the previous tick. Steady-state
+    // payload is 64 samples × 12 ch ≈ 4 KB JSON, ~0.5 MB/s per client.
+    // First tick after connect catches up the most recent 500 ms of
+    // ring history so the scope has data to render immediately.
+    let mut adc_tick = tokio::time::interval(std::time::Duration::from_millis(8));
+    adc_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut adc_cursor: u64 = 0;
+    let mut adc_first_send: bool = true;
 
     loop {
         tokio::select! {
@@ -1294,6 +1308,46 @@ async fn websocket_connection(mut socket: WebSocket, state: Arc<AppState>) {
                 let json = envelope.to_string();
                 if socket.send(axum::extract::ws::Message::Text(json)).await.is_err() {
                     break;
+                }
+            }
+
+            // Periodic ADC chunk push. See `adc_tick` declaration above.
+            _ = adc_tick.tick() => {
+                // First send: pull the most recent 500 ms (4096 samples
+                // @ 8 kHz) so the dashboard scope can draw immediately.
+                // Subsequent: cap at 128, which is 16 ms of samples and
+                // bounds catch-up after a missed tick.
+                let cap = if adc_first_send { 4096 } else { 128 };
+                let samples = state.adc_ring.lock().snapshot_since(adc_cursor, cap);
+                if !samples.is_empty() {
+                    adc_first_send = false;
+                    adc_cursor = samples.last().unwrap().seq + 1;
+                    let mut adc_cols: [Vec<u16>; 12] = Default::default();
+                    let mut din: Vec<u16> = Vec::with_capacity(samples.len());
+                    let mut dout: Vec<u16> = Vec::with_capacity(samples.len());
+                    for s in &samples {
+                        for (i, v) in s.adc.iter().enumerate() {
+                            adc_cols[i].push(*v);
+                        }
+                        din.push(s.din);
+                        dout.push(s.dout);
+                    }
+                    let envelope = serde_json::json!({
+                        "type": "adc_chunk",
+                        "data": {
+                            "first_seq": samples.first().unwrap().seq,
+                            "last_seq": samples.last().unwrap().seq,
+                            "n": samples.len(),
+                            "sample_rate_hz": 8000,
+                            "adc": adc_cols,
+                            "din": din,
+                            "dout": dout,
+                        }
+                    });
+                    let json = envelope.to_string();
+                    if socket.send(axum::extract::ws::Message::Text(json)).await.is_err() {
+                        break;
+                    }
                 }
             }
 

@@ -812,28 +812,50 @@ let scopePausedAt = null;
 // flag via /api/command first.
 let cmd = { digital_out:0, dac:[0,0], pwm:[0,0], flags:{adc_enable:true,dac_enable:true,pwm_enable:true,reset_seq:false,watchdog_disable:false}, seq_num:0 };
 
-// Scope data ring buffer
-const SCOPE_MAX = 10000;
-const N_ADC = 12;   // wire-protocol ADC slots, mirrors phycmd-core CH_NUM_ADC
-const N_PWM_UI = 8;  // dashboard slider count, mirrors firmware WAVE_NUM_PWM_ACTIVE
-let scopeBuf = {
-    adc: Array.from({length:N_ADC},()=>[]),
-    dac: [[],[]],
-    pwm: [[],[],[],[]],
-    din: [], dout: [], ts: []
-};
-// Separate full-rate ADC buffer fed by polling /api/adc/capture at ~10 Hz
-// (each response carries ~800 new samples @ 8 kHz). The WS broadcast is
-// throttled to 250 Hz upstream so feeding the scope off the WS stream
-// destroys any waveform above ~50 Hz; this parallel buffer fixes that.
-// Timestamps are reconstructed client-side from the server-provided
-// sample rate — see pollAdcCapture() below.
-const SCOPE_ADC_MAX = 16384;  // 2 s @ 8 kHz
+// Scope buffer — single 8 kHz timeline shared by every plotted
+// signal. Fed primarily by the WS adc_chunk stream (real ADC, DIN,
+// DOUT samples from the firmware ring; DAC and PWM populated by
+// host-side analytical synth at each chunk timestamp), with the
+// HTTP poll on /api/adc/capture as a cold-start / WS-down fallback.
+// SCOPE_ADC_MAX (16384 = 2 s @ 8 kHz) matches the dashboard's
+// longest "full fidelity" window; wider windows still render
+// whatever is currently in the buffer.
+const N_ADC = 12;        // wire-protocol ADC slots, mirrors phycmd-core CH_NUM_ADC
+const N_PWM_UI = 8;      // dashboard slider count, mirrors firmware WAVE_NUM_PWM_ACTIVE
+const SCOPE_ADC_MAX = 16384;
 let scopeAdc = {
     ts: [],
-    ch: Array.from({ length: N_ADC }, () => []),
-    lastSeq: 0,  // next seq to request, so 0 == "from the start"
+    ch:  Array.from({ length: N_ADC },    () => []),  // ADC ch[0..N_ADC-1]
+    dac: [[], []],                                    // DAC0, DAC1 (host synth)
+    pwm: Array.from({ length: N_PWM_UI }, () => []),  // PWM0..PWMn (host synth)
+    din: [],                                          // 16-bit GPIO IN bitmask
+    dout: [],                                         // 16-bit GPIO OUT bitmask
+    lastSeq: 0,                                       // next ring seq to request
 };
+
+// Playback delay used by the scope renderer. The "now" reference for
+// the visible window is performance.now() - SCOPE_PLAYBACK_DELAY_MS,
+// not the wall clock. Effect: the trace shows the last 150 ms of
+// arrived data with a 150 ms cushion behind the bleeding edge, which
+// decouples canvas refresh (60 Hz) from sample arrival (bursty:
+// ~30 Hz HTTP poll, ~125 Hz WS chunks). Without it, between bursts
+// the right edge of the trace freezes (no new data) then snaps when
+// the next burst lands. 150 ms ≈ 4× the 33 ms HTTP poll period and
+// >10× the 8 ms WS chunk interval, so we tolerate one lost poll /
+// several lost chunks without visible artefacts. Cost: 150 ms of
+// latency on the displayed trace, which is irrelevant for monitoring;
+// would only matter for hand-eye correlation between a UI gesture
+// and its scope effect.
+const SCOPE_PLAYBACK_DELAY_MS = 150;
+function scopeNow() { return performance.now() - SCOPE_PLAYBACK_DELAY_MS; }
+
+// Tracks whether the WS adc_chunk push is feeding scopeAdc. Set on
+// every chunk arrival; pollAdcCapture (the HTTP fallback) skips its
+// fetch while this is fresh. If chunks stop arriving (WS down or
+// server stalled) for >500 ms we treat the stream as inactive and
+// the poll resumes.
+let adcStreamActive = false;
+let adcLastChunkAt = 0;
 let scopeAnalogCh = [0,1]; // enabled scope analog channels. adc[i] = Due A(i+1), so [0,1] = A1 and A2.
 let scopeDigitalCh = []; // enabled digital bits (0-15 = din, 16-31 = dout)
 const COLORS = ['#ff6384','#36a2eb','#ffce56','#4bc0c0','#9966ff','#ff9f40','#c9cbcf','#7bc67e','#e74c3c','#3498db'];
@@ -962,7 +984,10 @@ for(let i=16;i<32;i++){
 }
 document.getElementById('scopePause').onclick=function(){
     scopePaused = !scopePaused;
-    scopePausedAt = scopePaused ? performance.now() : null;
+    // Freeze the renderer "now" at the same delayed reference used in
+    // live mode so the visible window doesn't jump by SCOPE_PLAYBACK_DELAY_MS
+    // when the user clicks Pause.
+    scopePausedAt = scopePaused ? scopeNow() : null;
     this.classList.toggle('active', scopePaused);
     this.textContent = scopePaused ? 'Resume' : 'Pause';
 };
@@ -1051,14 +1076,16 @@ function connectWs(){
     ws.onmessage=e=>{
         msgCount++;
         const m=JSON.parse(e.data);
-        // The server sends two kinds of messages on /ws:
-        //   - raw Status (hot stream, no envelope)
-        //   - typed envelope {type:"rt_stats",data:{...}} at 1 Hz
+        // The server sends three kinds of messages on /ws:
+        //   - raw Status (hot stream, no envelope, ~250 Hz)
+        //   - {type:"rt_stats",data:{...}}  at 1 Hz
+        //   - {type:"adc_chunk",data:{...}} at ~125 Hz (full-rate
+        //     ADC + DIN + DOUT batches feeding scopeAdc)
         // Anything with a `type` field is an envelope; otherwise
         // treat as legacy Status.
-        if (m.type === 'rt_stats') { renderRtStats(m.data); return; }
+        if (m.type === 'rt_stats')  { renderRtStats(m.data); return; }
+        if (m.type === 'adc_chunk') { handleAdcChunk(m.data); return; }
         updateStatus(m);
-        pushScope(m);
     };
     ws.onclose=()=>{document.getElementById('statusDot').classList.remove('connected');document.getElementById('statusText').textContent='Reconnecting...';setTimeout(connectWs,2000);};
 }
@@ -1136,73 +1163,74 @@ function fngenCanSynthPwm(pwmIdx) {
     return !!(st && st.shape_name === 'square');
 }
 
-function pushScope(s){
-    if(scopePaused)return;
-    const now=performance.now();
-    scopeBuf.ts.push(now);
-    // ADC no longer flows through here: pollAdcCapture() fills scopeAdc
-    // at the full 8 kHz rate so waveforms don't alias. We still keep
-    // zero-filled scopeBuf.adc[] slots to avoid breaking any legacy
-    // by-index lookup.
-    for(let i=0;i<N_ADC;i++)scopeBuf.adc[i].push(0);
-    scopeBuf.dac[0].push(fngenSynthDac(0, now));
-    scopeBuf.dac[1].push(fngenSynthDac(1, now));
-    // PWM synthesis: every firmware pwm0..pwm<N_PWM_UI-1>. The synth
-    // mirrors the on-chip generator's last-known shape so traces look
-    // right regardless of the (slow) WS broadcast rate.
-    for(let p=0;p<N_PWM_UI;p++){
-        if(!scopeBuf.pwm[p]) scopeBuf.pwm[p]=[];
-        scopeBuf.pwm[p].push(fngenSynthPwm(p, now));
+// Append `n` samples from a chunk-shaped payload (parallel column
+// arrays adc[N_ADC][n] plus din[n] / dout[n]) into scopeAdc, with
+// timestamps reconstructed working backward from the response
+// arrival time. DAC and PWM aren't carried on the wire — the
+// firmware doesn't echo its own outputs at 8 kHz — so we evaluate
+// the host-side fngen synth at each ts to fill them. Used by both
+// the WS adc_chunk handler and the HTTP /api/adc/capture fallback.
+function appendChunkSamples(adcCols, dinArr, doutArr, n, dtMs, anchorMs) {
+    if (n <= 0) return;
+    const t0 = anchorMs - (n - 1) * dtMs;
+    for (let i = 0; i < n; i++) {
+        const ts = t0 + i * dtMs;
+        scopeAdc.ts.push(ts);
+        for (let c = 0; c < N_ADC; c++) scopeAdc.ch[c].push(adcCols[c][i]);
+        scopeAdc.din.push(dinArr ? dinArr[i] : 0);
+        scopeAdc.dout.push(doutArr ? doutArr[i] : 0);
+        scopeAdc.dac[0].push(fngenSynthDac(0, ts));
+        scopeAdc.dac[1].push(fngenSynthDac(1, ts));
+        for (let p = 0; p < N_PWM_UI; p++) scopeAdc.pwm[p].push(fngenSynthPwm(p, ts));
     }
-    scopeBuf.din.push(s.digital_in); scopeBuf.dout.push(s.digital_out);
-    // Trim
-    while(scopeBuf.ts.length>SCOPE_MAX){
-        scopeBuf.ts.shift();
-        for(let i=0;i<N_ADC;i++)scopeBuf.adc[i].shift();
-        scopeBuf.dac[0].shift();scopeBuf.dac[1].shift();
-        for(let p=0;p<N_PWM_UI;p++) if(scopeBuf.pwm[p]) scopeBuf.pwm[p].shift();
-        scopeBuf.din.shift();scopeBuf.dout.shift();
+    if (scopeAdc.ts.length > SCOPE_ADC_MAX) {
+        const skip = scopeAdc.ts.length - SCOPE_ADC_MAX;
+        scopeAdc.ts = scopeAdc.ts.slice(skip);
+        for (let c = 0; c < N_ADC; c++)    scopeAdc.ch[c]  = scopeAdc.ch[c].slice(skip);
+        for (let p = 0; p < N_PWM_UI; p++) scopeAdc.pwm[p] = scopeAdc.pwm[p].slice(skip);
+        scopeAdc.dac[0] = scopeAdc.dac[0].slice(skip);
+        scopeAdc.dac[1] = scopeAdc.dac[1].slice(skip);
+        scopeAdc.din    = scopeAdc.din.slice(skip);
+        scopeAdc.dout   = scopeAdc.dout.slice(skip);
     }
 }
 
-// Poll the server's full-rate ADC ring at ~30 Hz. Each response carries
-// every sample since the last cursor, so the client sees the waveform
-// at the true iso-IN cadence regardless of the WS broadcast throttle.
-// The first response with since=0 loads the whole 2 s ring in one go;
-// subsequent responses only carry the delta. 30 Hz keeps each chunk
-// small (~270 samples = ~5 KB JSON) and shrinks the gap that used to
-// produce visible jerk on the 200 ms scope window — now <34 ms.
+// Consume one WS adc_chunk message. Drains the network buffer even
+// when paused (keeps memory bounded), only writes into scopeAdc when
+// live. Updates adcStreamActive/adcLastChunkAt so the HTTP fallback
+// stands down while the stream is healthy.
+function handleAdcChunk(d) {
+    adcLastChunkAt = performance.now();
+    adcStreamActive = true;
+    if (scopePaused) return;
+    const n = d.n || 0;
+    if (n <= 0) return;
+    const dtMs = 1000 / (d.sample_rate_hz || 8000);
+    appendChunkSamples(d.adc, d.din, d.dout, n, dtMs, performance.now());
+    scopeAdc.lastSeq = (d.last_seq || 0) + 1;
+}
+
+// HTTP fallback for the WS adc_chunk stream. Fires every
+// SCOPE_POLL_INTERVAL_MS but skips the fetch while WS chunks are
+// arriving (adcStreamActive is set fresh by handleAdcChunk). When
+// WS is down or stalled the poll kicks in at 30 Hz and keeps the
+// scope alive. Runs in parallel with the WS path harmlessly: the
+// per-source seq cursors prevent dup samples while one is the
+// primary source, and trim() rolls out any leftovers from a brief
+// transition.
 const SCOPE_POLL_INTERVAL_MS = 33;
 async function pollAdcCapture() {
-    if (!scopePaused) {
+    const stale = performance.now() - adcLastChunkAt > 500;
+    if (!scopePaused && (!adcStreamActive || stale)) {
+        if (stale) adcStreamActive = false;
         try {
             const r = await fetch('/api/adc/capture?since=' + scopeAdc.lastSeq);
             if (r.ok) {
                 const d = await r.json();
                 const n = (d.adc && d.adc[0]) ? d.adc[0].length : 0;
                 if (n > 0) {
-                    const nowMs = performance.now();
                     const dtMs = 1000 / (d.sample_rate_hz || 8000);
-                    // Anchor the last sample in the response to "now";
-                    // earlier samples are spaced dtMs apart working
-                    // backward. Good enough for waveform reconstruction
-                    // at tens-of-ms precision.
-                    const t0 = nowMs - (n - 1) * dtMs;
-                    for (let i = 0; i < n; i++) {
-                        scopeAdc.ts.push(t0 + i * dtMs);
-                        for (let c = 0; c < N_ADC; c++) {
-                            scopeAdc.ch[c].push(d.adc[c][i]);
-                        }
-                    }
-                    // Trim with slice() so we stay O(N_remaining) rather
-                    // than Array.shift()-in-a-loop's O(N * M).
-                    if (scopeAdc.ts.length > SCOPE_ADC_MAX) {
-                        const skip = scopeAdc.ts.length - SCOPE_ADC_MAX;
-                        scopeAdc.ts = scopeAdc.ts.slice(skip);
-                        for (let c = 0; c < N_ADC; c++) {
-                            scopeAdc.ch[c] = scopeAdc.ch[c].slice(skip);
-                        }
-                    }
+                    appendChunkSamples(d.adc, d.din, d.dout, n, dtMs, performance.now());
                     scopeAdc.lastSeq = d.last_seq + 1;
                 }
             }
@@ -1218,16 +1246,15 @@ pollAdcCapture();
 const cvA=document.getElementById('scopeAnalog'), cvP=document.getElementById('scopePwm'), cvD=document.getElementById('scopeDigital');
 const frameA=document.getElementById('scopeAnalogFrame'), frameP=document.getElementById('scopePwmFrame'), frameD=document.getElementById('scopeDigitalFrame');
 
-// Helpers: split scopeAnalogCh into ADC+DAC (0-9) vs PWM (10-11).
-// ADC channels (0..7) live on scopeAdc (8 kHz), everything else on
-// scopeBuf (~250 Hz). chData returns both the ts and the value array
-// so consumers know which timebase to walk.
+// Channel resolvers. All plotted signals share the same scopeAdc
+// timebase now (ADC is real, DAC/PWM are host-side synth), so chTs()
+// is constant and chArr() just routes by channel-index range.
 function chArr(ch){
     if (ch < N_ADC) return scopeAdc.ch[ch];
-    if (ch < SCOPE_PWM_BASE) return scopeBuf.dac[ch - SCOPE_DAC_BASE];
-    return scopeBuf.pwm[ch - SCOPE_PWM_BASE] || [];
+    if (ch < SCOPE_PWM_BASE) return scopeAdc.dac[ch - SCOPE_DAC_BASE];
+    return scopeAdc.pwm[ch - SCOPE_PWM_BASE] || [];
 }
-function chTs(ch){return ch < N_ADC ? scopeAdc.ts : scopeBuf.ts;}
+function chTs(_ch){ return scopeAdc.ts; }
 function chLabel(ch){
     if (ch < N_ADC) return ADC_LABELS[ch];
     if (ch < SCOPE_PWM_BASE) return 'DAC' + (ch - SCOPE_DAC_BASE);
@@ -1263,13 +1290,12 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
         const max=chMax(ch);
         ctx.strokeStyle=COLORS[ch%COLORS.length];
         ctx.beginPath();
-        // For DAC channels in built-in generator mode, render the
-        // waveform analytically at canvas-pixel resolution. WebSocket
-        // streaming is throttled to ~250 Hz so a sampled trace would
-        // undersample any signal > ~50 Hz and look random. The synth
-        // path evaluates fngenSynthDac at N equally-spaced time points
-        // across the window, giving a smooth deterministic trace
-        // regardless of the underlying stream rate.
+        // For DAC channels in a built-in generator mode whose shape
+        // we know, render analytically at canvas-pixel resolution.
+        // The buffer-walk path also has 8 kHz host-side synth values,
+        // but at high signal frequencies (e.g. 1 kHz sine, 8 samples
+        // per period) the buffer aliases visually; the analytic path
+        // gives smooth pixel-accurate output regardless of period.
         const isDac = ch === SCOPE_DAC_BASE || ch === SCOPE_DAC_BASE + 1;
         const isPwm = ch >= SCOPE_PWM_BASE;
         if (isDac && fngenCanSynthTrace(ch - SCOPE_DAC_BASE)) {
@@ -1295,9 +1321,9 @@ function renderAnalogPlot(cv, channels, start, tMin, windowMs, fullScaleLabel) {
                 if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
             }
         } else {
-            // Default: walk the captured stream buffer. ADC channels
-            // ride on scopeAdc (8 kHz), others on scopeBuf (~250 Hz),
-            // so we rebind to the correct timebase per channel.
+            // Default: walk the unified scopeAdc buffer at 8 kHz.
+            // Reached for ADC channels and for DAC/PWM in shapes we
+            // can't synthesize analytically (arbitrary/LUT/PID/etc.).
             const arr = chArr(ch);
             const ts = chTs(ch);
             let j = ts.length - 1;
@@ -1331,11 +1357,6 @@ function renderMeasTable(container, channels, start, tMin){
         + '<thead><tr><th>Ch</th><th>Cur</th><th>Min</th><th>Max</th><th>Mean</th><th>Pk-Pk</th></tr></thead><tbody>';
     channels.forEach(ch=>{
         const arr=chArr(ch);
-        // Each channel rides its own timebase (ADC = scopeAdc, others
-        // = scopeBuf) so recompute start against the matching ts array
-        // — passing a shared `start` computed on scopeBuf.ts to an ADC
-        // channel meant ADC measurements drifted out of the visible
-        // window as their buffer sits at 8 kHz.
         const ts=chTs(ch);
         let chStart=ts.length-1;
         while(chStart>0 && ts[chStart]>tMin) chStart--;
@@ -1352,28 +1373,16 @@ let lastMeasUpdate=0;
 function drawScope(){
     requestAnimationFrame(drawScope);
     const windowMs=+document.getElementById('scopeWindow').value;
-    // When paused, keep the window anchored at the exact moment the
-    // user clicked so the visible trace stays put instead of scrolling
-    // off the left edge. Any further samples are discarded by pushScope.
-    // When live, anchor to the most recent ADC sample's reconstructed
-    // timestamp (with a tiny lookahead based on poll interval) instead
-    // of performance.now(). Wall-clock time advances continuously
-    // between polls but no new samples arrive, which used to leave a
-    // growing empty band on the right of the trace then snap-fill on
-    // the next poll. Anchoring to the data eliminates the snap.
-    let now;
-    if (scopePaused) {
-        now = scopePausedAt;
-    } else if (scopeAdc.ts.length) {
-        now = scopeAdc.ts[scopeAdc.ts.length - 1] + SCOPE_POLL_INTERVAL_MS;
-    } else {
-        now = performance.now();
-    }
+    // Live: render anchored to wall-clock minus SCOPE_PLAYBACK_DELAY_MS,
+    // so the right edge of the trace lags real-time by that much and
+    // bursty arrival (HTTP poll / WS chunks) lands well behind the
+    // visible window. Paused: freeze "now" at the moment of click.
+    const now = scopePaused ? scopePausedAt : scopeNow();
     const tMin=now-windowMs;
 
-    // Find start index
-    let start=scopeBuf.ts.length-1;
-    while(start>0&&scopeBuf.ts[start]>tMin)start--;
+    // Find start index against the unified scopeAdc timebase.
+    let start = scopeAdc.ts.length - 1;
+    while (start > 0 && scopeAdc.ts[start] > tMin) start--;
 
     // Split analog channels: ADC+DAC (0-9) on Analog frame, PWM (10-11) on PWM frame
     const analogCh=scopeAnalogCh.filter(c=>c<SCOPE_PWM_BASE);
@@ -1402,16 +1411,16 @@ function drawScope(){
     ctxD.lineWidth=1.5;
     scopeDigitalCh.forEach((ch,ci)=>{
         const yBase=(ci+1)*rowH-4;
-        const arr=ch<16?scopeBuf.din:scopeBuf.dout;
-        const bit=ch<16?ch:ch-16;
+        const arr = ch < 16 ? scopeAdc.din : scopeAdc.dout;
+        const bit = ch < 16 ? ch : ch - 16;
         ctxD.strokeStyle=COLORS[(ch+4)%COLORS.length];
         ctxD.beginPath();
         let first=true;
-        for(let i=start;i<scopeBuf.ts.length;i++){
-            const x=(scopeBuf.ts[i]-tMin)/windowMs*WD;
-            const v=(arr[i]>>bit)&1;
-            const y=yBase-v*(rowH-8);
-            if(first){ctxD.moveTo(x,y);first=false;}else ctxD.lineTo(x,y);
+        for (let i = start; i < scopeAdc.ts.length; i++) {
+            const x = (scopeAdc.ts[i] - tMin) / windowMs * WD;
+            const v = (arr[i] >> bit) & 1;
+            const y = yBase - v * (rowH - 8);
+            if (first) { ctxD.moveTo(x, y); first = false; } else ctxD.lineTo(x, y);
         }
         ctxD.stroke();
         ctxD.font='9px monospace';ctxD.fillStyle=COLORS[(ch+4)%COLORS.length];

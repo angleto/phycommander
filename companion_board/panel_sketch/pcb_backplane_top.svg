@@ -299,10 +299,19 @@
     <text x="8" y="69.5" class="label-coord">LED+ LED- RST GND</text>
   </g>
 
+  <!-- R3 10kΩ nTRST pull-up (just above CAN frame, between J11 and CAN xceiver) -->
+  <!-- KiCad/SVG (108, 49), THT axial horizontal, body 6.3 x 2.5 mm -->
+  <g id="R3-nTRST-pullup">
+    <g class="passive">
+      <rect x="104.85" y="47.75" width="6.3" height="2.5"/>
+    </g>
+    <text x="108" y="46" class="label-coord">R3 10k (nTRST PU)</text>
+  </g>
+
   <!-- CAN transceiver subcircuit (east margin) -->
   <g id="can-subcircuit">
-    <rect x="102.5" y="49" width="15" height="44" rx="0.6" ry="0.6" class="silk"/>
-    <text x="110" y="51.5" class="label-area">CAN xceiver</text>
+    <rect x="102.5" y="51" width="15" height="44" rx="0.6" ry="0.6" class="silk"/>
+    <text x="110" y="53.5" class="label-area">CAN xceiver</text>
 
     <!-- C3, C4 (100nF decoupling, top) -->
     <g class="passive">

@@ -191,6 +191,7 @@ Top connector positions (centered, 2.54 mm-snapped, doc Y up):
 | J11 | JTAG bridge header | 2×5 vertical, no shroud (or shrouded, optional) | 109.5 | 58 |
 | **J12** | **Panel button + LED header** | **1×4 vertical pin header (10.16 × 2.54 mm body)** | **8** | **40** |
 | **R2** | **220 Ω LED current limit** | **THT axial horizontal (6.3 × 2.5 mm body)** | **8** | **44** |
+| **R3** | **10 kΩ nTRST pull-up** | **THT axial horizontal (6.3 × 2.5 mm body)** | **108** | **51** |
 | U1 | MCP2562FD | DIP-8 socket, vertical | 110 | 35 |
 | R1 | 120 Ω termination | THT axial, vertical | 110 | 22 |
 | SW1 | DPST term enable | THT slide switch | 110 | 14 |
@@ -201,6 +202,40 @@ All D-Sub IDC headers (J1..J11) are **2.54 mm pitch shrouded vertical**
 with polarity key, so the ribbon cable can only plug one way. J12 is a
 plain (non-shrouded) 1×4 pin header to save board area; if you want a
 polarity key, swap for a shrouded 1×4 (e.g., Würth 61300411121).
+
+### 1.6 What is intentionally NOT on this PCB
+
+- **Front-panel DB25-3** (bottom-left D-Sub of the front 3×3 grid). It
+  is **physically wired to the host motherboard's onboard parallel
+  port (LPT)**, not to the Arduino Due. The backplane v4 deliberately
+  has **no copper trace, no IDC header, and no pad** connected to
+  DB25-3. From `physerver`'s perspective the bottom-left front D-Sub
+  is reachable as `/dev/parport0` on the Linux host, not as
+  phycommander I/O. See `DEVICE_PINOUT.md` §1.1.
+- **Front-panel pushbuttons #2 and #3** (PC Reset, Main Power). These
+  wire directly from the motherboard's front-panel header to the panel
+  buttons, bypassing the backplane. Only the **top** button (Arduino
+  Reset) goes through the backplane via J12 (§11).
+- **SPI access**. The Due exposes MISO / MOSI / SCK on the ICSP 2×3
+  1.27 mm header on its top side, which would need a second PCB
+  cutout above it. Deferred to v5 if user demand emerges.
+
+### 1.7 NC-pin policy (free pins on connectors)
+
+Spare / unassigned pins on the top-side connectors are handled
+deterministically: tied to backplane GND where electrically safe to do
+so (provides extra shielding inside the IDC ribbon cable and avoids
+floating wires), left explicitly NC where grounding would be wrong.
+
+| Connector | Free pins | Decision | Reason |
+|---|---|---|---|
+| J1..J8 (front D-Sub IDCs) | none — all 140 pins populated with signals + GND/AGND | n/a | front pinout is full by design |
+| J9 (DB9-CAN rear) | 1, 4, 6, 8, 9 | **all tied to GND** | per §5.9, allowed for the closed phycommander bench; CiA 303-1 compatibility note included |
+| J10 (DB9-JTAG rear) | 7 (nTRST) | **pulled HIGH to +3.3 V via R3 = 10 kΩ** | grounding nTRST would hold the JTAG TAP in permanent reset and break debugging; HIGH is the JTAG-not-in-reset state |
+| J11 (JTAG bridge) | 7 (KEY position) | **tied to GND** | KEY is electrically NC in the ARM Cortex standard; grounding is harmless and shields the adjacent TDI line on the pigtail |
+| J12 (panel button + LED) | none — all 4 pins populated | n/a | |
+| H_D22 pair 17 / 18 (bottom-side mating header) | 4 pads with no electrical destination on the Due female socket on most revisions | **left NC** | some Mega R3 / Due revisions route 5 V or GND to those positions; tying the backplane side to GND would short Due 5 V on those revisions. Safer to leave NC and verify the actual Due before populating. |
+| Other bottom-side mating header NC pins (e.g., H_PWR p1 IOREF, p7 VIN, p8) | various | **left NC** | the Due drives some of these (IOREF = 3.3 V output, VIN = ~7-12 V input); grounding them would short Due regulator outputs. |
 
 ---
 
@@ -225,6 +260,7 @@ polarity key, swap for a shrouded 1×4 (e.g., Würth 61300411121).
 | U1-socket | DIP-8 turned-pin socket | 1 | €0.30 | Optional but recommended (lets you swap U1 without desoldering) |
 | R1 | 120 Ω 1/4 W axial | 1 | €0.05 | CAN bus termination resistor |
 | R2 | 220 Ω 1/4 W axial | 1 | €0.05 | LED current-limit on J12 pin 1 (sizes the front-panel Arduino-Reset LED at ~6 mA for a 2 V Vf LED on +3.3 V) |
+| R3 | 10 kΩ 1/4 W axial | 1 | €0.05 | Pull-up on DB9-JTAG pin 7 (nTRST) so the JTAG TAP is not held in reset by default |
 | SW1 | Slide switch DPST, THT | 1 | €0.40 | Enable / disable CAN termination |
 | C1, C2 | 10 µF / 16 V electrolytic THT radial | 2 | €0.10 | CAN VDD + VIO bulk |
 | C3, C4 | 100 nF ceramic THT 5.08 mm | 2 | €0.05 | CAN U1 high-frequency decoupling |
@@ -613,42 +649,52 @@ carries MISO/MOSI/SCK) sits under the shield with no cutout. Adding
 SPI would require a second cutout + bridge header, deferred to v5
 if user demand emerges.
 
-### 5.9 DB9 #4 (rear) — CAN bus, CiA 303-1 pinout, 9 pins
+### 5.9 DB9 #4 (rear) — CAN bus, CiA 303-1 pinout (with GND-filled spares), 9 pins
 
-| Pin | Signal | Direction |
-|---|---|---|
-| 1 | NC (reserved CAN_V+) | — |
-| 2 | CAN_L | I/O (from MCP2562FD U1 pin 6) |
-| 3 | CAN_GND | tied to backplane GND |
-| 4 | NC | — |
-| 5 | CAN_SHLD | tied to chassis ground via 1 MΩ + 10 nF (or directly, depending on installation) |
-| 6 | NC (or GND) | optional GND |
-| 7 | CAN_H | I/O (from MCP2562FD U1 pin 7) |
-| 8 | NC (reserved error line) | — |
-| 9 | NC (reserved CAN_V+) | — |
+| Pin | Signal | Direction | Notes |
+|---|---|---|---|
+| 1 | **GND** (was reserved CAN_V+) | — | tied to backplane GND. **Deviates from CiA 303-1**: this pin is reserved for optional CAN bus power V+ in the spec. Phycommander never sources or sinks V+ on the bus, so this is safe for our closed-bench use. **Do not connect this DB9 to a third-party CAN node that may source CAN_V+ on pins 1 or 9 — the V+ rail would short to GND.** |
+| 2 | CAN_L | I/O (from MCP2562FD U1 pin 6) | differential low |
+| 3 | CAN_GND | — | tied to backplane GND |
+| 4 | **GND** (was reserved) | — | tied to backplane GND |
+| 5 | CAN_SHLD | — | tied to chassis ground via 1 MΩ + 10 nF (or directly, depending on installation). Separate from signal GND. |
+| 6 | **GND** | — | tied to backplane GND. Allowed by CiA 303-1 as optional GND on pin 6. |
+| 7 | CAN_H | I/O (from MCP2562FD U1 pin 7) | differential high |
+| 8 | **GND** (was reserved error line) | — | tied to backplane GND. Error line is rarely used; safe for our use. |
+| 9 | **GND** (was reserved CAN_V+) | — | tied to backplane GND. Same caveat as pin 1. |
 
 Pins 2 and 7 carry the differential pair. Routing on the backplane
 keeps these traces short (< 30 mm), parallel, and equal-length to
 preserve the differential impedance at the modest data rates of CAN
 (up to 1 Mbit/s).
 
+> **CAN compatibility note.** Tying pins 1, 4, 6, 8, 9 to GND is a
+> deliberate phycommander-specific choice that maximises spare-pin
+> shielding inside the chassis cable. If the bench is later connected
+> to a CANopen industrial network that uses pins 1 / 9 for bus power
+> (CAN_V+), cut those two GND traces on the backplane and leave the
+> pins NC. Marked with a separate silkscreen note next to J9.
+
 ### 5.10 DB9 #5 (rear) — DEBUG (SWD/JTAG), 9 pins
 
-| Pin | Signal | Source |
-|---|---|---|
-| 1 | VREF (3.3 V) | shield's +3V3 net (debugger senses target voltage here) |
-| 2 | TMS / SWDIO | JTAG bridge J11 p2 |
-| 3 | TCK / SWCLK | J11 p4 |
-| 4 | TDO / SWO | J11 p6 |
-| 5 | TDI | J11 p8 |
-| 6 | nRESET | J11 p10 |
-| 7 | nTRST | NC (or tied to nRESET via diode for legacy 20-pin JTAG) |
-| 8 | GND | shield's GND |
-| 9 | GND | shield's GND (extra return for shielded debugger cables) |
+| Pin | Signal | Source | Notes |
+|---|---|---|---|
+| 1 | VREF (3.3 V) | shield's +3V3 net | debugger senses target voltage here |
+| 2 | TMS / SWDIO | JTAG bridge J11 p2 | |
+| 3 | TCK / SWCLK | J11 p4 | |
+| 4 | TDO / SWO | J11 p6 | |
+| 5 | TDI | J11 p8 | |
+| 6 | nRESET | J11 p10 | active-low, open-drain |
+| 7 | nTRST | **pull-up to +3.3 V via 10 kΩ on backplane** | TAP test-reset is active-low and would HOLD the JTAG TAP in permanent reset if tied to GND, breaking the debugger. Pulled HIGH here so the TAP is "not in reset" by default. To use legacy 20-pin JTAG with TAP-RST, the user-side adapter cable can override this pull-up by driving pin 7 LOW. |
+| 8 | GND | shield's GND | |
+| 9 | GND | shield's GND | extra return for shielded debugger cables |
 
 Pinout matches `DEVICE_PINOUT.md` §2.4. The custom adapter cable
 (DB9 male ↔ ARM 10-pin 1.27 mm) documented there plugs into the
 debugger; build it once.
+
+The pull-up resistor on pin 7 is **R3 (10 kΩ THT axial)**, placed
+near J10 on the backplane. Adds one passive to the BOM.
 
 ---
 
@@ -781,7 +827,7 @@ on J11, mapped to the DB9 per `DEVICE_PINOUT.md` §2.4:
 | 4 | TCK / SWCLK | 3 |
 | 5 | GND | backplane GND |
 | 6 | TDO / SWO | 4 |
-| 7 | KEY | NC |
+| 7 | KEY → **GND** | tied to backplane GND. "KEY" is a polarity-key position in the ARM Cortex standard, electrically NC, so grounding it is harmless and provides extra shielding on the pigtail. |
 | 8 | TDI | 5 |
 | 9 | GND | backplane GND |
 | 10 | nRESET | 6 |
@@ -1011,4 +1057,4 @@ Migration steps for someone holding a v3 PCB:
 | v2 | 2026-04-14 | Passive standalone PCB, 140 × 80 mm single-layer home-fab, no active components, Arduino Due connected via wire harness from edge strips. Worked but cable management was messy. |
 | v3 | 2026-04-14 | Arduino Due shield: 101.6 × 53.34 mm exact Due footprint, double-sided home-fab with through-hole rivets for vias. 6 bottom-side mating headers, 9 top D-Sub IDC headers. Skeleton committed, never fabricated. |
 | v4 | 2026-05-09 | **120 × 100 mm 4-layer fab-service shield**: 8 bottom-side mating headers (above six + H_UART + H_AEXT) cover all firmware-published Due pins (12 ADC, 8 PWM, 16 DIN/DOUT, 2 DAC, 2 UART, 2 I2C, CAN0, JTAG). 10 top-side D-Sub IDC headers (3 front + 2 rear DB9). On-board MCP2562FD CAN transceiver with switchable termination. JTAG access via PCB cutout + pigtail to rear DB9 #5. DB25 #3 dropped (already wired to Intel host parallel port on the bench). |
-| **v4.1** | 2026-05-11 | **Added J12 (1×4 panel button + LED header) + R2 (220 Ω)** in the west margin. Routes the front-panel "Arduino Reset" pushbutton through Due `D3` (firmware-debounced soft reset) and the front-panel LED through Due `D4` (firmware-driven, eventually a heartbeat indicator). Replaces the legacy direct 4-wire harness from Due POWER to the panel. `H_DIG` pins 4 and 5 now route to J12 instead of being NC. |
+| **v4.1** | 2026-05-11 | (1) **Added J12 (1×4 panel button + LED header) + R2 (220 Ω)** in the west margin. Routes the front-panel "Arduino Reset" pushbutton through Due `D3` (firmware-debounced soft reset) and the front-panel LED through Due `D4` (firmware-driven, eventually a heartbeat indicator). Replaces the legacy direct 4-wire harness from Due POWER to the panel. `H_DIG` pins 4 and 5 now route to J12 instead of being NC. (2) **NC-pin policy** formalised in §1.7. All free pins on the rear DB9-CAN (J9 pins 1, 4, 6, 8, 9) tied to backplane GND (with a documented deviation from CiA 303-1 for CAN_V+ on pins 1 / 9). KEY pin on J11 (JTAG bridge) tied to GND. **R3 (10 kΩ pull-up)** added on DB9-JTAG (J10) pin 7 / nTRST so the JTAG TAP is not held in reset by default. Added §1.6 to make explicit what is intentionally NOT on this PCB (DB25-3 host LPT, pushbuttons #2/#3, SPI). |

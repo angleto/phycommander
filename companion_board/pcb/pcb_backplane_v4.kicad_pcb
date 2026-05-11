@@ -423,6 +423,22 @@
 		(effects (font (size 0.6 0.6) (thickness 0.10)))
 	)
 
+	;; R3 10k pull-up on DB9-JTAG pin 7 (nTRST). KiCad at (108, 49).
+	;; See PCB_BACKPLANE_PINOUT.md §5.10.
+	(gr_text "R3 10k (nTRST PU)" (at 108 46 0)
+		(layer "F.SilkS")
+		(uuid "77777777-0004-0000-0000-000000000001")
+		(effects (font (size 0.6 0.6) (thickness 0.10)))
+	)
+
+	;; Silk note next to J9 (DB9-CAN rear) for the deliberate
+	;; CiA 303-1 deviation (GND on spare pins).
+	(gr_text "J9 CAN: pins 1/4/6/8/9 = GND (see §5.9)" (at 71.5 50 0)
+		(layer "F.SilkS")
+		(uuid "77777777-0005-0000-0000-000000000001")
+		(effects (font (size 0.55 0.55) (thickness 0.10)))
+	)
+
 	;; Board ID silkscreen (top side, near MH3)
 	(gr_text "PHYCOMMANDER  IO  BACKPLANE  v4" (at 60 88 0)
 		(layer "F.SilkS")

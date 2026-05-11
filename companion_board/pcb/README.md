@@ -64,6 +64,7 @@ For each of 11 connectors, use **Add Footprint** (`A` shortcut). Positions below
 | J11 (JTAG bridge) | `Connector_PinHeader_2.54mm:PinHeader_2x05_P2.54mm_Vertical` | (109.5, 42) | F.Cu |
 | J12 (panel button + LED, 1×4) | `Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical` | (8, 60) | F.Cu |
 | R2 (220 Ω LED current limit) | `Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal` | (8, 56) | F.Cu |
+| R3 (10 kΩ nTRST pull-up) | `Resistor_THT:R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal` | (108, 49) | F.Cu |
 
 After placing each, delete the corresponding silkscreen text guide.
 

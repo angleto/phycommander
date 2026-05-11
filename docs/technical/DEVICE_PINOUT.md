@@ -203,7 +203,7 @@ Standard IBM PC DB9 RS-232 DTE pinout. Use a straight-through DB9 cable for null
 | 4 | TDO / SWO | PB5 | Test data out / SWV trace output |
 | 5 | TDI | PB4 | Test data in (JTAG only, NC for SWD) |
 | 6 | nRESET | SAM3X NRSTB (pin 68) | Active-low reset, open-drain |
-| 7 | nTRST | (SAM3X JTAGSEL is bond option; tie to NRSTB via diode or leave NC) | JTAG test reset, optional |
+| 7 | nTRST | pulled HIGH to +3.3 V via R3 = 10 kΩ on the backplane | JTAG TAP test-reset, optional. Pulled HIGH (TAP-not-in-reset) by default so the debugger works without driving this line; a JTAG cable that needs to assert TAP-RST can still drive it LOW through the pull-up |
 | 8 | GND | Due GND | Signal return |
 | 9 | GND | Due GND | Extra ground for shield / twisted-pair return |
 
@@ -253,21 +253,21 @@ This routing is short and contained inside the chassis; total Due-J1-to-DB9 trac
 
 **Function**: CAN bus connectivity for instrument integration. The ATSAM3X8E has two CAN controllers; CAN0 (pins PA0=CANRX0, PA1=CANTX0) is available. CAN1 conflicts with DOUT15 (PB14) and DAC0 (PB15) and is not usable without a firmware pin-mux change.
 
-**Pinout** (CiA 303-1, CANopen-compatible industrial standard):
+**Pinout** (CiA 303-1, CANopen-compatible industrial standard, with phycommander GND-fill on spare pins):
 
 | Pin | Signal | Direction | Notes |
 |---|---|---|---|
-| 1 | Reserved (optional CAN_V+ secondary) | — | Leave NC on most nodes |
+| 1 | **GND** (was reserved optional CAN_V+) | — | Tied to backplane GND on the phycommander. **Deviates from CiA 303-1**: do not connect to a third-party CAN node that sources CAN_V+ on pins 1 / 9, the V+ rail would short to GND. |
 | 2 | CAN_L | I/O | Differential low |
 | 3 | CAN_GND | — | Ground reference |
-| 4 | Reserved | — | NC |
-| 5 | CAN_SHLD | — | Cable shield (optional) |
-| 6 | GND (optional) | — | Tie to CAN_GND or leave NC |
+| 4 | **GND** (was reserved) | — | Tied to backplane GND |
+| 5 | CAN_SHLD | — | Cable shield (separate from signal GND, tied to chassis ground) |
+| 6 | **GND** | — | Tied to backplane GND (allowed by CiA 303-1 on pin 6) |
 | 7 | CAN_H | I/O | Differential high |
-| 8 | Reserved (error line) | — | NC |
-| 9 | CAN_V+ (optional, 7–36 V bus power) | — | Leave NC unless powering external nodes |
+| 8 | **GND** (was reserved error line) | — | Tied to backplane GND |
+| 9 | **GND** (was reserved CAN_V+) | — | Tied to backplane GND. Same caveat as pin 1. |
 
-> Strictly use this pinout. Commercial CAN cables (DSUB9) expect pins 2 and 7 to be CAN_L/CAN_H — don't remap them.
+> Strictly use this pinout for the differential pair (pins 2 / 7). Commercial CAN cables (DSUB9) expect pins 2 and 7 to be CAN_L / CAN_H — don't remap them. The five GND pins (1, 4, 6, 8, 9) are a phycommander-specific choice for spare-pin shielding inside the chassis cable, see `PCB_BACKPLANE_PINOUT.md` §5.9.
 
 **Required hardware inside chassis (backplane v4)**: the CAN transceiver subcircuit (MCP2562FD DIP-8 + 120 Ω termination + DPST term-enable switch + decoupling) lives **on the backplane PCB itself**, in the east margin (x=104..118 mm, y=10..50 mm). The Due's CANRX0 (PA1, D68) and CANTX0 (PA0, D69) are picked up from the `H_DAC` mating header (same header that brings out DAC0/DAC1) with traces shorter than 30 mm to the transceiver. The rear DB9 #4 receives the conditioned differential pair (CAN_H pin 7, CAN_L pin 2) via a standard 10-conductor IDC ribbon from backplane J9.
 
@@ -472,3 +472,4 @@ The rear DEBUG and CAN ports can be re-purposed if needed:
 | 1.1 | 2026-04-13 | Photo-confirmed physical layout: 3×3 D-Sub grid (DB25 left / DB15 center / DB9 right), 3 illuminated pushbuttons (Arduino Reset / PC Reset / Power), 5 banana jacks for +12V distribution. Rewrote rear panel section: current state vs proposed redesign (desiderata §3). Added §1.2 for front panel accessories. |
 | 1.2 | 2026-05-09 | Aligned with backplane v4 (`PCB_BACKPLANE_PINOUT.md` v4): updated §1.1 connector personality table (DB25-2 now CONTROL with 16 DOUT + 8 PWM; DB15-1/2/3 use ADC0-1/4-7/8-11; DB9-3 is COMM not Serial; DB25-3 explicitly NOT Arduino-driven, stays as host LPT breakout). Rewrote §2.4 JTAG wiring (now via PCB cutout + pigtail through backplane J11 → J10 → rear DB9, no direct chassis harness). Rewrote §2.5 CAN hardware (MCP2562FD subcircuit lives on backplane east margin, no separate daughter-PCB). Cable inventory §5 expanded: pigtail, 2 rear-DB9 IDC ribbons, parallel-port DB25-3 cable, 8 (not 9) front-panel ribbons. |
 | 1.3 | 2026-05-11 | Front-panel Arduino-Reset top button + LED are now routed through backplane J12 (1×4 header + R2 220 Ω LED limit). §1.2.1 updated: button connects to Due `D3` (firmware-debounced soft reset), LED cathode connects to Due `D4` (firmware-driven, future heartbeat). Direct 4-wire harness from Due POWER is replaced. Cable inventory §5: new cable 10 (J12 ▸ panel button+LED), old cable 10 (IEC mains) renumbered to 11. |
+| 1.4 | 2026-05-11 | Spare DB9 pins now explicitly grounded on the backplane: §2.5 CAN DB9 pins 1, 4, 6, 8, 9 tied to GND (phycommander-specific, deviates from CiA 303-1 reservations); §2.4 JTAG DB9 pin 7 (nTRST) pulled HIGH to +3.3 V via R3 = 10 kΩ on the backplane (grounding nTRST would have held the JTAG TAP in permanent reset). Front-panel DB25-3 → host-LPT routing reaffirmed: the backplane has no copper trace, IDC header, or pad connected to DB25-3. |

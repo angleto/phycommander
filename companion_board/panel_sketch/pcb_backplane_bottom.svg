@@ -1,259 +1,264 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="121.52mm" height="73.30mm"
-     viewBox="0 0 121.52 73.30"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="120mm" height="100mm"
+     viewBox="0 0 120 100"
      version="1.1">
 
-  <title>PCB Backplane v3 — BOTTOM layer master (Arduino Due shield, print 1:1, MIRROR before exposure)</title>
+  <title>PCB Backplane v4 — Bottom Layer (Arduino mating side, X-ray view, 1:1)</title>
   <desc>
-    Bottom-side master for the phycommander Arduino Due shield backplane PCB.
-    PCB: 101.52 × 53.30 mm. Drawn in TOP-VIEW coordinates so it superimposes
-    perfectly on the top master via the corner alignment marks.
-    *** PRINT MIRRORED HORIZONTALLY *** before UV exposure (so toner ends up
-    at the correct physical X,Y on the bottom side of the PCB when stacked).
-    Most printer drivers have a "mirror" or "flip horizontal" option for this.
-    Alignment marks and registration drills are IDENTICAL to the top master.
-    Bottom side carries the male pin headers facing DOWN, mating with the
-    Arduino Due's female headers.
+    1:1 scale placement guide for the phycommander I/O backplane v4
+    (120 x 100 mm, 4-layer Arduino Due shield), bottom side. Carries
+    8 male pin headers (~7 mm pin, non-stackable) facing DOWN that
+    mate with the Arduino Due's female sockets. Drawn in X-RAY view
+    (same coordinate system as the top SVG, looking through the PCB
+    from the top). Mirror horizontally if printing for any process
+    that exposes from the bottom-pad side. Coordinates in mm with
+    origin at the south-west corner of the backplane; SVG Y-axis is
+    flipped relative to the design doc (doc Y up, SVG Y down).
+    The two starred (*) headers H_UART and H_AEXT are placed at
+    standard Mega R3 / Due R3 extension positions but **must be
+    verified against an actual Arduino Due** before fabrication
+    (see PCB_BACKPLANE_PINOUT.md §1.4).
   </desc>
 
   <defs>
     <style type="text/css"><![CDATA[
-      .pcb-outline { fill: white; stroke: black; stroke-width: 0.2; }
-      .mhole       { fill: white; stroke: black; stroke-width: 0.25; }
-      .mhole-cross { stroke: black; stroke-width: 0.12; }
-      .align-cross { stroke: black; stroke-width: 0.3; fill: none; }
-      .align-ring  { fill: none; stroke: black; stroke-width: 0.25; }
-      .reg-drill   { fill: white; stroke: black; stroke-width: 0.25; }
-      .reg-drill-dot { fill: black; }
-      .header-outline { fill: white; stroke: black; stroke-width: 0.3; }
-      .pad         { fill: black; stroke: none; }
-      .pad-hole    { fill: white; stroke: none; }
-      .silk        { fill: black; font: 1.6px sans-serif; text-anchor: middle; }
-      .silk-sm     { fill: black; font: 1.2px sans-serif; text-anchor: middle; }
-      .label-big   { fill: black; font: 2.8px sans-serif; font-weight: bold; text-anchor: middle; }
-      .label-sm    { fill: black; font: 1.4px sans-serif; text-anchor: middle; }
-      .marker-text { fill: black; font: 1.3px sans-serif; }
-      .warn-text   { fill: black; font: 2.0px sans-serif; font-weight: bold; text-anchor: middle; }
+      .pcb-bg     { fill: #2a5a3a; }
+      .silk       { fill: none; stroke: #f5f5f5; stroke-width: 0.15; }
+      .ghost      { fill: none; stroke: #ffffff; stroke-width: 0.25; stroke-dasharray: 1.5,0.7; opacity: 0.45; }
+      .cutout     { fill: #fafafa; stroke: #1a1a1a; stroke-width: 0.20; }
+      .hole       { fill: #1a1a1a; stroke: #d0d0d0; stroke-width: 0.10; }
+      .pad        { fill: #c8a14a; stroke: none; }
+      .header     { fill: #1f1f1f; stroke: #f5f5f5; stroke-width: 0.18; }
+      .header-warn{ fill: #6a2a2a; stroke: #f5f5f5; stroke-width: 0.18; }
+      .label-ref  { font: bold 1.6px sans-serif; fill: #ffffff; text-anchor: middle; }
+      .label-pers { font: 1.3px sans-serif; fill: #ffffff; text-anchor: middle; }
+      .label-coord{ font: 1.2px sans-serif; fill: #ffffff; opacity: 0.65; text-anchor: middle; }
+      .label-area { font: italic 1.4px sans-serif; fill: #ffffff; text-anchor: middle; opacity: 0.7; }
+      .label-title{ font: bold 2.4px sans-serif; fill: #ffffff; text-anchor: start; }
+      .label-sub  { font: 1.4px sans-serif; fill: #ffffff; text-anchor: start; opacity: 0.85; }
+      .label-warn { font: bold 1.2px sans-serif; fill: #ffaaaa; text-anchor: middle; }
     ]]></style>
   </defs>
 
-  <!-- White background -->
-  <rect width="121.52" height="73.30" fill="white"/>
+  <!-- PCB substrate -->
+  <rect x="0" y="0" width="120" height="100" rx="0.8" ry="0.8" class="pcb-bg"/>
 
-  <!-- ========================================================== -->
-  <!-- ALIGNMENT MARKS (IDENTICAL to top master)                    -->
-  <!-- ========================================================== -->
-  <g id="align-marks">
-    <!-- TL -->
-    <line x1="3.0" y1="5.0" x2="7.0" y2="5.0" class="align-cross"/>
-    <line x1="5.0" y1="3.0" x2="5.0" y2="7.0" class="align-cross"/>
-    <circle cx="5.0" cy="5.0" r="1.2" class="align-ring"/>
-    <!-- TR -->
-    <line x1="114.52" y1="5.0" x2="118.52" y2="5.0" class="align-cross"/>
-    <line x1="116.52" y1="3.0" x2="116.52" y2="7.0" class="align-cross"/>
-    <circle cx="116.52" cy="5.0" r="1.2" class="align-ring"/>
-    <!-- BL -->
-    <line x1="3.0" y1="68.30" x2="7.0" y2="68.30" class="align-cross"/>
-    <line x1="5.0" y1="66.30" x2="5.0" y2="70.30" class="align-cross"/>
-    <circle cx="5.0" cy="68.30" r="1.2" class="align-ring"/>
-    <!-- BR -->
-    <line x1="114.52" y1="68.30" x2="118.52" y2="68.30" class="align-cross"/>
-    <line x1="116.52" y1="66.30" x2="116.52" y2="70.30" class="align-cross"/>
-    <circle cx="116.52" cy="68.30" r="1.2" class="align-ring"/>
+  <!-- Title block -->
+  <g transform="translate(2, 3)">
+    <text class="label-title">phycommander backplane v4</text>
+    <text x="0" y="2.8" class="label-sub">120 x 100 mm  ·  4-layer  ·  Arduino Due shield  ·  BOTTOM layer (X-ray)</text>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- REGISTRATION DRILL TARGETS (IDENTICAL to top master)         -->
-  <!-- ========================================================== -->
-  <g id="reg-drills">
-    <circle cx="5.0" cy="5.0" r="0.5" class="reg-drill"/>
-    <circle cx="5.0" cy="5.0" r="0.15" class="reg-drill-dot"/>
-    <text x="8.0" y="3.5" class="marker-text">REG-1 Ø1.0</text>
-    <circle cx="116.52" cy="68.30" r="0.5" class="reg-drill"/>
-    <circle cx="116.52" cy="68.30" r="0.15" class="reg-drill-dot"/>
-    <text x="103.5" y="71.0" class="marker-text">REG-2 Ø1.0</text>
+  <!-- Arduino Due footprint ghost outline -->
+  <g id="due-ghost">
+    <rect x="0" y="46.66" width="101.6" height="53.34" class="ghost"/>
+    <text x="50.8" y="74" class="label-area">Arduino Due R3 — female sockets up here</text>
+    <text x="50.8" y="77" class="label-area">(this layer's pins poke DOWN into them)</text>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- LAYER NOTE                                                   -->
-  <!-- ========================================================== -->
-  <text x="60.76" y="3.0" class="label-big">BOTTOM LAYER MASTER</text>
-  <text x="60.76" y="9.0" class="label-sm">phycommander Backplane v3 · Arduino Due shield · 101.52 × 53.30 mm · print 1:1 · view from TOP (looking through PCB) · MIRROR before printing on film</text>
-
-  <!-- Mirror warning banner (visible on the printed master before mirroring) -->
-  <text x="60.76" y="14.0" class="warn-text" style="fill:#cc0000">⚠ MIRROR HORIZONTAL BEFORE UV EXPOSURE ⚠</text>
-
-  <!-- ========================================================== -->
-  <!-- PCB OUTLINE (IDENTICAL to top master, 101.60 × 53.34 mm)     -->
-  <!-- ========================================================== -->
-  <rect x="10.0" y="10.0" width="101.60" height="53.34" rx="2.0" class="pcb-outline"/>
-
-  <!-- ========================================================== -->
-  <!-- MOUNTING HOLES (IDENTICAL to top master)                     -->
-  <!-- ========================================================== -->
+  <!-- Mounting holes (same 8 as top) -->
   <g id="mounting-holes">
-    <!-- M1 at PCB (15.24, 2.54) — datasheet-verified -->
-    <circle cx="25.24" cy="12.54" r="1.59" class="mhole"/>
-    <line x1="23.65" y1="12.54" x2="26.83" y2="12.54" class="mhole-cross"/>
-    <line x1="25.24" y1="10.95" x2="25.24" y2="14.13" class="mhole-cross"/>
-    <text x="25.24" y="9.5" class="silk-sm">M1</text>
-    <!-- M2 — approximate, verify in KiCad -->
-    <circle cx="25.24" cy="60.80" r="1.59" class="mhole"/>
-    <line x1="23.65" y1="60.80" x2="26.83" y2="60.80" class="mhole-cross"/>
-    <line x1="25.24" y1="59.21" x2="25.24" y2="62.39" class="mhole-cross"/>
-    <text x="25.24" y="65.0" class="silk-sm">M2*</text>
-    <!-- M3 at PCB (66.04, 35.56) — KiCad UNO R3 pattern, verify in CAD -->
-    <circle cx="76.04" cy="45.56" r="1.59" class="mhole"/>
-    <line x1="74.45" y1="45.56" x2="77.63" y2="45.56" class="mhole-cross"/>
-    <line x1="76.04" y1="43.97" x2="76.04" y2="47.15" class="mhole-cross"/>
-    <text x="76.04" y="49.5" class="silk-sm">M3*</text>
-    <!-- M4 at PCB (90.17, 2.54) — datasheet-verified -->
-    <circle cx="100.17" cy="12.54" r="1.59" class="mhole"/>
-    <line x1="98.58" y1="12.54" x2="101.76" y2="12.54" class="mhole-cross"/>
-    <line x1="100.17" y1="10.95" x2="100.17" y2="14.13" class="mhole-cross"/>
-    <text x="100.17" y="9.5" class="silk-sm">M4</text>
+    <circle cx="15.24" cy="49.20" r="1.6" class="hole"/>
+    <circle cx="90.17" cy="49.20" r="1.6" class="hole"/>
+    <circle cx="66.04" cy="82.22" r="1.6" class="hole"/>
+    <circle cx="15.24" cy="97.46" r="1.6" class="hole"/>
+    <circle cx="4"     cy="96"    r="1.6" class="hole"/>
+    <circle cx="116"   cy="96"    r="1.6" class="hole"/>
+    <circle cx="4"     cy="4"     r="1.6" class="hole"/>
+    <circle cx="116"   cy="4"     r="1.6" class="hole"/>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- BOTTOM-SIDE COMPONENTS: Arduino Due mating headers           -->
-  <!-- (male pin headers facing DOWN, mating with Due female sockets) -->
-  <!-- Positions are APPROXIMATE — verify against Arduino Due       -->
-  <!-- mechanical drawing before fabrication. Drawn in top-view     -->
-  <!-- coords (i.e., as if looking through the PCB from above).      -->
-  <!-- ========================================================== -->
-  <g id="bottom-components" transform="translate(10, 10)">
-
-    <!-- Arduino POWER header (1×8, bottom-left of board area) -->
-    <g transform="translate(2, 48)">
-      <rect x="0" y="0" width="20.32" height="3" class="header-outline"/>
-      <g class="pad">
-        <circle cx="1.27" cy="1.5" r="1.0"/><circle cx="1.27" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="3.81" cy="1.5" r="1.0"/><circle cx="3.81" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="6.35" cy="1.5" r="1.0"/><circle cx="6.35" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="8.89" cy="1.5" r="1.0"/><circle cx="8.89" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="11.43" cy="1.5" r="1.0"/><circle cx="11.43" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="13.97" cy="1.5" r="1.0"/><circle cx="13.97" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="16.51" cy="1.5" r="1.0"/><circle cx="16.51" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="19.05" cy="1.5" r="1.0"/><circle cx="19.05" cy="1.5" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="10.0" y="-0.6" class="silk-sm">POWER 1×8 (IOREF/RST/3V3/5V/GND/GND/VIN/NC)</text>
-    </g>
-
-    <!-- Arduino ANALOG header (1×8, A0–A7, lower-mid of board area) -->
-    <g transform="translate(26, 48)">
-      <rect x="0" y="0" width="20.32" height="3" class="header-outline"/>
-      <g class="pad">
-        <circle cx="1.27" cy="1.5" r="1.0"/><circle cx="1.27" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="3.81" cy="1.5" r="1.0"/><circle cx="3.81" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="6.35" cy="1.5" r="1.0"/><circle cx="6.35" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="8.89" cy="1.5" r="1.0"/><circle cx="8.89" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="11.43" cy="1.5" r="1.0"/><circle cx="11.43" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="13.97" cy="1.5" r="1.0"/><circle cx="13.97" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="16.51" cy="1.5" r="1.0"/><circle cx="16.51" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="19.05" cy="1.5" r="1.0"/><circle cx="19.05" cy="1.5" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="10.0" y="-0.6" class="silk-sm">ANALOG 1×8 (A0–A7)</text>
-    </g>
-
-    <!-- Arduino COMM header (1×10, top of board area) -->
-    <g transform="translate(2, 2)">
-      <rect x="0" y="0" width="25.4" height="3" class="header-outline"/>
-      <g class="pad">
-        <circle cx="1.27" cy="1.5" r="1.0"/><circle cx="1.27" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="3.81" cy="1.5" r="1.0"/><circle cx="3.81" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="6.35" cy="1.5" r="1.0"/><circle cx="6.35" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="8.89" cy="1.5" r="1.0"/><circle cx="8.89" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="11.43" cy="1.5" r="1.0"/><circle cx="11.43" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="13.97" cy="1.5" r="1.0"/><circle cx="13.97" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="16.51" cy="1.5" r="1.0"/><circle cx="16.51" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="19.05" cy="1.5" r="1.0"/><circle cx="19.05" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="21.59" cy="1.5" r="1.0"/><circle cx="21.59" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="24.13" cy="1.5" r="1.0"/><circle cx="24.13" cy="1.5" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="12.7" y="6.5" class="silk-sm">COMM 1×10 (D8–D13 + GND + AREF + SDA + SCL)</text>
-    </g>
-
-    <!-- Arduino DIGITAL D0–D7 header (1×8, top-right) -->
-    <g transform="translate(30, 2)">
-      <rect x="0" y="0" width="20.32" height="3" class="header-outline"/>
-      <g class="pad">
-        <circle cx="1.27" cy="1.5" r="1.0"/><circle cx="1.27" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="3.81" cy="1.5" r="1.0"/><circle cx="3.81" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="6.35" cy="1.5" r="1.0"/><circle cx="6.35" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="8.89" cy="1.5" r="1.0"/><circle cx="8.89" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="11.43" cy="1.5" r="1.0"/><circle cx="11.43" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="13.97" cy="1.5" r="1.0"/><circle cx="13.97" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="16.51" cy="1.5" r="1.0"/><circle cx="16.51" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="19.05" cy="1.5" r="1.0"/><circle cx="19.05" cy="1.5" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="10.0" y="6.5" class="silk-sm">DIGITAL 1×8 (D0–D7)</text>
-    </g>
-
-    <!-- 2×18 dual-row block (D22–D53), middle-east area -->
-    <!-- 18 pin pairs at 2.54 mm pitch, vertical orientation     -->
-    <g transform="translate(54, 8)">
-      <rect x="0" y="0" width="6" height="44.72" class="header-outline"/>
-      <g class="pad">
-        <!-- Generate 2x18 = 36 pads, columns at x=1.5, 4.5, rows at y=1.5+i*2.54 for i=0..17 -->
-        <circle cx="1.5"  cy="1.5" r="1.0"/><circle cx="1.5"  cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="1.5" r="1.0"/><circle cx="4.5"  cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="4.04" r="1.0"/><circle cx="1.5"  cy="4.04" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="4.04" r="1.0"/><circle cx="4.5"  cy="4.04" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="6.58" r="1.0"/><circle cx="1.5"  cy="6.58" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="6.58" r="1.0"/><circle cx="4.5"  cy="6.58" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="9.12" r="1.0"/><circle cx="1.5"  cy="9.12" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="9.12" r="1.0"/><circle cx="4.5"  cy="9.12" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="11.66" r="1.0"/><circle cx="1.5"  cy="11.66" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="11.66" r="1.0"/><circle cx="4.5"  cy="11.66" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="14.20" r="1.0"/><circle cx="1.5"  cy="14.20" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="14.20" r="1.0"/><circle cx="4.5"  cy="14.20" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="16.74" r="1.0"/><circle cx="1.5"  cy="16.74" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="16.74" r="1.0"/><circle cx="4.5"  cy="16.74" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="19.28" r="1.0"/><circle cx="1.5"  cy="19.28" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="19.28" r="1.0"/><circle cx="4.5"  cy="19.28" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="21.82" r="1.0"/><circle cx="1.5"  cy="21.82" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="21.82" r="1.0"/><circle cx="4.5"  cy="21.82" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="24.36" r="1.0"/><circle cx="1.5"  cy="24.36" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="24.36" r="1.0"/><circle cx="4.5"  cy="24.36" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="26.90" r="1.0"/><circle cx="1.5"  cy="26.90" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="26.90" r="1.0"/><circle cx="4.5"  cy="26.90" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="29.44" r="1.0"/><circle cx="1.5"  cy="29.44" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="29.44" r="1.0"/><circle cx="4.5"  cy="29.44" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="31.98" r="1.0"/><circle cx="1.5"  cy="31.98" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="31.98" r="1.0"/><circle cx="4.5"  cy="31.98" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="34.52" r="1.0"/><circle cx="1.5"  cy="34.52" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="34.52" r="1.0"/><circle cx="4.5"  cy="34.52" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="37.06" r="1.0"/><circle cx="1.5"  cy="37.06" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="37.06" r="1.0"/><circle cx="4.5"  cy="37.06" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="39.60" r="1.0"/><circle cx="1.5"  cy="39.60" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="39.60" r="1.0"/><circle cx="4.5"  cy="39.60" r="0.5" class="pad-hole"/>
-        <circle cx="1.5"  cy="42.14" r="1.0"/><circle cx="1.5"  cy="42.14" r="0.5" class="pad-hole"/>
-        <circle cx="4.5"  cy="42.14" r="1.0"/><circle cx="4.5"  cy="42.14" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="3.0" y="-1.0" class="silk-sm">2×18  D22..D53</text>
-      <text x="-2.0" y="22.0" class="silk-sm" transform="rotate(-90 -2 22)">DIN 0–15 = even pins (D22, 24, 26 ... 52)  ·  DOUT 0–15 = odd pins (D23, 25, 27 ... 53)</text>
-    </g>
-
-    <!-- DAC/CAN small header (1×6, east edge of Due) -->
-    <g transform="translate(82, 22)">
-      <rect x="0" y="0" width="3" height="15.24" class="header-outline"/>
-      <g class="pad">
-        <circle cx="1.5" cy="1.5" r="1.0"/><circle cx="1.5" cy="1.5" r="0.5" class="pad-hole"/>
-        <circle cx="1.5" cy="4.04" r="1.0"/><circle cx="1.5" cy="4.04" r="0.5" class="pad-hole"/>
-        <circle cx="1.5" cy="6.58" r="1.0"/><circle cx="1.5" cy="6.58" r="0.5" class="pad-hole"/>
-        <circle cx="1.5" cy="9.12" r="1.0"/><circle cx="1.5" cy="9.12" r="0.5" class="pad-hole"/>
-        <circle cx="1.5" cy="11.66" r="1.0"/><circle cx="1.5" cy="11.66" r="0.5" class="pad-hole"/>
-        <circle cx="1.5" cy="14.20" r="1.0"/><circle cx="1.5" cy="14.20" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="6.0" y="3.0" class="silk-sm">1×6</text>
-      <text x="6.0" y="6.0" class="silk-sm">DAC0</text>
-      <text x="6.0" y="9.0" class="silk-sm">DAC1</text>
-      <text x="6.0" y="12.0" class="silk-sm">CAN..</text>
-    </g>
-
+  <!-- JTAG cutout (passes through) -->
+  <g id="jtag-cutout">
+    <rect x="9" y="70.5" width="14" height="7" rx="1" ry="1" class="cutout"/>
+    <text x="16" y="74" class="label-coord" style="fill:#1a1a1a; opacity:0.85">JTAG cutout (Due-J1 below)</text>
   </g>
 
-  <!-- Footer note -->
-  <text x="60.76" y="72.5" class="silk-sm">align corner crosses with top master · Arduino header positions APPROXIMATE — verify against Arduino Due mechanical drawing before final fab</text>
+  <!-- ============================================================ -->
+  <!-- Arduino Due mating headers (8 total) -->
+  <!-- All male pin headers facing DOWN, ~7mm pin length, non-stackable -->
+  <!-- Position in doc coords (origin SW), SVG Y = 100 - doc Y -->
+  <!-- ============================================================ -->
+
+  <!-- H_PWR (POWER 1x8) at south-west of Due -->
+  <!-- Doc center (14, 1.5) -> SVG (14, 98.5); span ~17.78 wide x ~2.54 tall -->
+  <g id="H_PWR">
+    <rect x="5.11" y="97.23" width="17.78" height="2.54" class="header"/>
+    <g class="pad">
+      <circle cx="6.38"  cy="98.5" r="0.5"/>
+      <circle cx="8.92"  cy="98.5" r="0.5"/>
+      <circle cx="11.46" cy="98.5" r="0.5"/>
+      <circle cx="14.00" cy="98.5" r="0.5"/>
+      <circle cx="16.54" cy="98.5" r="0.5"/>
+      <circle cx="19.08" cy="98.5" r="0.5"/>
+      <circle cx="21.62" cy="98.5" r="0.5"/>
+      <circle cx="24.16" cy="98.5" r="0.5"/>
+    </g>
+    <text x="14" y="95" class="label-ref">H_PWR</text>
+    <text x="14" y="93" class="label-coord">1x8: VIN/GND/GND/5V/3V3/RST/IOREF/NC</text>
+  </g>
+
+  <!-- H_ANA (ANALOG 1x8) at south, east of POWER -->
+  <!-- Doc center (42, 1.5) -> SVG (42, 98.5) -->
+  <g id="H_ANA">
+    <rect x="33.11" y="97.23" width="17.78" height="2.54" class="header"/>
+    <g class="pad">
+      <circle cx="34.38" cy="98.5" r="0.5"/>
+      <circle cx="36.92" cy="98.5" r="0.5"/>
+      <circle cx="39.46" cy="98.5" r="0.5"/>
+      <circle cx="42.00" cy="98.5" r="0.5"/>
+      <circle cx="44.54" cy="98.5" r="0.5"/>
+      <circle cx="47.08" cy="98.5" r="0.5"/>
+      <circle cx="49.62" cy="98.5" r="0.5"/>
+      <circle cx="52.16" cy="98.5" r="0.5"/>
+    </g>
+    <text x="42" y="95" class="label-ref">H_ANA</text>
+    <text x="42" y="93" class="label-coord">1x8: A0..A7 (ADC0..7)</text>
+  </g>
+
+  <!-- H_AEXT (analog extension 1x6) at south-east of Due  *** VERIFY *** -->
+  <!-- Doc center (62, 1.5) -> SVG (62, 98.5) -->
+  <g id="H_AEXT">
+    <rect x="55.65" y="97.23" width="12.7" height="2.54" class="header-warn"/>
+    <g class="pad">
+      <circle cx="56.92" cy="98.5" r="0.5"/>
+      <circle cx="59.46" cy="98.5" r="0.5"/>
+      <circle cx="62.00" cy="98.5" r="0.5"/>
+      <circle cx="64.54" cy="98.5" r="0.5"/>
+      <circle cx="67.08" cy="98.5" r="0.5"/>
+      <circle cx="69.62" cy="98.5" r="0.5"/>
+    </g>
+    <text x="62" y="95" class="label-ref">H_AEXT *</text>
+    <text x="62" y="93" class="label-coord">1x6: A8..A11 + D70/D71</text>
+    <text x="62" y="91" class="label-warn">verify on real Due</text>
+  </g>
+
+  <!-- H_COM (COMM 1x10) at north, west side -->
+  <!-- Doc center (20, 51) -> SVG (20, 49) -->
+  <g id="H_COM">
+    <rect x="8.57" y="47.73" width="22.86" height="2.54" class="header"/>
+    <g class="pad">
+      <circle cx="9.84"  cy="49" r="0.5"/>
+      <circle cx="12.38" cy="49" r="0.5"/>
+      <circle cx="14.92" cy="49" r="0.5"/>
+      <circle cx="17.46" cy="49" r="0.5"/>
+      <circle cx="20.00" cy="49" r="0.5"/>
+      <circle cx="22.54" cy="49" r="0.5"/>
+      <circle cx="25.08" cy="49" r="0.5"/>
+      <circle cx="27.62" cy="49" r="0.5"/>
+      <circle cx="30.16" cy="49" r="0.5"/>
+      <circle cx="32.70" cy="49" r="0.5"/>
+    </g>
+    <text x="20" y="52.5" class="label-ref">H_COM</text>
+    <text x="20" y="54.5" class="label-coord">1x10: D8..D13/GND/AREF/SDA/SCL</text>
+  </g>
+
+  <!-- H_UART (UART/I2C extension 1x8) at north-center, between COMM and DIGITAL  *** VERIFY *** -->
+  <!-- Doc center (50, 51) -> SVG (50, 49) -->
+  <g id="H_UART">
+    <rect x="41.11" y="47.73" width="17.78" height="2.54" class="header-warn"/>
+    <g class="pad">
+      <circle cx="42.38" cy="49" r="0.5"/>
+      <circle cx="44.92" cy="49" r="0.5"/>
+      <circle cx="47.46" cy="49" r="0.5"/>
+      <circle cx="50.00" cy="49" r="0.5"/>
+      <circle cx="52.54" cy="49" r="0.5"/>
+      <circle cx="55.08" cy="49" r="0.5"/>
+      <circle cx="57.62" cy="49" r="0.5"/>
+      <circle cx="60.16" cy="49" r="0.5"/>
+    </g>
+    <text x="50" y="52.5" class="label-ref">H_UART *</text>
+    <text x="50" y="54.5" class="label-coord">1x8: D14..D21 (TX3/RX3/.../SDA/SCL)</text>
+    <text x="50" y="56.5" class="label-warn">verify on real Due</text>
+  </g>
+
+  <!-- H_DIG (DIGITAL 1x8) at north, east side -->
+  <!-- Doc center (75, 51) -> SVG (75, 49) -->
+  <g id="H_DIG">
+    <rect x="66.11" y="47.73" width="17.78" height="2.54" class="header"/>
+    <g class="pad">
+      <circle cx="67.38" cy="49" r="0.5"/>
+      <circle cx="69.92" cy="49" r="0.5"/>
+      <circle cx="72.46" cy="49" r="0.5"/>
+      <circle cx="75.00" cy="49" r="0.5"/>
+      <circle cx="77.54" cy="49" r="0.5"/>
+      <circle cx="80.08" cy="49" r="0.5"/>
+      <circle cx="82.62" cy="49" r="0.5"/>
+      <circle cx="85.16" cy="49" r="0.5"/>
+    </g>
+    <text x="75" y="52.5" class="label-ref">H_DIG</text>
+    <text x="75" y="54.5" class="label-coord">1x8: D0(RX)..D7</text>
+  </g>
+
+  <!-- H_D22 (2x18 dual block) on east edge of Due -->
+  <!-- Doc center (97, 25) -> SVG (97, 75); body 5.08 wide x 43.18 tall vertical -->
+  <g id="H_D22">
+    <rect x="94.46" y="53.41" width="5.08" height="43.18" class="header"/>
+    <!-- Pin grid: 18 rows x 2 cols, 2.54mm pitch -->
+    <g class="pad">
+      <g transform="translate(95.73, 54.68)">
+        <!-- 18 rows of 2 pins -->
+        <circle cx="0"     cy="0" r="0.5"/><circle cx="2.54" cy="0" r="0.5"/>
+        <circle cx="0"     cy="2.54" r="0.5"/><circle cx="2.54" cy="2.54" r="0.5"/>
+        <circle cx="0"     cy="5.08" r="0.5"/><circle cx="2.54" cy="5.08" r="0.5"/>
+        <circle cx="0"     cy="7.62" r="0.5"/><circle cx="2.54" cy="7.62" r="0.5"/>
+        <circle cx="0"     cy="10.16" r="0.5"/><circle cx="2.54" cy="10.16" r="0.5"/>
+        <circle cx="0"     cy="12.7" r="0.5"/><circle cx="2.54" cy="12.7" r="0.5"/>
+        <circle cx="0"     cy="15.24" r="0.5"/><circle cx="2.54" cy="15.24" r="0.5"/>
+        <circle cx="0"     cy="17.78" r="0.5"/><circle cx="2.54" cy="17.78" r="0.5"/>
+        <circle cx="0"     cy="20.32" r="0.5"/><circle cx="2.54" cy="20.32" r="0.5"/>
+        <circle cx="0"     cy="22.86" r="0.5"/><circle cx="2.54" cy="22.86" r="0.5"/>
+        <circle cx="0"     cy="25.4" r="0.5"/><circle cx="2.54" cy="25.4" r="0.5"/>
+        <circle cx="0"     cy="27.94" r="0.5"/><circle cx="2.54" cy="27.94" r="0.5"/>
+        <circle cx="0"     cy="30.48" r="0.5"/><circle cx="2.54" cy="30.48" r="0.5"/>
+        <circle cx="0"     cy="33.02" r="0.5"/><circle cx="2.54" cy="33.02" r="0.5"/>
+        <circle cx="0"     cy="35.56" r="0.5"/><circle cx="2.54" cy="35.56" r="0.5"/>
+        <circle cx="0"     cy="38.1" r="0.5"/><circle cx="2.54" cy="38.1" r="0.5"/>
+        <circle cx="0"     cy="40.64" r="0.5"/><circle cx="2.54" cy="40.64" r="0.5"/>
+        <!-- 18th row not drawn to leave room for label -->
+      </g>
+    </g>
+    <text x="89" y="75" class="label-ref" style="text-anchor:end">H_D22</text>
+    <text x="89" y="77" class="label-coord" style="text-anchor:end">2x18: D22..D53 (DIN/DOUT)</text>
+  </g>
+
+  <!-- H_DAC (DAC/CAN 1x6) on east edge above H_D22 -->
+  <!-- Doc center (97, 50) -> SVG (97, 50); body 5.08 wide x 12.7 tall vertical -->
+  <g id="H_DAC">
+    <rect x="94.46" y="43.65" width="5.08" height="12.7" class="header"/>
+    <g class="pad">
+      <g transform="translate(95.73, 44.92)">
+        <!-- Could be 1x6 vertical or 2x3; here drawn as 1x6 column on inner pin -->
+        <circle cx="0" cy="0" r="0.5"/>
+        <circle cx="0" cy="2.54" r="0.5"/>
+        <circle cx="0" cy="5.08" r="0.5"/>
+        <circle cx="0" cy="7.62" r="0.5"/>
+        <circle cx="0" cy="10.16" r="0.5"/>
+        <circle cx="0" cy="12.7" r="0.5"/>
+      </g>
+    </g>
+    <text x="89" y="48" class="label-ref" style="text-anchor:end">H_DAC</text>
+    <text x="89" y="50" class="label-coord" style="text-anchor:end">1x6: DAC0/1, CANRX/TX, GND</text>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- East margin annotation: bottom-side area below the CAN xceiver -->
+  <!-- (component bodies are on TOP layer; bottom layer just shows pad arrays) -->
+  <!-- ============================================================ -->
+  <g id="east-margin">
+    <rect x="102.5" y="49" width="15" height="44" rx="0.6" ry="0.6" class="silk"/>
+    <text x="110" y="51.5" class="label-area">CAN xceiver</text>
+    <text x="110" y="68" class="label-coord">(component pads,</text>
+    <text x="110" y="70.5" class="label-coord">no bottom-side</text>
+    <text x="110" y="73" class="label-coord">parts on this</text>
+    <text x="110" y="75.5" class="label-coord">layer)</text>
+  </g>
+
+  <!-- Footer -->
+  <g id="legend" transform="translate(2, 96)">
+    <text x="0" y="0" class="label-coord" style="text-anchor:start; opacity:0.6">X-ray view: same coords as top SVG. Two starred (*) headers = standard Mega R3 / Due R3 positions, VERIFY on real Due. Mirror Y if printing for bottom-pad-side exposure.</text>
+  </g>
+
 </svg>

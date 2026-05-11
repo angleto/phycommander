@@ -53,18 +53,17 @@ Full pin-by-pin tables are in [`PCB_BACKPLANE_PINOUT.md` §5](PCB_BACKPLANE_PINO
 
 All signals are native **3.3 V CMOS** — backplane PCB v2 is pure passive routing. External breakout boards (user-built, application-specific) handle level shifting, opto-isolation, or analog conditioning if needed.
 
-| Label | Connector | Personality | Signals |
+| Label | Connector | Personality | Signals (per backplane v4) |
 |---|---|---|---|
-| **DB25-1** | DB25 female | FULL SENSING | 16 DIN + 8 ADC + AGND |
-| **DB25-2** | DB25 female | FULL CONTROL | 16 DOUT + 2 DAC + 3 PWM + 5V + 3.3V + AREF + GND |
-| **DB25-3** | DB25 female | Control-duplicate + COMMS | 16 DOUT (dup) + UART + SPI + I2C + 5V + GND |
-|  | | | **⚠ As-built on the original Intel DN2800MT chassis, the bottom-left DB25 (DB25-3 position) is wired to the host motherboard's onboard parallel port, NOT to the Arduino Due. The planned backplane-PCB routing above describes the intended shield design (not yet fabricated — see README). Treat DB25-3 on the current bench as a parallel-port breakout, not as an Arduino-driven I/O.** |
-| **DB15-1** | DB15 female | Mixed ch 0–3 | 4 DIN + 4 DOUT + 2 ADC + 2 DAC + 3.3V + AGND + GND |
-| **DB15-2** | DB15 female | Mixed ch 4–7 + PWM | 4 DIN + 4 DOUT + 2 ADC + 3 PWM + 3.3V + GND |
-| **DB15-3** | DB15 female | Analog focus + DIN 8–11 | 4 ADC + 2 DAC + 4 DIN + 2 DOUT + AREF + 3.3V + AGND |
-| **DB9-1** | DB9 female | Quick Analog | 4 ADC + 2 DAC + AREF + 3.3V + AGND |
-| **DB9-2** | DB9 female | Quick Digital high-channel (ch 12–15) | 4 DIN + 4 DOUT + GND |
-| **DB9-3** | DB9 female | Quick Serial | UART + SPI + I2C + 5V + GND |
+| **DB25-1** | DB25 female | SENSING | 16 DIN + 8 ADC (0–7) + AGND |
+| **DB25-2** | DB25 female | CONTROL | 16 DOUT + 8 PWM + GND |
+| **DB25-3** | DB25 female | **NOT Arduino-driven** | Wired to host motherboard's onboard parallel port (LPT). Backplane v4 deliberately does not route this connector — the bottom-left DB25 stays as a parallel-port breakout for the Linux host. Treat as `/dev/parport0` from userspace, not as phycommander I/O. |
+| **DB15-1** | DB15 female | Bank Low (ch 0–3) | 4 DIN + 4 DOUT + ADC0/1 + DAC0/1 + 3.3V + AGND + GND |
+| **DB15-2** | DB15 female | Bank Mid (ch 4–7) | 4 DIN + 4 DOUT + ADC4/5/6/7 + DAC0 + 3.3V + GND |
+| **DB15-3** | DB15 female | Bank High (ch 8–11) | 4 DIN + 4 DOUT + ADC8/9/10/11 + AREF + 3.3V + AGND |
+| **DB9-1** | DB9 female | Quick Analog | ADC0–3 + DAC0/1 + AREF + 3.3V + AGND |
+| **DB9-2** | DB9 female | Quick Digital High (ch 12–15) | 4 DIN + 4 DOUT + GND |
+| **DB9-3** | DB9 female | Quick COMM | UART1 + UART2 + I2C0 + 5V + 3.3V + GND |
 
 **Physical arrangement** (confirmed from photo 2026-04-13): **3×3 grid, columns by connector size**. Left column = DB25 × 3 (top to bottom: DB25-1, DB25-2, DB25-3). Center column = DB15 × 3. Right column = DB9 × 3. This arrangement keeps similar-width connectors grouped which looks clean and makes cable labeling easier (each column has one type).
 
@@ -78,17 +77,18 @@ Beyond the 9 D-Subs the front panel carries additional elements that are **not r
 
 Three momentary pushbuttons with integrated LEDs, stacked vertically on the right side of the front panel.
 
-| Position | Function | Button wiring | LED indicates | LED driver |
+| Position | Function | Button wiring (backplane v4) | LED indicates | LED driver |
 |---|---|---|---|---|
-| **Top** | Arduino Due Reset | Button → Due RESET pin (POWER header). Active-low, Due has internal pull-up. No external components needed | Arduino powered (+3.3 V present) | LED anode → Due +3.3 V via 220 Ω series, LED cathode → GND |
+| **Top** | Arduino Due Reset | Button → backplane **J12 p3** (`RST_BTN`, routed to Due `D3`) ↔ **J12 p4** (`BTN_GND`). Active-low, Due has internal pull-up. Firmware debounces 50 ms and triggers a software reset via `RSTC_CR` | Firmware health (once `D4` driver lands); currently just confirms `D4` initialised | LED anode → backplane **J12 p1** (`LED_A`, current-limited by R2 = 220 Ω on backplane) ↔ LED cathode → **J12 p2** (`LED_K`, to Due `D4`, firmware sinks LOW = LED on) |
 | **Mid** | PC Reset | Button → motherboard front-panel RESET# header (FPRST) | Host booted / PWR_OK | Motherboard PWR_OK output or +3.3V_SB rail via series resistor |
 | **Bot** | Main Power ON/OFF | Button → motherboard front-panel PWRBTN# header (ATX soft-power, momentary pulse) | PSU +12 V live | +12 V rail via ~1.2 kΩ series resistor |
 
 **Notes**:
-- All three buttons are momentary (not latching). Power-on is ATX soft-start logic (pulse the PWRBTN# low briefly), the motherboard's firmware does the actual state transition
-- **Arduino reset button is wired directly from Due POWER header to the panel button**, bypassing the backplane PCB (decision 2026-04-14, Option 1). 4-wire harness: RESET, GND, +3.3 V (→220Ω→LED+), GND (←LED−). See `PCB_BACKPLANE_PINOUT.md` §8.
-- The Arduino Reset LED indicates **+3.3 V present** only (not firmware health). Future firmware change can toggle a spare GPIO for heartbeat behavior; LED can be rewired to that line if/when implemented.
-- Consider a status summary silk-screen below each button, e.g. "DUE", "PC", "POWER"
+- All three buttons are momentary (not latching). Power-on is ATX soft-start logic (pulse the PWRBTN# low briefly), the motherboard's firmware does the actual state transition.
+- **The Arduino Reset top button + LED are routed through the backplane PCB (J12)** since v4. The legacy direct harness from Due POWER to panel (used in v3 and earlier) is no longer assembled. 4-conductor cable from backplane J12 to the front panel carries: LED_A, LED_K, RST_BTN, BTN_GND. See `PCB_BACKPLANE_PINOUT.md` §11.
+- Reset behaviour: D3-driven soft reset (firmware-debounced 50 ms, then `RSTC_CR = 0xA500000D`). If a hung-firmware "panic" reset is needed, rewire J12 p3 to the `RESET` net on `H_PWR` p2 instead (one trace change in KiCad).
+- The Arduino Reset LED is firmware-driven via `D4` (currently a reserved pin in PIN_MAP §3.1). Until firmware adds a `D4` output driver, the LED stays dark. Natural integration: mirror the on-board `D13` heartbeat on `D4` so the front-panel LED blinks at the same 1 Hz "healthy iso transport" rhythm.
+- Consider a status summary silk-screen below each button, e.g. "DUE", "PC", "POWER".
 
 #### 1.2.2 Four banana jacks (12 V power distribution)
 
@@ -228,7 +228,16 @@ The pinout preserves the canonical ARM 10-pin (2×5 1.27 mm) signal set minus on
 
 Build this cable once (5 min with flat ribbon + IDC crimping) and leave it next to the debugger.
 
-**Wiring inside chassis**: solder a 9-wire harness from the Arduino Due's on-board JTAG header (the 10-pin 1.27 mm connector labeled `J1` or `JTAG` on the Due PCB, located near the USB port) to the rear DB9 solder-cup connector. **Do not route through the I/O backplane PCB** — this is a direct harness, kept short (<15 cm) to minimize clock integrity issues at 10+ MHz SWCLK.
+**Wiring inside chassis (backplane v4)**: the JTAG signals are routed through the backplane PCB. Build a custom **JTAG pigtail** (~80 mm, 1.27 mm IDC plug ↔ 2.54 mm IDC plug) that goes:
+
+1. Due-J1 (10-pin 1.27 mm SMD header on the Due top side, near USB) ▸ pigtail enters
+2. The pigtail exits through a rectangular cutout in the backplane PCB directly above J1
+3. The pigtail's 2.54 mm end plugs into the **JTAG bridge header J11** on the backplane top side
+4. Backplane traces route from J11 to the **rear DB9 #5 IDC header J10** (10-conductor IDC ribbon to the rear DB9 solder-cup)
+
+See `PCB_BACKPLANE_PINOUT.md` §1.3 (cutout geometry), §5.10 (DB9 #5 pinout), §8 (full bridge schematic).
+
+This routing is short and contained inside the chassis; total Due-J1-to-DB9 trace length is typically <100 mm including pigtail, so SWCLK at 10+ MHz is not at risk.
 
 **Compatible debuggers**:
 
@@ -260,34 +269,9 @@ Build this cable once (5 min with flat ribbon + IDC crimping) and leave it next 
 
 > Strictly use this pinout. Commercial CAN cables (DSUB9) expect pins 2 and 7 to be CAN_L/CAN_H — don't remap them.
 
-**Required hardware inside chassis**: small transceiver PCB between Arduino Due CAN0 pins and the rear DB9. Recommended design:
+**Required hardware inside chassis (backplane v4)**: the CAN transceiver subcircuit (MCP2562FD DIP-8 + 120 Ω termination + DPST term-enable switch + decoupling) lives **on the backplane PCB itself**, in the east margin (x=104..118 mm, y=10..50 mm). The Due's CANRX0 (PA1, D68) and CANTX0 (PA0, D69) are picked up from the `H_DAC` mating header (same header that brings out DAC0/DAC1) with traces shorter than 30 mm to the transceiver. The rear DB9 #4 receives the conditioned differential pair (CAN_H pin 7, CAN_L pin 2) via a standard 10-conductor IDC ribbon from backplane J9.
 
-```
-          +5 V (from front-panel PCB +5V rail, ~50 mA peak)
-           │
-           ├── 10 µF bulk
-           │
-    Due ──PA0 (CANRX0)──┬─────────┐              ┌───── CAN_H (DB9 pin 7)
-    Due ──PA1 (CANTX0)──┤MCP2562FD├──+5V─┬──120Ω─┤
-    Due ──GND───────────┤(DIP-8)  │      │       └───── CAN_L (DB9 pin 2)
-    Due ──3V3 (VIO)─────┘         │      └─ SW1: on/off termination
-                                  │
-                                 GND ── CAN_GND (DB9 pin 3), CAN_SHLD (pin 5)
-```
-
-**Transceiver PCB BOM**:
-
-| Ref | Part | Package | Notes |
-|---|---|---|---|
-| U1 | MCP2562FD-E/P | DIP-8 | 3.3 V compatible VIO pin, through-hole |
-| R1 | 120 Ω 1/4 W | axial TH | CAN bus termination resistor |
-| SW1 | Slide switch DPST | TH | Enable/disable termination (position based on whether this node is at bus end) |
-| C1, C2 | 10 µF / 16 V electrolytic | TH radial | Bulk on VDD and VIO |
-| C3, C4 | 100 nF ceramic | TH 5.08 mm | Decoupling |
-| J1 | Pin header 1×5 male | TH 2.54 mm | To Due (PA0, PA1, 3V3, 5V, GND) |
-| J2 | Pin header 1×3 male | TH 2.54 mm | To DB9 (CAN_H, CAN_L, GND) |
-
-Total board size: ~30 × 40 mm, mounts near the rear panel with standoffs. Alternative: use a prebuilt SN65HVD230 breakout module (~20 × 15 mm, same functionality but SOIC transceiver — still through-hole friendly at the PCB interface level).
+See `PCB_BACKPLANE_PINOUT.md` §7 for the full transceiver schematic and BOM. There is **no separate daughter-PCB** in v4 — everything fits on the backplane.
 
 **Firmware status**: **not implemented** in the current firmware. The SAM3X CAN peripheral is supported by ASF (the driver is in `ATSAM3X8E_FW/ATSAM3X8E_FW/src/ASF/sam/drivers/can/`) but no phycommander-level code drives it. Enabling this feature requires:
 
@@ -419,20 +403,23 @@ DB25:
 
 ## 5. Cable inventory
 
-Cables needed to fully commission a unit:
+Cables needed to fully commission a unit (assuming backplane v4 is installed):
 
 | # | Cable | From | To | Length | Notes |
 |---|---|---|---|---|---|
 | 1 | COM ribbon (10-pin IDC to DB9M) | Motherboard COM1 header | Rear COM1 DB9M | ~20 cm | Off-the-shelf "PC COM cable" |
 | 2 | COM ribbon (10-pin IDC to DB9M) | Motherboard COM2 header | Rear COM2 DB9M | ~20 cm | Same |
-| 3 | Harness DB9F to ARM JTAG 2×5 1.27mm | Rear DEBUG DB9F | Arduino Due JTAG header | ~15 cm | Custom (see §2.3 diagram) |
-| 4 | Harness DB9M to transceiver PCB | Rear CAN DB9M | MCP2562FD PCB | ~10 cm | 3 wires (H/L/GND) + shield drain |
-| 5 | Harness 1×5 to Arduino Due | MCP2562FD PCB | Arduino Due pin headers (3.3V, 5V, GND, D66=PA0, D65=PA1) | ~10 cm | Dupont jumpers OK |
-| 6 | — (no cable) | Backplane PCB v3 (Arduino Due shield) | Plugs directly onto Due via male pin headers — no wire harness | — | See [`PCB_BACKPLANE_PINOUT.md`](PCB_BACKPLANE_PINOUT.md) §1.3 + §4 |
-| 7 | Ribbon 9/15/25-conductor | Backplane PCB top-side male pin headers (9× D-Sub) | Front panel DB9/DB15/DB25 solder cups | ~10 cm each | 9 cables total, IDC at PCB end, solder at panel end |
-| 8 | IEC C13 mains cable | Rear IEC C14 inlet (after redesign — see §3) | Wall | — | Standard |
+| 3 | DB25 ribbon (parallel-port type) | Motherboard LPT header | Front-panel DB25-3 (bottom-left) | ~25 cm | Standard PC parallel-port cable. DB25-3 is wired to the host parallel port, NOT to the backplane (see §1.1) |
+| 4 | JTAG pigtail (1.27 mm IDC ▸ flat ribbon ▸ 2.54 mm IDC) | Arduino Due-J1 (JTAG header on Due top side) | Backplane J11 (JTAG bridge header on backplane top side, accessed through PCB cutout above J1) | ~80 mm | Custom (see `PCB_BACKPLANE_PINOUT.md` §8); built once and stays inside the chassis |
+| 5 | IDC ribbon (10-conductor) to DB9 solder-cup | Backplane J9 (rear-CAN IDC) | Rear-panel CAN DB9M | ~15 cm | Standard 10-conductor IDC cable + DB9 solder-cup. Carries CAN_H, CAN_L, CAN_GND, shield drain |
+| 6 | IDC ribbon (10-conductor) to DB9 solder-cup | Backplane J10 (rear-JTAG IDC) | Rear-panel DEBUG DB9F | ~15 cm | Standard 10-conductor IDC cable + DB9 solder-cup. Carries SWD/JTAG signals + VREF + GND |
+| 7 | DB9 male ▸ ARM Cortex 10-pin (1.27 mm) adapter | Rear DEBUG DB9F (outside chassis) | External debugger (J-Link, ST-Link, etc.) | ~10–20 cm | Custom user-side adapter (see §2.4 ASCII diagram). Built once, kept next to the debugger |
+| 8 | — (no cable) | Backplane PCB v4 (Arduino Due shield) | Plugs directly onto Due via 8 male pin headers (POWER, ANALOG, COMM, DIGITAL, 2×18, DAC/CAN, UART, AEXT) — no wire harness | — | See `PCB_BACKPLANE_PINOUT.md` §1.4 + §4 |
+| 9 | IDC ribbon (26 / 16 / 10-conductor) | Backplane top-side D-Sub IDC headers (8 connectors: J1, J2 for DB25 + J3..J5 for DB15 + J6..J8 for front DB9) | Front-panel DB9 / DB15 / DB25 solder cups | ~10 cm each | 8 cables total, IDC at PCB end, solder cup at panel end |
+| 10 | 4-conductor flat cable (2.54 mm IDC plug ▸ crimp / solder ends) | Backplane J12 (top side, 1×4 panel-button/LED header) | Front-panel illuminated reset pushbutton (top button) — LED+/LED−/RST_BTN/BTN_GND | ~10–15 cm | Standard 4-wire cable, 2.54 mm IDC at PCB end. Carries LED supply (current-limited on backplane via R2) and the active-low button signal to Due `D3` |
+| 11 | IEC C13 mains cable | Rear IEC C14 inlet (after redesign — see §3) | Wall | — | Standard |
 
-Cables 1, 2, 8 are commodity items. Cables 3, 4, 5 are one-time custom builds. Cable 7 is done as part of chassis assembly. Cable 6 was needed in v2 (separate backplane PCB) — eliminated in v3 (Arduino Due shield design plugs directly).
+Cables 1, 2, 3, 11 are commodity items. Cables 4, 5, 6, 7, 10 are one-time custom builds. Cable 9 is done as part of chassis assembly (8 ribbon cables, one per Due-driven front-panel D-Sub). Cable 8 is the elimination of the wire harness that v2 needed: backplane v3 / v4 plug directly onto the Due with no intermediate cabling.
 
 ---
 
@@ -453,9 +440,9 @@ This section captures the decision process so future maintainers know why JTAG a
 
 - **CAN vs trigger I/O**: trigger sync is a nicher use case (scope/signal-generator synchronization in physics labs). Few users need it. If a specific application needs trigger I/O, a front-panel DOUT + DIN pair can do the job (3.3 V edge triggering is sufficient for most equipment).
 
-- **CAN vs I2C/SPI expansion bus**: the front DB9-3 (Quick Serial) already exposes I2C and SPI. A second expansion port on the rear would be redundant and would encourage internal-only accessories, which defeats the purpose of having a dedicated port.
+- **CAN vs I2C/SPI expansion bus**: the front DB9-3 (Quick COMM) already exposes 2 UARTs + I2C0. A second expansion port on the rear would be redundant and would encourage internal-only accessories, which defeats the purpose of having a dedicated port. (SPI is not exposed on backplane v4; if needed, add a second cutout above the Due's ICSP header in a future revision.)
 
-- **CAN's weakness**: firmware support is work, not zero-cost. Budget 1–2 days to implement. If this budget is a blocker, leave the CAN port wired but unpopulated (MCP2562FD socket empty) — install the chip later when the firmware is ready.
+- **CAN's weakness**: firmware support is work, not zero-cost. Budget 1–2 days to implement. If this budget is a blocker, leave the rear DB9 wired but the MCP2562FD DIP-8 socket on the backplane empty — populate the chip later when the firmware lands.
 
 ### 6.3 Options explicitly rejected
 
@@ -472,8 +459,8 @@ This section captures the decision process so future maintainers know why JTAG a
 ### 6.4 If requirements change
 
 The rear DEBUG and CAN ports can be re-purposed if needed:
-- Swapping CAN for RS-485 is a 1-hour job: replace the MCP2562FD PCB with a MAX485-based PCB (same DIP-8 footprint, same DB9, different pinout — use CiA 303-1's pin 2/7 for A/B)
-- DEBUG port can be repurposed as a generic "expansion UART" by rewiring the harness, but you'd lose the ability to debug externally — not recommended
+- Swapping CAN for RS-485 is a 30-minute job: pull the MCP2562FD out of its DIP-8 socket on the backplane, plug a MAX485 (same pinout family) into the same socket, change R1 from 120 Ω to 120 Ω still (RS-485 also uses 120 Ω term), rewire the rear DB9 to put A/B on the differential pin pair. Document the swap on the chassis label.
+- DEBUG port can be repurposed as a generic "expansion UART" by rewiring the JTAG pigtail and the backplane J11 ▸ J10 traces, but you'd lose the ability to debug externally — not recommended.
 
 ---
 
@@ -483,3 +470,5 @@ The rear DEBUG and CAN ports can be re-purposed if needed:
 |---|---|---|
 | 1.0 | 2026-04-13 | Initial document. Front panel 9× D-Sub cross-reference; rear panel 4× DB9 with COM1/COM2/DEBUG/CAN assignments. |
 | 1.1 | 2026-04-13 | Photo-confirmed physical layout: 3×3 D-Sub grid (DB25 left / DB15 center / DB9 right), 3 illuminated pushbuttons (Arduino Reset / PC Reset / Power), 5 banana jacks for +12V distribution. Rewrote rear panel section: current state vs proposed redesign (desiderata §3). Added §1.2 for front panel accessories. |
+| 1.2 | 2026-05-09 | Aligned with backplane v4 (`PCB_BACKPLANE_PINOUT.md` v4): updated §1.1 connector personality table (DB25-2 now CONTROL with 16 DOUT + 8 PWM; DB15-1/2/3 use ADC0-1/4-7/8-11; DB9-3 is COMM not Serial; DB25-3 explicitly NOT Arduino-driven, stays as host LPT breakout). Rewrote §2.4 JTAG wiring (now via PCB cutout + pigtail through backplane J11 → J10 → rear DB9, no direct chassis harness). Rewrote §2.5 CAN hardware (MCP2562FD subcircuit lives on backplane east margin, no separate daughter-PCB). Cable inventory §5 expanded: pigtail, 2 rear-DB9 IDC ribbons, parallel-port DB25-3 cable, 8 (not 9) front-panel ribbons. |
+| 1.3 | 2026-05-11 | Front-panel Arduino-Reset top button + LED are now routed through backplane J12 (1×4 header + R2 220 Ω LED limit). §1.2.1 updated: button connects to Due `D3` (firmware-debounced soft reset), LED cathode connects to Due `D4` (firmware-driven, future heartbeat). Direct 4-wire harness from Due POWER is replaced. Cable inventory §5: new cable 10 (J12 ▸ panel button+LED), old cable 10 (IEC mains) renumbered to 11. |

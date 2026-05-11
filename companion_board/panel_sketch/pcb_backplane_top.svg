@@ -1,307 +1,351 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="121.52mm" height="73.30mm"
-     viewBox="0 0 121.52 73.30"
+     xmlns:xlink="http://www.w3.org/1999/xlink"
+     width="120mm" height="100mm"
+     viewBox="0 0 120 100"
      version="1.1">
 
-  <title>PCB Backplane v3 — TOP layer master (Arduino Due shield, print 1:1)</title>
+  <title>PCB Backplane v4 — Top Layer (component side, 1:1 placement guide)</title>
   <desc>
-    Top-side master for the phycommander Arduino Due shield backplane PCB.
-    PCB: 101.52 × 53.30 mm (Arduino Due footprint exactly).
-    Canvas: 121.52 × 73.30 mm (10 mm tooling border around PCB for alignment marks and registration drills).
-    Print at 1:1 scale on transparency film. The 4 corner alignment crosses and 2 registration drill targets
-    are IDENTICAL to those on the bottom master — sandwich the photosensitized PCB between the two films,
-    pin them through the registration drills, and expose first one side then the other under UV.
-    All coordinates in mm. Black artwork on white background = standard for UV exposure.
+    1:1 scale placement guide for the phycommander I/O backplane v4
+    (120 x 100 mm, 4-layer Arduino Due shield). Top side carries:
+    10 D-Sub IDC headers (2 DB25 + 3 DB15 + 5 DB9), 1 JTAG bridge
+    header (2x5 2.54mm), and the CAN transceiver subcircuit
+    (MCP2562FD DIP-8 + 120 ohm termination + DPST switch + decoupling).
+    The Arduino Due footprint is shown as a dashed ghost outline.
+    JTAG cutout is shown as a clear-fill rounded rectangle.
+    Coordinates are in millimetres with origin at the south-west
+    corner of the backplane; SVG Y-axis is flipped relative to
+    PCB_BACKPLANE_PINOUT.md (doc Y up, SVG Y down). Print at "actual
+    size" / "100% scale" for a 1:1 transfer onto a real PCB.
   </desc>
 
   <defs>
     <style type="text/css"><![CDATA[
-      .pcb-outline { fill: white; stroke: black; stroke-width: 0.2; }
-      .mhole       { fill: white; stroke: black; stroke-width: 0.25; }
-      .mhole-cross { stroke: black; stroke-width: 0.12; }
-      .align-cross { stroke: black; stroke-width: 0.3; fill: none; }
-      .align-ring  { fill: none; stroke: black; stroke-width: 0.25; }
-      .reg-drill   { fill: white; stroke: black; stroke-width: 0.25; }
-      .reg-drill-dot { fill: black; }
-      .header-outline { fill: white; stroke: black; stroke-width: 0.3; }
-      .pad         { fill: black; stroke: none; }
-      .pad-hole    { fill: white; stroke: none; }
-      .silk        { fill: black; font: 1.6px sans-serif; text-anchor: middle; }
-      .silk-sm     { fill: black; font: 1.2px sans-serif; text-anchor: middle; }
-      .label-big   { fill: black; font: 2.8px sans-serif; font-weight: bold; text-anchor: middle; }
-      .label-sm    { fill: black; font: 1.4px sans-serif; text-anchor: middle; }
-      .marker-text { fill: black; font: 1.3px sans-serif; }
+      .pcb-bg     { fill: #2a5a3a; }
+      .silk       { fill: none; stroke: #f5f5f5; stroke-width: 0.15; }
+      .silk-fill  { fill: #f5f5f5; stroke: none; }
+      .ghost      { fill: none; stroke: #ffffff; stroke-width: 0.25; stroke-dasharray: 1.5,0.7; opacity: 0.45; }
+      .cutout     { fill: #fafafa; stroke: #1a1a1a; stroke-width: 0.20; }
+      .hole       { fill: #1a1a1a; stroke: #d0d0d0; stroke-width: 0.10; }
+      .pad        { fill: #c8a14a; stroke: none; }
+      .conn-body-dsub25 { fill: #1f1f1f; stroke: #f5f5f5; stroke-width: 0.20; }
+      .conn-body-dsub15 { fill: #1f1f1f; stroke: #f5f5f5; stroke-width: 0.20; }
+      .conn-body-dsub9  { fill: #1f1f1f; stroke: #f5f5f5; stroke-width: 0.20; }
+      .conn-body-jtag   { fill: #2a3a6a; stroke: #f5f5f5; stroke-width: 0.20; }
+      .ic-body          { fill: #1a1a1a; stroke: #f5f5f5; stroke-width: 0.20; }
+      .passive          { fill: #4a4a4a; stroke: #f5f5f5; stroke-width: 0.15; }
+      .switch           { fill: #6a4a3a; stroke: #f5f5f5; stroke-width: 0.20; }
+      .label-ref  { font: bold 1.6px sans-serif; fill: #ffffff; text-anchor: middle; }
+      .label-pers { font: 1.3px sans-serif; fill: #ffffff; text-anchor: middle; }
+      .label-coord{ font: 1.2px sans-serif; fill: #ffffff; opacity: 0.65; text-anchor: middle; }
+      .label-area { font: italic 1.4px sans-serif; fill: #ffffff; text-anchor: middle; opacity: 0.7; }
+      .label-title{ font: bold 2.4px sans-serif; fill: #ffffff; text-anchor: start; }
+      .label-sub  { font: 1.4px sans-serif; fill: #ffffff; text-anchor: start; opacity: 0.85; }
+      .label-pin  { font: 0.9px monospace; fill: #ffffff; text-anchor: middle; opacity: 0.75; }
     ]]></style>
   </defs>
 
-  <!-- White background (will be transparent on lucido) -->
-  <rect width="121.52" height="73.30" fill="white"/>
+  <!-- PCB substrate (board outline) -->
+  <rect x="0" y="0" width="120" height="100" rx="0.8" ry="0.8" class="pcb-bg"/>
 
-  <!-- ========================================================== -->
-  <!-- ALIGNMENT MARKS (identical on top and bottom masters)        -->
-  <!-- 4 corner crosses + center ring, ~3mm cross arms               -->
-  <!-- ========================================================== -->
-  <g id="align-marks">
-    <!-- TL -->
-    <line x1="3.0" y1="5.0" x2="7.0" y2="5.0" class="align-cross"/>
-    <line x1="5.0" y1="3.0" x2="5.0" y2="7.0" class="align-cross"/>
-    <circle cx="5.0" cy="5.0" r="1.2" class="align-ring"/>
-    <!-- TR -->
-    <line x1="114.52" y1="5.0" x2="118.52" y2="5.0" class="align-cross"/>
-    <line x1="116.52" y1="3.0" x2="116.52" y2="7.0" class="align-cross"/>
-    <circle cx="116.52" cy="5.0" r="1.2" class="align-ring"/>
-    <!-- BL -->
-    <line x1="3.0" y1="68.30" x2="7.0" y2="68.30" class="align-cross"/>
-    <line x1="5.0" y1="66.30" x2="5.0" y2="70.30" class="align-cross"/>
-    <circle cx="5.0" cy="68.30" r="1.2" class="align-ring"/>
-    <!-- BR -->
-    <line x1="114.52" y1="68.30" x2="118.52" y2="68.30" class="align-cross"/>
-    <line x1="116.52" y1="66.30" x2="116.52" y2="70.30" class="align-cross"/>
-    <circle cx="116.52" cy="68.30" r="1.2" class="align-ring"/>
+  <!-- Title block (silkscreen, top-left corner) -->
+  <g transform="translate(2, 3)">
+    <text class="label-title">phycommander backplane v4</text>
+    <text x="0" y="2.8" class="label-sub">120 x 100 mm  ·  4-layer  ·  Arduino Due shield  ·  TOP layer</text>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- REGISTRATION DRILL TARGETS (drill before exposure)            -->
-  <!-- 2 small holes at TL and BR corners — pin films + PCB together -->
-  <!-- ========================================================== -->
-  <g id="reg-drills">
-    <!-- TL drill: Ø 1.0 mm hole -->
-    <circle cx="5.0" cy="5.0" r="0.5" class="reg-drill"/>
-    <circle cx="5.0" cy="5.0" r="0.15" class="reg-drill-dot"/>
-    <text x="8.0" y="3.5" class="marker-text">REG-1 Ø1.0</text>
-    <!-- BR drill -->
-    <circle cx="116.52" cy="68.30" r="0.5" class="reg-drill"/>
-    <circle cx="116.52" cy="68.30" r="0.15" class="reg-drill-dot"/>
-    <text x="103.5" y="71.0" class="marker-text">REG-2 Ø1.0</text>
+  <!-- Arduino Due footprint (ghost outline) -->
+  <!-- Doc: x=0..101.6, y=0..53.34 (flush SW)  ->  SVG: x=0..101.6, y=46.66..100 -->
+  <g id="due-ghost">
+    <rect x="0" y="46.66" width="101.6" height="53.34" class="ghost"/>
+    <text x="50.8" y="74" class="label-area">Arduino Due R3 footprint (under shield)</text>
+    <text x="50.8" y="77" class="label-area">USB-B + DC jack on the west edge below</text>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- LAYER NOTE (top of canvas, outside PCB)                      -->
-  <!-- ========================================================== -->
-  <text x="60.76" y="3.0" class="label-big">TOP LAYER MASTER</text>
-  <text x="60.76" y="9.0" class="label-sm">phycommander Backplane v3 · Arduino Due shield · 101.52 × 53.30 mm · print 1:1 · top side faces up away from Due</text>
-
-  <!-- ========================================================== -->
-  <!-- PCB OUTLINE (101.60 × 53.34 mm per datasheet, at canvas (10,10)–(111.60,63.34)) -->
-  <!-- ========================================================== -->
-  <rect x="10.0" y="10.0" width="101.60" height="53.34" rx="2.0" class="pcb-outline"/>
-
-  <!-- ========================================================== -->
-  <!-- MOUNTING HOLES (Arduino Due M3 pattern, Ø 3.2 mm)            -->
-  <!-- M1 (13.97, 2.54), M2 (13.97, 50.80), M3 (66.04, 35.56), M4 (96.52, 2.54) in PCB coords -->
-  <!-- + canvas offset (10, 10)                                     -->
-  <!-- ========================================================== -->
+  <!-- Mounting holes (4 Due-native + 4 backplane corners) -->
   <g id="mounting-holes">
-    <!-- M1 (top-left) at PCB (15.24, 2.54) = canvas (25.24, 12.54) — datasheet-verified -->
-    <circle cx="25.24" cy="12.54" r="1.59" class="mhole"/>
-    <line x1="23.65" y1="12.54" x2="26.83" y2="12.54" class="mhole-cross"/>
-    <line x1="25.24" y1="10.95" x2="25.24" y2="14.13" class="mhole-cross"/>
-    <text x="25.24" y="9.5" class="silk-sm">M1</text>
-    <!-- M2 (bottom-left area) at PCB ~(15.24, 50.80) — APPROXIMATE, verify in KiCad -->
-    <circle cx="25.24" cy="60.80" r="1.59" class="mhole"/>
-    <line x1="23.65" y1="60.80" x2="26.83" y2="60.80" class="mhole-cross"/>
-    <line x1="25.24" y1="59.21" x2="25.24" y2="62.39" class="mhole-cross"/>
-    <text x="25.24" y="65.0" class="silk-sm">M2*</text>
-    <!-- M3 (middle-right) at PCB (66.04, 35.56) = canvas (76.04, 45.56) — KiCad UNO R3 pattern, verify in CAD -->
-    <circle cx="76.04" cy="45.56" r="1.59" class="mhole"/>
-    <line x1="74.45" y1="45.56" x2="77.63" y2="45.56" class="mhole-cross"/>
-    <line x1="76.04" y1="43.97" x2="76.04" y2="47.15" class="mhole-cross"/>
-    <text x="76.04" y="49.5" class="silk-sm">M3*</text>
-    <!-- M4 (top-right) at PCB (90.17, 2.54) = canvas (100.17, 12.54) — datasheet-verified -->
-    <circle cx="100.17" cy="12.54" r="1.59" class="mhole"/>
-    <line x1="98.58" y1="12.54" x2="101.76" y2="12.54" class="mhole-cross"/>
-    <line x1="100.17" y1="10.95" x2="100.17" y2="14.13" class="mhole-cross"/>
-    <text x="100.17" y="9.5" class="silk-sm">M4</text>
+    <circle cx="15.24" cy="49.20" r="1.6" class="hole"/>
+    <circle cx="90.17" cy="49.20" r="1.6" class="hole"/>
+    <circle cx="66.04" cy="82.22" r="1.6" class="hole"/>
+    <circle cx="15.24" cy="97.46" r="1.6" class="hole"/>
+    <circle cx="4"     cy="96"    r="1.6" class="hole"/>
+    <circle cx="116"   cy="96"    r="1.6" class="hole"/>
+    <circle cx="4"     cy="4"     r="1.6" class="hole"/>
+    <circle cx="116"   cy="4"     r="1.6" class="hole"/>
+    <text x="15.24" y="51.8" class="label-coord">MH1</text>
+    <text x="90.17" y="51.8" class="label-coord">MH2</text>
+    <text x="66.04" y="84.8" class="label-coord">MH3</text>
+    <text x="15.24" y="100"  class="label-coord">MH4</text>
+    <text x="4"     y="93"   class="label-coord">MH5</text>
+    <text x="116"   y="93"   class="label-coord">MH6</text>
+    <text x="4"     y="7"    class="label-coord">MH7</text>
+    <text x="116"   y="7"    class="label-coord">MH8</text>
   </g>
 
-  <!-- ========================================================== -->
-  <!-- TOP-SIDE COMPONENTS: 9 D-Sub male pin headers (2-row)        -->
-  <!-- 3×3 grid:                                                    -->
-  <!--   DB25 col x=15..48 (PCB), DB15 col x=52..74, DB9 col x=80..94 -->
-  <!--   row1 y=18..26, row2 y=32..40, row3 y=49..57                 -->
-  <!-- (PCB-local coords; add canvas (10,10) offset)                 -->
-  <!-- ========================================================== -->
-  <g id="top-components" transform="translate(10, 10)">
-
-    <!-- ===== Row 1 ===== -->
-    <!-- DB25 #1 at PCB (19, 10) -->
-    <g transform="translate(19, 10)">
-      <rect x="0" y="0" width="33" height="8" class="header-outline"/>
-      <!-- 13 pin pairs at 2.54 pitch starting at x=2.5 -->
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="22.86" cy="2.54" r="1.0"/><circle cx="22.86" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="22.86" cy="5.08" r="1.0"/><circle cx="22.86" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="25.40" cy="2.54" r="1.0"/><circle cx="25.40" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="25.40" cy="5.08" r="1.0"/><circle cx="25.40" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="27.94" cy="2.54" r="1.0"/><circle cx="27.94" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="27.94" cy="5.08" r="1.0"/><circle cx="27.94" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="30.48" cy="2.54" r="1.0"/><circle cx="30.48" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="30.48" cy="5.08" r="1.0"/><circle cx="30.48" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="16.5" y="-0.6" class="silk">DB25 #1 SENSING</text>
-    </g>
-
-    <!-- DB15 #1 at PCB (56, 10) -->
-    <g transform="translate(56, 10)">
-      <rect x="0" y="0" width="22" height="8" class="header-outline"/>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="11.0" y="-0.6" class="silk">DB15 #1</text>
-    </g>
-
-    <!-- DB9 #1 at PCB (82, 10) -->
-    <g transform="translate(82, 10)">
-      <rect x="0" y="0" width="14" height="8" class="header-outline"/>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-      <text x="7.0" y="-0.6" class="silk">DB9 #1</text>
-    </g>
-
-    <!-- ===== Row 2 ===== -->
-    <!-- DB25 #2 at PCB (19, 23) -->
-    <g transform="translate(19, 23)">
-      <rect x="0" y="0" width="33" height="8" class="header-outline"/>
-      <text x="16.5" y="-0.6" class="silk">DB25 #2 CONTROL</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/><circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/><circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/><circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="22.86" cy="2.54" r="1.0"/><circle cx="22.86" cy="2.54" r="0.5" class="pad-hole"/><circle cx="22.86" cy="5.08" r="1.0"/><circle cx="22.86" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="25.40" cy="2.54" r="1.0"/><circle cx="25.40" cy="2.54" r="0.5" class="pad-hole"/><circle cx="25.40" cy="5.08" r="1.0"/><circle cx="25.40" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="27.94" cy="2.54" r="1.0"/><circle cx="27.94" cy="2.54" r="0.5" class="pad-hole"/><circle cx="27.94" cy="5.08" r="1.0"/><circle cx="27.94" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="30.48" cy="2.54" r="1.0"/><circle cx="30.48" cy="2.54" r="0.5" class="pad-hole"/><circle cx="30.48" cy="5.08" r="1.0"/><circle cx="30.48" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
-    <g transform="translate(56, 23)"><!-- DB15 #2 -->
-
-      <rect x="0" y="0" width="22" height="8" class="header-outline"/>
-      <text x="11.0" y="-0.6" class="silk">DB15 #2</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/><circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/><circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/><circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
-    <g transform="translate(82, 23)"><!-- DB9 #2 -->
-
-      <rect x="0" y="0" width="14" height="8" class="header-outline"/>
-      <text x="7.0" y="-0.6" class="silk">DB9 #2</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
-    <!-- ===== Row 3 ===== -->
-    <!-- DB25 #3 at PCB (19, 39) -->
-    <g transform="translate(19, 39)">
-      <rect x="0" y="0" width="33" height="8" class="header-outline"/>
-      <text x="16.5" y="-0.6" class="silk">DB25 #3 CONTROL-DUP+COMMS</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/><circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/><circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/><circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="22.86" cy="2.54" r="1.0"/><circle cx="22.86" cy="2.54" r="0.5" class="pad-hole"/><circle cx="22.86" cy="5.08" r="1.0"/><circle cx="22.86" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="25.40" cy="2.54" r="1.0"/><circle cx="25.40" cy="2.54" r="0.5" class="pad-hole"/><circle cx="25.40" cy="5.08" r="1.0"/><circle cx="25.40" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="27.94" cy="2.54" r="1.0"/><circle cx="27.94" cy="2.54" r="0.5" class="pad-hole"/><circle cx="27.94" cy="5.08" r="1.0"/><circle cx="27.94" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="30.48" cy="2.54" r="1.0"/><circle cx="30.48" cy="2.54" r="0.5" class="pad-hole"/><circle cx="30.48" cy="5.08" r="1.0"/><circle cx="30.48" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
-    <g transform="translate(56, 39)"><!-- DB15 #3 -->
-
-      <rect x="0" y="0" width="22" height="8" class="header-outline"/>
-      <text x="11.0" y="-0.6" class="silk">DB15 #3</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="15.24" cy="2.54" r="1.0"/><circle cx="15.24" cy="2.54" r="0.5" class="pad-hole"/><circle cx="15.24" cy="5.08" r="1.0"/><circle cx="15.24" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="17.78" cy="2.54" r="1.0"/><circle cx="17.78" cy="2.54" r="0.5" class="pad-hole"/><circle cx="17.78" cy="5.08" r="1.0"/><circle cx="17.78" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="20.32" cy="2.54" r="1.0"/><circle cx="20.32" cy="2.54" r="0.5" class="pad-hole"/><circle cx="20.32" cy="5.08" r="1.0"/><circle cx="20.32" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
-    <g transform="translate(82, 39)"><!-- DB9 #3 -->
-
-      <rect x="0" y="0" width="14" height="8" class="header-outline"/>
-      <text x="7.0" y="-0.6" class="silk">DB9 #3</text>
-      <g class="pad">
-        <circle cx="2.54" cy="2.54" r="1.0"/><circle cx="2.54" cy="2.54" r="0.5" class="pad-hole"/><circle cx="2.54" cy="5.08" r="1.0"/><circle cx="2.54" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="5.08" cy="2.54" r="1.0"/><circle cx="5.08" cy="2.54" r="0.5" class="pad-hole"/><circle cx="5.08" cy="5.08" r="1.0"/><circle cx="5.08" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="7.62" cy="2.54" r="1.0"/><circle cx="7.62" cy="2.54" r="0.5" class="pad-hole"/><circle cx="7.62" cy="5.08" r="1.0"/><circle cx="7.62" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="10.16" cy="2.54" r="1.0"/><circle cx="10.16" cy="2.54" r="0.5" class="pad-hole"/><circle cx="10.16" cy="5.08" r="1.0"/><circle cx="10.16" cy="5.08" r="0.5" class="pad-hole"/>
-        <circle cx="12.70" cy="2.54" r="1.0"/><circle cx="12.70" cy="2.54" r="0.5" class="pad-hole"/><circle cx="12.70" cy="5.08" r="1.0"/><circle cx="12.70" cy="5.08" r="0.5" class="pad-hole"/>
-      </g>
-    </g>
-
+  <!-- JTAG cutout (~14 x 7 mm, centered at doc (16, 26) -> SVG (16, 74)) -->
+  <g id="jtag-cutout">
+    <rect x="9" y="70.5" width="14" height="7" rx="1" ry="1" class="cutout"/>
+    <text x="16" y="74" class="label-coord" style="fill:#1a1a1a; opacity:0.85">JTAG cutout</text>
+    <text x="16" y="76" class="label-coord" style="fill:#1a1a1a; opacity:0.7">14 x 7 mm</text>
   </g>
 
-  <!-- Footer note -->
-  <text x="60.76" y="72.5" class="silk-sm">align corner crosses with bottom master · drill REG-1 + REG-2 first · pin films + PCB · expose top side · flip · expose bottom</text>
+  <!-- Row A: 2 x DB25 IDC (2x13 shrouded vertical, body 38 x 10) -->
+  <g id="row-A-DB25">
+    <g id="J1">
+      <rect x="7.5" y="7" width="38" height="10" rx="0.5" ry="0.5" class="conn-body-dsub25"/>
+      <g class="pad">
+        <g transform="translate(8.27, 9.73)">
+          <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+          <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+          <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+          <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+          <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+          <circle cx="12.7"  cy="0" r="0.4"/><circle cx="12.7"  cy="2.54" r="0.4"/>
+          <circle cx="15.24" cy="0" r="0.4"/><circle cx="15.24" cy="2.54" r="0.4"/>
+          <circle cx="17.78" cy="0" r="0.4"/><circle cx="17.78" cy="2.54" r="0.4"/>
+          <circle cx="20.32" cy="0" r="0.4"/><circle cx="20.32" cy="2.54" r="0.4"/>
+          <circle cx="22.86" cy="0" r="0.4"/><circle cx="22.86" cy="2.54" r="0.4"/>
+          <circle cx="25.4"  cy="0" r="0.4"/><circle cx="25.4"  cy="2.54" r="0.4"/>
+          <circle cx="27.94" cy="0" r="0.4"/><circle cx="27.94" cy="2.54" r="0.4"/>
+          <circle cx="30.48" cy="0" r="0.4"/><circle cx="30.48" cy="2.54" r="0.4"/>
+        </g>
+      </g>
+      <text x="26.5" y="13" class="label-ref">J1</text>
+      <text x="26.5" y="15" class="label-pers">DB25-1 SENSING</text>
+      <text x="26.5" y="20" class="label-coord">16 DIN + 8 ADC + AGND</text>
+    </g>
+    <g id="J2">
+      <rect x="52.5" y="7" width="38" height="10" rx="0.5" ry="0.5" class="conn-body-dsub25"/>
+      <g class="pad">
+        <g transform="translate(53.27, 9.73)">
+          <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+          <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+          <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+          <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+          <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+          <circle cx="12.7"  cy="0" r="0.4"/><circle cx="12.7"  cy="2.54" r="0.4"/>
+          <circle cx="15.24" cy="0" r="0.4"/><circle cx="15.24" cy="2.54" r="0.4"/>
+          <circle cx="17.78" cy="0" r="0.4"/><circle cx="17.78" cy="2.54" r="0.4"/>
+          <circle cx="20.32" cy="0" r="0.4"/><circle cx="20.32" cy="2.54" r="0.4"/>
+          <circle cx="22.86" cy="0" r="0.4"/><circle cx="22.86" cy="2.54" r="0.4"/>
+          <circle cx="25.4"  cy="0" r="0.4"/><circle cx="25.4"  cy="2.54" r="0.4"/>
+          <circle cx="27.94" cy="0" r="0.4"/><circle cx="27.94" cy="2.54" r="0.4"/>
+          <circle cx="30.48" cy="0" r="0.4"/><circle cx="30.48" cy="2.54" r="0.4"/>
+        </g>
+      </g>
+      <text x="71.5" y="13" class="label-ref">J2</text>
+      <text x="71.5" y="15" class="label-pers">DB25-2 CONTROL</text>
+      <text x="71.5" y="20" class="label-coord">16 DOUT + 8 PWM + GND</text>
+    </g>
+  </g>
+
+  <!-- Row B: 3 x DB15 IDC (2x8 shrouded vertical, body 25 x 10) -->
+  <g id="row-B-DB15">
+    <g id="J3">
+      <rect x="7.5" y="23" width="25" height="10" rx="0.5" ry="0.5" class="conn-body-dsub15"/>
+      <g class="pad" transform="translate(9.27, 25.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+        <circle cx="12.7"  cy="0" r="0.4"/><circle cx="12.7"  cy="2.54" r="0.4"/>
+        <circle cx="15.24" cy="0" r="0.4"/><circle cx="15.24" cy="2.54" r="0.4"/>
+        <circle cx="17.78" cy="0" r="0.4"/><circle cx="17.78" cy="2.54" r="0.4"/>
+      </g>
+      <text x="20" y="29" class="label-ref">J3</text>
+      <text x="20" y="31" class="label-pers">DB15-1 Bank Low</text>
+      <text x="20" y="36" class="label-coord">DIN/DOUT 0-3 + ADC0/1 + DAC</text>
+    </g>
+    <g id="J4">
+      <rect x="42.5" y="23" width="25" height="10" rx="0.5" ry="0.5" class="conn-body-dsub15"/>
+      <g class="pad" transform="translate(44.27, 25.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+        <circle cx="12.7"  cy="0" r="0.4"/><circle cx="12.7"  cy="2.54" r="0.4"/>
+        <circle cx="15.24" cy="0" r="0.4"/><circle cx="15.24" cy="2.54" r="0.4"/>
+        <circle cx="17.78" cy="0" r="0.4"/><circle cx="17.78" cy="2.54" r="0.4"/>
+      </g>
+      <text x="55" y="29" class="label-ref">J4</text>
+      <text x="55" y="31" class="label-pers">DB15-2 Bank Mid</text>
+      <text x="55" y="36" class="label-coord">DIN/DOUT 4-7 + ADC4-7 + DAC0</text>
+    </g>
+    <g id="J5">
+      <rect x="77.5" y="23" width="25" height="10" rx="0.5" ry="0.5" class="conn-body-dsub15"/>
+      <g class="pad" transform="translate(79.27, 25.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+        <circle cx="12.7"  cy="0" r="0.4"/><circle cx="12.7"  cy="2.54" r="0.4"/>
+        <circle cx="15.24" cy="0" r="0.4"/><circle cx="15.24" cy="2.54" r="0.4"/>
+        <circle cx="17.78" cy="0" r="0.4"/><circle cx="17.78" cy="2.54" r="0.4"/>
+      </g>
+      <text x="90" y="29" class="label-ref">J5</text>
+      <text x="90" y="31" class="label-pers">DB15-3 Bank High</text>
+      <text x="90" y="36" class="label-coord">DIN/DOUT 8-11 + ADC8-11 + AREF</text>
+    </g>
+  </g>
+
+  <!-- Row C: 5 DB9 IDC + 1 JTAG bridge (2x5 shrouded, body 17 x 10) -->
+  <g id="row-C-DB9-and-bridge">
+    <g id="J6">
+      <rect x="6" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-dsub9"/>
+      <g class="pad" transform="translate(8.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="14.5" y="43" class="label-ref">J6</text>
+      <text x="14.5" y="45" class="label-pers">DB9-1 Quick Analog</text>
+    </g>
+    <g id="J7">
+      <rect x="25" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-dsub9"/>
+      <g class="pad" transform="translate(27.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="33.5" y="43" class="label-ref">J7</text>
+      <text x="33.5" y="45" class="label-pers">DB9-2 Quick Digital</text>
+    </g>
+    <g id="J8">
+      <rect x="44" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-dsub9"/>
+      <g class="pad" transform="translate(46.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="52.5" y="43" class="label-ref">J8</text>
+      <text x="52.5" y="45" class="label-pers">DB9-3 Quick COMM</text>
+    </g>
+    <g id="J9">
+      <rect x="63" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-dsub9"/>
+      <g class="pad" transform="translate(65.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="71.5" y="43" class="label-ref">J9</text>
+      <text x="71.5" y="45" class="label-pers">DB9 CAN (rear)</text>
+    </g>
+    <g id="J10">
+      <rect x="82" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-dsub9"/>
+      <g class="pad" transform="translate(84.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="90.5" y="43" class="label-ref">J10</text>
+      <text x="90.5" y="45" class="label-pers">DB9 JTAG (rear)</text>
+    </g>
+    <g id="J11">
+      <rect x="101" y="37" width="17" height="10" rx="0.5" ry="0.5" class="conn-body-jtag"/>
+      <g class="pad" transform="translate(103.77, 39.73)">
+        <circle cx="0"     cy="0" r="0.4"/><circle cx="0"     cy="2.54" r="0.4"/>
+        <circle cx="2.54"  cy="0" r="0.4"/><circle cx="2.54"  cy="2.54" r="0.4"/>
+        <circle cx="5.08"  cy="0" r="0.4"/><circle cx="5.08"  cy="2.54" r="0.4"/>
+        <circle cx="7.62"  cy="0" r="0.4"/><circle cx="7.62"  cy="2.54" r="0.4"/>
+        <circle cx="10.16" cy="0" r="0.4"/><circle cx="10.16" cy="2.54" r="0.4"/>
+      </g>
+      <text x="109.5" y="43" class="label-ref">J11</text>
+      <text x="109.5" y="45" class="label-pers">JTAG bridge</text>
+      <text x="109.5" y="48" class="label-coord">to Due-J1 via pigtail</text>
+    </g>
+  </g>
+
+  <!-- ============================================================ -->
+  <!-- J12 + R2: panel button + LED header (1x4) -->
+  <!-- Doc (8, 40) -> SVG (8, 60).  R2 doc (8, 44) -> SVG (8, 56).   -->
+  <!-- Body 10.16 x 2.54mm horizontal, 4 pins at 2.54mm pitch.       -->
+  <!-- ============================================================ -->
+  <g id="J12-R2-panel-button-LED">
+    <!-- R2 220 ohm THT axial horizontal -->
+    <g class="passive">
+      <rect x="4.85" y="54.75" width="6.3" height="2.5"/>
+    </g>
+    <text x="8" y="59.6" class="label-coord">R2 220R</text>
+
+    <!-- J12 body -->
+    <rect x="2.92" y="58.73" width="10.16" height="2.54" rx="0.3" ry="0.3" class="conn-body-jtag"/>
+    <!-- 4 pins at x = 4.19, 6.73, 9.27, 11.81 (centered at x=8, pitch 2.54) -->
+    <g class="pad">
+      <circle cx="4.19"  cy="60" r="0.5"/>
+      <circle cx="6.73"  cy="60" r="0.5"/>
+      <circle cx="9.27"  cy="60" r="0.5"/>
+      <circle cx="11.81" cy="60" r="0.5"/>
+    </g>
+    <text x="8" y="63.2" class="label-ref">J12</text>
+    <text x="8" y="65.2" class="label-pers">Panel button + LED</text>
+    <text x="4.19"  y="67.5" class="label-pin">1</text>
+    <text x="6.73"  y="67.5" class="label-pin">2</text>
+    <text x="9.27"  y="67.5" class="label-pin">3</text>
+    <text x="11.81" y="67.5" class="label-pin">4</text>
+    <text x="8" y="69.5" class="label-coord">LED+ LED- RST GND</text>
+  </g>
+
+  <!-- CAN transceiver subcircuit (east margin) -->
+  <g id="can-subcircuit">
+    <rect x="102.5" y="49" width="15" height="44" rx="0.6" ry="0.6" class="silk"/>
+    <text x="110" y="51.5" class="label-area">CAN xceiver</text>
+
+    <!-- C3, C4 (100nF decoupling, top) -->
+    <g class="passive">
+      <rect x="103" y="56.5" width="2" height="3"/>
+      <rect x="113" y="56.5" width="2" height="3"/>
+    </g>
+    <text x="104" y="62" class="label-coord">C3</text>
+    <text x="114" y="62" class="label-coord">C4</text>
+
+    <!-- U1 MCP2562FD DIP-8 -->
+    <rect x="105" y="61.5" width="10" height="7" rx="0.3" ry="0.3" class="ic-body"/>
+    <g class="pad">
+      <circle cx="106" cy="62.5" r="0.3"/><circle cx="106" cy="64.5" r="0.3"/>
+      <circle cx="106" cy="66.5" r="0.3"/><circle cx="106" cy="68.5" r="0.3"/>
+      <circle cx="114" cy="62.5" r="0.3"/><circle cx="114" cy="64.5" r="0.3"/>
+      <circle cx="114" cy="66.5" r="0.3"/><circle cx="114" cy="68.5" r="0.3"/>
+    </g>
+    <text x="110" y="65.5" class="label-ref">U1</text>
+    <text x="110" y="71" class="label-coord">MCP2562FD</text>
+
+    <!-- C1, C2 (10uF bulk) -->
+    <g class="passive">
+      <rect x="103" y="70.5" width="2" height="3"/>
+      <rect x="113" y="70.5" width="2" height="3"/>
+    </g>
+    <text x="104" y="76" class="label-coord">C1</text>
+    <text x="114" y="76" class="label-coord">C2</text>
+
+    <!-- R1 120 ohm -->
+    <g class="passive">
+      <rect x="107" y="76" width="6" height="2"/>
+    </g>
+    <text x="110" y="80" class="label-coord">R1 120R</text>
+
+    <!-- SW1 DPST term enable -->
+    <rect x="106.5" y="83.5" width="7" height="5" rx="0.3" ry="0.3" class="switch"/>
+    <text x="110" y="86.5" class="label-coord">SW1 term</text>
+    <text x="110" y="91" class="label-coord">on/off</text>
+  </g>
+
+  <!-- Footer notes (silkscreen) -->
+  <g id="legend" transform="translate(2, 96)">
+    <text x="0" y="0" class="label-coord" style="text-anchor:start; opacity:0.6">Origin (0,0) at SW corner. SVG Y-axis flipped vs design doc (doc y up, SVG y down). All dims in mm. Print at 100% for 1:1 transfer.</text>
+  </g>
+
 </svg>

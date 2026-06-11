@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-06-11
+
+Patch release: systemd readiness fix for iso-mode deployments. No
+protocol or wire-format changes; all 2.1.x clients and firmware
+interoperate.
+
+### Fixed
+
+- **physerver: `sd_notify(READY)` and the watchdog kicker now fire in
+  iso mode too**. The systemd-integration block lived only in the
+  bulk path of `main()`, so an iso-mode service running under the
+  `Type=notify` unit (`deploy/systemd/physerver.service`) never
+  reported readiness: systemd hit `TimeoutStartSec` and restart-looped
+  the service every ~90 s even though the web server and iso transport
+  were healthy. The block is now `notify_systemd_ready()`, called from
+  both transport paths.
+
 ## [2.1.1] - 2026-04-30
 
 Patch release: dashboard scope smoothness, firmware DAC-write fix,

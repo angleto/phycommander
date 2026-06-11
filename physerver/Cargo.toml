@@ -15,7 +15,7 @@ members = [
 
 [package]
 name = "physerver"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 authors = ["Angelo Leto <angelo@leto.blue>"]
 description = "Physical Commander - Real-time hardware control server"

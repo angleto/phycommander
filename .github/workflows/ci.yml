@@ -138,7 +138,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install system deps
-        run: sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
 
       - name: Verify wire-struct sizes match between C and Rust
         working-directory: physerver
@@ -201,7 +203,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install system deps
-        run: sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev libusb-1.0-0-dev pkg-config
 
       - name: rustdoc (advisory)
         working-directory: physerver

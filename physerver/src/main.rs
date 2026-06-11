@@ -404,6 +404,8 @@ async fn main() -> Result<()> {
             info!("startup: all DAC/PWM/DOUT outputs forced OFF");
         }
 
+        notify_systemd_ready(&web_state);
+
         // Block until shutdown. IsoTransport's Drop signals stop +
         // joins its I/O thread cleanly.
         let _ = tokio::signal::ctrl_c().await;
@@ -446,47 +448,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Systemd integration: notify READY + start a watchdog kicker
-    // task if the service unit configured WatchdogSec=. The kicker
-    // only pings sd_notify(WATCHDOG=1) when the healthcheck passes,
-    // so a stalled iso transport or a stuck USB reconnect causes
-    // systemd to restart us — no more silent "service is up,
-    // seq_num frozen" deployments. Running under `cargo run`
-    // (WATCHDOG_USEC unset) is a no-op.
-    {
-        // Best-effort READY notification — no-op outside systemd.
-        if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Ready]) {
-            warn!("sd_notify(READY) failed: {e}");
-        }
-        if let Some(watchdog) = sd_notify::watchdog_enabled() {
-            let interval = watchdog / 3;
-            info!(
-                "systemd watchdog: kicking every {} ms (WatchdogSec = {} ms)",
-                interval.as_millis(),
-                watchdog.as_millis()
-            );
-            let wd_state = web_state.clone();
-            tokio::spawn(async move {
-                let mut ticker = tokio::time::interval(interval);
-                ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-                loop {
-                    ticker.tick().await;
-                    let checks = web::compute_health(&wd_state).await;
-                    if checks.healthy() {
-                        if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Watchdog]) {
-                            warn!("sd_notify(WATCHDOG) failed: {e}");
-                        }
-                    } else {
-                        // Log only at debug so a sustained degraded
-                        // state doesn't flood the journal. WatchdogSec
-                        // will trip within one systemd-configured
-                        // interval if we keep skipping.
-                        tracing::debug!("skipping watchdog kick: health degraded ({:?})", checks);
-                    }
-                }
-            });
-        }
-    }
+    notify_systemd_ready(&web_state);
 
     // Block the main thread until the RT thread exits. When SIGTERM
     // hits us (systemd stop), tokio's main will exit, which drops
@@ -495,6 +457,49 @@ async fn main() -> Result<()> {
 
     info!("physerver terminated cleanly");
     Ok(())
+}
+
+/// Systemd integration: notify READY + start a watchdog kicker task
+/// if the service unit configured WatchdogSec=. The kicker only
+/// pings sd_notify(WATCHDOG=1) when the healthcheck passes, so a
+/// stalled iso transport or a stuck USB reconnect causes systemd to
+/// restart us — no more silent "service is up, seq_num frozen"
+/// deployments. Running under `cargo run` (NOTIFY_SOCKET /
+/// WATCHDOG_USEC unset) is a no-op. Called from both the iso and the
+/// bulk paths of main() once their transport is up.
+fn notify_systemd_ready(web_state: &Arc<web::AppState>) {
+    // Best-effort READY notification — no-op outside systemd.
+    if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Ready]) {
+        warn!("sd_notify(READY) failed: {e}");
+    }
+    if let Some(watchdog) = sd_notify::watchdog_enabled() {
+        let interval = watchdog / 3;
+        info!(
+            "systemd watchdog: kicking every {} ms (WatchdogSec = {} ms)",
+            interval.as_millis(),
+            watchdog.as_millis()
+        );
+        let wd_state = web_state.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                let checks = web::compute_health(&wd_state).await;
+                if checks.healthy() {
+                    if let Err(e) = sd_notify::notify(&[sd_notify::NotifyState::Watchdog]) {
+                        warn!("sd_notify(WATCHDOG) failed: {e}");
+                    }
+                } else {
+                    // Log only at debug so a sustained degraded
+                    // state doesn't flood the journal. WatchdogSec
+                    // will trip within one systemd-configured
+                    // interval if we keep skipping.
+                    tracing::debug!("skipping watchdog kick: health degraded ({:?})", checks);
+                }
+            }
+        });
+    }
 }
 
 /// Build the bulk Transport (USB or serial) from the config. Iso mode

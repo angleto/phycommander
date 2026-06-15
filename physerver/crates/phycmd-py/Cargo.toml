@@ -18,7 +18,7 @@ path = "src/lib.rs"
 [dependencies]
 phycmd-rust = { path = "../phycmd-rust", features = ["test-mock"] }
 phycmd-core = { path = "../phycmd-core", features = ["test-mock"] }
-pyo3 = { version = "0.22", features = ["extension-module", "abi3-py38"] }
+pyo3 = { version = "0.29", features = ["extension-module", "abi3-py38"] }
 parking_lot = "0.12"
 anyhow = "1.0"
 tokio = { version = "1.35", features = ["sync", "rt"], default-features = false }

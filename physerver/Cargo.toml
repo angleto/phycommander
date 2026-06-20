@@ -63,7 +63,7 @@ tokio-tungstenite = "0.21"
 shared_memory = "0.12"
 
 # Real-time and system
-nix = { version = "0.27", features = ["sched", "signal", "mman"] }
+nix = { version = "0.31", features = ["sched", "signal", "mman"] }
 libc = "0.2"
 
 # Logging and telemetry
